@@ -1,0 +1,262 @@
+/* ============================================================
+   Football Genie Design System
+   Central tokens for color, type, space, radius, shadow, motion.
+   Consume these variables — do not hardcode scattered values.
+   ============================================================ */
+
+:root {
+    /* ---------- Color ---------- */
+    --fg-color-bg: #0b0d10;
+    --fg-color-bg-elevated: #111418;
+    --fg-color-surface: #151a1f;
+    --fg-color-surface-hover: #1b2229;
+    --fg-color-surface-active: #222a33;
+    --fg-color-border: rgba(255, 255, 255, 0.07);
+    --fg-color-border-strong: rgba(255, 255, 255, 0.12);
+    --fg-color-text: #eef1f4;
+    --fg-color-text-secondary: #9aa3ad;
+    --fg-color-text-muted: #6b7480;
+    --fg-color-accent: #3ecf8e;
+    --fg-color-accent-soft: rgba(62, 207, 142, 0.12);
+    --fg-color-accent-hover: #52d89c;
+    --fg-color-warning: #e6b84d;
+    --fg-color-danger: #e06b6b;
+    --fg-color-info: #6bb3e0;
+    --fg-color-sidebar: #0e1115;
+    --fg-color-topbar: rgba(11, 13, 16, 0.82);
+    --fg-color-overlay: rgba(0, 0, 0, 0.45);
+
+    /* ---------- Typography ---------- */
+    --fg-font-sans: "DM Sans", "Segoe UI", sans-serif;
+    --fg-font-mono: "IBM Plex Mono", "Consolas", monospace;
+    --fg-text-xs: 0.75rem;
+    --fg-text-sm: 0.8125rem;
+    --fg-text-md: 0.9375rem;
+    --fg-text-lg: 1.125rem;
+    --fg-text-xl: 1.375rem;
+    --fg-text-2xl: 1.75rem;
+    --fg-text-3xl: 2.25rem;
+    --fg-leading-tight: 1.2;
+    --fg-leading-normal: 1.5;
+    --fg-weight-regular: 400;
+    --fg-weight-medium: 500;
+    --fg-weight-semibold: 600;
+    --fg-weight-bold: 700;
+    --fg-tracking-tight: -0.02em;
+    --fg-tracking-wide: 0.06em;
+
+    /* ---------- Spacing ---------- */
+    --fg-space-1: 0.25rem;
+    --fg-space-2: 0.5rem;
+    --fg-space-3: 0.75rem;
+    --fg-space-4: 1rem;
+    --fg-space-5: 1.25rem;
+    --fg-space-6: 1.5rem;
+    --fg-space-8: 2rem;
+    --fg-space-10: 2.5rem;
+    --fg-space-12: 3rem;
+    --fg-space-16: 4rem;
+
+    /* ---------- Layout ---------- */
+    --fg-sidebar-width: 15.5rem;
+    --fg-topbar-height: 3.5rem;
+    --fg-content-max: 72rem;
+
+    /* ---------- Radius ---------- */
+    --fg-radius-sm: 0.375rem;
+    --fg-radius-md: 0.625rem;
+    --fg-radius-lg: 0.875rem;
+    --fg-radius-xl: 1.125rem;
+    --fg-radius-full: 9999px;
+
+    /* ---------- Shadows ---------- */
+    --fg-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+    --fg-shadow-md: 0 8px 24px rgba(0, 0, 0, 0.35);
+    --fg-shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.45);
+    --fg-shadow-focus: 0 0 0 3px var(--fg-color-accent-soft);
+
+    /* ---------- Transitions ---------- */
+    --fg-ease: cubic-bezier(0.22, 1, 0.36, 1);
+    --fg-duration-fast: 120ms;
+    --fg-duration-normal: 200ms;
+    --fg-duration-slow: 320ms;
+    --fg-transition-fast: var(--fg-duration-fast) var(--fg-ease);
+    --fg-transition-normal: var(--fg-duration-normal) var(--fg-ease);
+    --fg-transition-slow: var(--fg-duration-slow) var(--fg-ease);
+}
+
+/* ---------- Base ---------- */
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+html,
+body {
+    margin: 0;
+    min-height: 100%;
+    font-family: var(--fg-font-sans);
+    font-size: var(--fg-text-md);
+    font-weight: var(--fg-weight-regular);
+    line-height: var(--fg-leading-normal);
+    color: var(--fg-color-text);
+    background: var(--fg-color-bg);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+}
+
+h1, h2, h3, h4, h5, h6 {
+    margin: 0;
+    font-weight: var(--fg-weight-semibold);
+    letter-spacing: var(--fg-tracking-tight);
+    line-height: var(--fg-leading-tight);
+    color: var(--fg-color-text);
+}
+
+p {
+    margin: 0;
+}
+
+a {
+    color: inherit;
+    text-decoration: none;
+}
+
+button {
+    font: inherit;
+    color: inherit;
+    background: none;
+    border: none;
+    cursor: pointer;
+}
+
+ul, ol {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+/* ---------- Primitives ---------- */
+.fg-card {
+    background: var(--fg-color-surface);
+    border: 1px solid var(--fg-color-border);
+    border-radius: var(--fg-radius-lg);
+    padding: var(--fg-space-5);
+    box-shadow: var(--fg-shadow-sm);
+    transition: border-color var(--fg-transition-normal), background var(--fg-transition-normal);
+}
+
+.fg-card:hover {
+    border-color: var(--fg-color-border-strong);
+    background: var(--fg-color-surface-hover);
+}
+
+.fg-card__title {
+    font-size: var(--fg-text-sm);
+    font-weight: var(--fg-weight-semibold);
+    letter-spacing: var(--fg-tracking-wide);
+    text-transform: uppercase;
+    color: var(--fg-color-text-secondary);
+    margin-bottom: var(--fg-space-4);
+}
+
+.fg-card__body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--fg-space-3);
+}
+
+.fg-page {
+    width: 100%;
+    max-width: var(--fg-content-max);
+    margin: 0 auto;
+    animation: fg-fade-up var(--fg-transition-slow) both;
+}
+
+.fg-page__header {
+    margin-bottom: var(--fg-space-8);
+}
+
+.fg-page__title {
+    font-size: var(--fg-text-2xl);
+    font-weight: var(--fg-weight-bold);
+}
+
+.fg-page__subtitle {
+    margin-top: var(--fg-space-2);
+    color: var(--fg-color-text-secondary);
+    font-size: var(--fg-text-md);
+}
+
+.fg-coming-soon {
+    display: grid;
+    place-items: center;
+    min-height: 18rem;
+    border: 1px dashed var(--fg-color-border-strong);
+    border-radius: var(--fg-radius-lg);
+    background: var(--fg-color-bg-elevated);
+    color: var(--fg-color-text-muted);
+    font-size: var(--fg-text-lg);
+    font-weight: var(--fg-weight-medium);
+    letter-spacing: var(--fg-tracking-wide);
+    text-transform: uppercase;
+}
+
+.fg-meta-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--fg-space-3);
+}
+
+.fg-meta-label {
+    color: var(--fg-color-text);
+    font-weight: var(--fg-weight-medium);
+}
+
+.fg-meta-value {
+    color: var(--fg-color-text-secondary);
+    font-size: var(--fg-text-sm);
+    text-align: right;
+}
+
+.fg-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--fg-space-2);
+    padding: 0.2rem 0.55rem;
+    border-radius: var(--fg-radius-full);
+    font-size: var(--fg-text-xs);
+    font-weight: var(--fg-weight-medium);
+    background: var(--fg-color-surface-active);
+    color: var(--fg-color-text-secondary);
+}
+
+.fg-badge--accent {
+    background: var(--fg-color-accent-soft);
+    color: var(--fg-color-accent);
+}
+
+.fg-badge--warning {
+    background: rgba(230, 184, 77, 0.14);
+    color: var(--fg-color-warning);
+}
+
+.fg-dot {
+    width: 0.45rem;
+    height: 0.45rem;
+    border-radius: var(--fg-radius-full);
+    background: currentColor;
+}
+
+@keyframes fg-fade-up {
+    from {
+        opacity: 0;
+        transform: translateY(0.4rem);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}

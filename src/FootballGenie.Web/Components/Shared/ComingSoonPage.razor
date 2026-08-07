@@ -1,0 +1,19 @@
+<section class="fg-page">
+    <header class="fg-page__header">
+        <h1 class="fg-page__title">@Title</h1>
+        @if (!string.IsNullOrWhiteSpace(Subtitle))
+        {
+            <p class="fg-page__subtitle">@Subtitle</p>
+        }
+    </header>
+
+    <div class="fg-coming-soon">Coming Soon</div>
+</section>
+
+@code {
+    [Parameter, EditorRequired]
+    public string Title { get; set; } = string.Empty;
+
+    [Parameter]
+    public string? Subtitle { get; set; }
+}

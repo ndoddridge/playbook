@@ -1,0 +1,38 @@
+<nav class="app-sidebar__nav" aria-label="Primary">
+    @foreach (var item in Items)
+    {
+        <NavLink class="app-nav-link"
+                 href="@item.Href"
+                 Match="@item.Match"
+                 @onclick="HandleNavigate">
+            <span class="app-nav-link__icon" aria-hidden="true">@item.Icon</span>
+            <span>@item.Label</span>
+        </NavLink>
+    }
+</nav>
+
+@code {
+    [Parameter]
+    public EventCallback OnNavigate { get; set; }
+
+    private static readonly NavItem[] Items =
+    [
+        new("/", "🏠", "Dashboard", NavLinkMatch.All),
+        new("/my-teams", "🏈", "My Teams", NavLinkMatch.Prefix),
+        new("/quick-picks", "⚡", "Quick Picks", NavLinkMatch.Prefix),
+        new("/draft-assistant", "📈", "Draft Assistant", NavLinkMatch.Prefix),
+        new("/player-explorer", "🔍", "Player Explorer", NavLinkMatch.Prefix),
+        new("/replay-lab", "🔄", "Replay Lab", NavLinkMatch.Prefix),
+        new("/settings", "⚙", "Settings", NavLinkMatch.Prefix)
+    ];
+
+    private async Task HandleNavigate()
+    {
+        if (OnNavigate.HasDelegate)
+        {
+            await OnNavigate.InvokeAsync();
+        }
+    }
+
+    private sealed record NavItem(string Href, string Icon, string Label, NavLinkMatch Match);
+}
