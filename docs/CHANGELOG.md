@@ -2,6 +2,31 @@
 
 All notable project changes are recorded here.
 
+## [Unreleased] — Recommendation Domain Model
+
+### Added
+
+- Central `Recommendation` domain model with extensible metadata support
+- Enums: `RecommendationType`, `RecommendationPriority`, `RecommendationStatus`, `RecommendationCategory`, `EngineType`
+- `IRecommendationService` application contract
+- `MockRecommendationService` as the single source of mock recommendations
+- `RecommendationPresentation` helpers for UI labels/CSS hooks
+- Web feature boundary `Features/Recommendations`
+
+### Changed
+
+- `DecisionCard` now accepts a `Recommendation` (display-only; no football knowledge)
+- Dashboard loads Top Decisions from `IRecommendationService` — hardcoded recommendation arrays removed
+- Retired the interim `Decision` model in favor of `Recommendation`
+
+### Recommendation Model
+
+Every future engine should emit `Recommendation` objects. The UI never creates them; it only renders what services/engines provide.
+
+### Recommendation Pipeline
+
+Engines → `IRecommendationService` → Decision Card. Mock service stands in until real engines exist.
+
 ## [Unreleased] — Decision Card System
 
 ### Added

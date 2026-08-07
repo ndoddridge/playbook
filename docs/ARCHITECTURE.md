@@ -124,3 +124,27 @@ UI components (`LeagueSwitcher`, Dashboard) inject `ILeagueState` and subscribe 
 ### Future replacement with real APIs
 
 Swap `MockLeagueService` for an API/EF-backed implementation of `ILeagueService` without changing UI or engine consumers. Persist the last-selected league id (cookie/local storage/user profile) when accounts exist.
+
+## Recommendation Model
+
+`Playbook.Core.Recommendations.Recommendation` is the central object every engine produces and the UI consumes.
+
+Core fields: Id, Title, Summary, ActionType, Priority, Confidence, Impact, Category, Status, Reasoning, SupportingSignals, Evidence, FutureNotes, LastUpdated, SourceEngine, IsExpanded, and optional Metadata.
+
+Enums: `RecommendationType`, `RecommendationPriority`, `RecommendationStatus`, `RecommendationCategory`, `EngineType`.
+
+### Recommendation Pipeline
+
+```
+Engines (Projection / Draft / Waiver / Trade / Knowledge / Quick Picks / Decision)
+        ↓  emit Recommendation objects
+IRecommendationService  (aggregation / ranking)
+        ↓
+UI (DecisionCard)  — display only, never invents recommendations
+```
+
+Today, `MockRecommendationService` is the single source of recommendations. The Dashboard calls `GetTopRecommendations()` and passes each item to `DecisionCard`.
+
+### Future Engine Flow
+
+Each engine returns `Recommendation` instances tagged with `SourceEngine`. A future aggregator implements `IRecommendationService`, merges engine output, ranks by priority/confidence/league context, and feeds the same Decision Card UI without visual rewrites.

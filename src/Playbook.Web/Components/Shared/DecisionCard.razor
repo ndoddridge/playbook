@@ -1,6 +1,6 @@
-@using Playbook.Core.Decisions
+@using Playbook.Core.Recommendations
 
-<article class="decision-card @DecisionPresentation.ActionCss(Decision.ActionType) @(expanded ? "is-expanded" : null)">
+<article class="decision-card @RecommendationPresentation.ActionCss(Recommendation.ActionType) @(expanded ? "is-expanded" : null)">
     <button type="button"
             class="decision-card__main"
             aria-expanded="@expanded"
@@ -10,36 +10,36 @@
         <div class="decision-card__body">
             <div class="decision-card__topline">
                 <span class="decision-action">
-                    <span class="decision-action__icon" aria-hidden="true">@DecisionPresentation.ActionIcon(Decision.ActionType)</span>
-                    <span class="decision-action__label">@DecisionPresentation.ActionLabel(Decision.ActionType)</span>
+                    <span class="decision-action__icon" aria-hidden="true">@RecommendationPresentation.ActionIcon(Recommendation.ActionType)</span>
+                    <span class="decision-action__label">@RecommendationPresentation.ActionLabel(Recommendation.ActionType)</span>
                 </span>
 
-                <span class="decision-priority @DecisionPresentation.PriorityCss(Decision.Priority)">
-                    @DecisionPresentation.PriorityLabel(Decision.Priority)
+                <span class="decision-priority @RecommendationPresentation.PriorityCss(Recommendation.Priority)">
+                    @RecommendationPresentation.PriorityLabel(Recommendation.Priority)
                 </span>
 
-                <span class="decision-confidence">@DecisionPresentation.ConfidenceLabel(Decision.Confidence)</span>
+                <span class="decision-confidence">@RecommendationPresentation.ConfidenceLabel(Recommendation.Confidence)</span>
             </div>
 
-            <h3 class="decision-card__title">@Decision.Title</h3>
-            <p class="decision-card__summary">@Decision.Summary</p>
+            <h3 class="decision-card__title">@Recommendation.Title</h3>
+            <p class="decision-card__summary">@Recommendation.Summary</p>
 
             <div class="decision-card__meta">
                 <span class="decision-meta">
                     <span class="decision-meta__label">Impact</span>
-                    <span class="decision-meta__value">@Decision.Impact</span>
+                    <span class="decision-meta__value">@Recommendation.Impact</span>
                 </span>
                 <span class="decision-meta">
                     <span class="decision-meta__label">Status</span>
-                    <span class="decision-meta__value">@DecisionPresentation.StatusLabel(Decision.Status)</span>
+                    <span class="decision-meta__value">@RecommendationPresentation.StatusLabel(Recommendation.Status)</span>
                 </span>
                 <span class="decision-meta">
                     <span class="decision-meta__label">Category</span>
-                    <span class="decision-meta__value">@Decision.Category</span>
+                    <span class="decision-meta__value">@RecommendationPresentation.CategoryLabel(Recommendation.Category)</span>
                 </span>
                 <span class="decision-meta">
                     <span class="decision-meta__label">Updated</span>
-                    <span class="decision-meta__value">@DecisionPresentation.TimestampLabel(Decision.Timestamp)</span>
+                    <span class="decision-meta__value">@RecommendationPresentation.TimestampLabel(Recommendation.LastUpdated)</span>
                 </span>
             </div>
         </div>
@@ -52,13 +52,13 @@
         <div class="decision-card__details">
             <section class="decision-detail">
                 <h4 class="decision-detail__title">Reasoning</h4>
-                <p class="decision-detail__text">@Decision.Reasoning</p>
+                <p class="decision-detail__text">@Recommendation.Reasoning</p>
             </section>
 
             <section class="decision-detail">
                 <h4 class="decision-detail__title">Supporting Signals</h4>
                 <ul class="decision-detail__list">
-                    @foreach (var signal in Decision.SupportingSignals)
+                    @foreach (var signal in Recommendation.SupportingSignals)
                     {
                         <li>@signal</li>
                     }
@@ -68,18 +68,18 @@
             <section class="decision-detail">
                 <h4 class="decision-detail__title">Evidence</h4>
                 <ul class="decision-detail__list">
-                    @foreach (var item in Decision.Evidence)
+                    @foreach (var item in Recommendation.Evidence)
                     {
                         <li>@item</li>
                     }
                 </ul>
             </section>
 
-            @if (!string.IsNullOrWhiteSpace(Decision.FutureNotes))
+            @if (!string.IsNullOrWhiteSpace(Recommendation.FutureNotes))
             {
                 <section class="decision-detail">
                     <h4 class="decision-detail__title">Future Notes</h4>
-                    <p class="decision-detail__text">@Decision.FutureNotes</p>
+                    <p class="decision-detail__text">@Recommendation.FutureNotes</p>
                 </section>
             }
         </div>
@@ -88,16 +88,13 @@
 
 @code {
     [Parameter, EditorRequired]
-    public Decision Decision { get; set; } = default!;
-
-    [Parameter]
-    public bool InitiallyExpanded { get; set; }
+    public Recommendation Recommendation { get; set; } = default!;
 
     private bool expanded;
 
     protected override void OnInitialized()
     {
-        expanded = InitiallyExpanded;
+        expanded = Recommendation.IsExpanded;
     }
 
     private void Toggle() => expanded = !expanded;
