@@ -157,10 +157,10 @@
                 else if (activeTab == "Intelligence")
                 {
                     <section class="player-section">
-                        <h3 class="player-section__title">Intelligence</h3>
+                        <h3 class="player-section__title">Overall Intelligence Summary</h3>
                         @if (playerIntelligence is null)
                         {
-                            <p class="player-section__muted">No football intelligence available for this player yet.</p>
+                            <p class="player-section__muted">No generated football intelligence for this player yet.</p>
                         }
                         else
                         {
@@ -170,7 +170,7 @@
                                     <span class="player-stat__value">@playerIntelligence.OverallConfidence%</span>
                                 </div>
                                 <div class="player-stat">
-                                    <span class="player-stat__label">Facts</span>
+                                    <span class="player-stat__label">Recent Facts</span>
                                     <span class="player-stat__value">@playerIntelligence.Facts.Count</span>
                                 </div>
                                 <div class="player-stat">
@@ -194,36 +194,61 @@
                                 </div>
                             </div>
 
-                            @foreach (var group in playerIntelligence.Facts.GroupBy(f => f.Category).OrderBy(g => g.Key))
+                            <h3 class="player-section__title" style="margin-top:1.25rem;">Recent Intelligence</h3>
+                            @foreach (var fact in playerIntelligence.Facts
+                                          .OrderByDescending(f => f.Importance)
+                                          .ThenByDescending(f => f.Confidence))
                             {
-                                <div class="intel-group">
-                                    <h4 class="intel-group__title">@IntelligencePresentation.Category(group.Key)</h4>
-                                    @foreach (var fact in group.OrderByDescending(f => f.Importance).ThenByDescending(f => f.Confidence))
+                                <article class="intel-fact">
+                                    <div class="intel-fact__header">
+                                        <h5 class="intel-fact__title">@fact.Title</h5>
+                                        <div class="intel-fact__meta">
+                                            <span>@fact.Confidence%</span>
+                                            <span class="@IntelligencePresentation.ImportanceClass(fact.Importance)">
+                                                @IntelligencePresentation.Importance(fact.Importance)
+                                            </span>
+                                            <span>@IntelligencePresentation.Category(fact.Category)</span>
+                                        </div>
+                                    </div>
+                                    <p class="intel-fact__description">@fact.Description</p>
+                                    @if (fact.SupportingEvidence.Count > 0)
                                     {
-                                        <article class="intel-fact">
-                                            <div class="intel-fact__header">
-                                                <h5 class="intel-fact__title">@fact.Title</h5>
-                                                <div class="intel-fact__meta">
-                                                    <span>@fact.Confidence%</span>
-                                                    <span class="@IntelligencePresentation.ImportanceClass(fact.Importance)">
-                                                        @IntelligencePresentation.Importance(fact.Importance)
-                                                    </span>
-                                                    <span>@IntelligencePresentation.RelativeTime(fact.Created)</span>
-                                                </div>
-                                            </div>
-                                            <p class="intel-fact__description">@fact.Description</p>
-                                            @if (fact.SupportingEvidence.Count > 0)
+                                        <ul class="intel-fact__evidence">
+                                            @foreach (var evidence in fact.SupportingEvidence)
                                             {
-                                                <ul class="intel-fact__evidence">
-                                                    @foreach (var evidence in fact.SupportingEvidence)
-                                                    {
-                                                        <li>@evidence</li>
-                                                    }
-                                                </ul>
+                                                <li>@evidence</li>
                                             }
-                                        </article>
+                                        </ul>
                                     }
-                                </div>
+
+                                    @{
+                                        var supportArticles = NewsProvider.GetByIds(fact.RelatedNewsArticleIds);
+                                    }
+                                    @if (supportArticles.Count > 0)
+                                    {
+                                        <div class="player-news-list">
+                                            @foreach (var article in supportArticles)
+                                            {
+                                                <article class="news-item">
+                                                    <h4 class="news-item__title">
+                                                        @if (!string.IsNullOrWhiteSpace(article.Url))
+                                                        {
+                                                            <a href="@article.Url" target="_blank" rel="noopener noreferrer">@article.Title</a>
+                                                        }
+                                                        else
+                                                        {
+                                                            @article.Title
+                                                        }
+                                                    </h4>
+                                                    <div class="news-item__meta">
+                                                        <span>@article.Source</span>
+                                                        <span>@NewsPresentation.RelativeTime(article.Published)</span>
+                                                    </div>
+                                                </article>
+                                            }
+                                        </div>
+                                    }
+                                </article>
                             }
                         }
                     </section>

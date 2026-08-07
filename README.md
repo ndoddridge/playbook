@@ -96,7 +96,7 @@ Football news is normalized into `NewsArticle` objects behind `INewsProvider`.
 | `Mock` | In-memory headlines with related player names |
 | `Live` | ESPN NFL news. On failure, **automatically falls back to Mock** |
 
-Background refresh (`BackgroundRefresh`) periodically reloads players and news and logs each update separately.
+Background refresh (`BackgroundRefresh`) periodically reloads players, news, and intelligence analysis (each step logged separately).
 
 ## Run the web app
 
@@ -114,7 +114,7 @@ dotnet test
 
 ## Current Status
 
-**Developer monitoring**, **live Sleeper players**, and **live ESPN news** behind provider abstractions with Mock/Live config switches, graceful fallback, and background refresh. UI consumes `IPlayerService` / `INewsProvider` only.
+**Developer monitoring**, **live Sleeper players**, **live ESPN news**, and **Intelligence Engine V1** (rule-based news → `IntelligenceFact`). UI consumes `IPlayerService` / `INewsProvider` / `IIntelligenceService` only.
 
 ## Documentation
 

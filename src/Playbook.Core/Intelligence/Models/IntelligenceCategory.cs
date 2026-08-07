@@ -15,5 +15,13 @@ public enum IntelligenceCategory
     Market = 6,
     Opportunity = 7,
     Efficiency = 8,
-    Situation = 9
+    Situation = 9,
+    DepthChart = 10,
+    Practice = 11,
+    Transaction = 12,
+    Suspension = 13,
+    Contract = 14,
+    GameEnvironment = 15,
+    TeamChemistry = 16,
+    General = 17
 }

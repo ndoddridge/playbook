@@ -13,5 +13,9 @@ public interface INewsProvider
 
     IReadOnlyList<NewsArticle> GetForPlayer(Guid playerId, int count = 8);
 
+    NewsArticle? GetById(Guid articleId);
+
+    IReadOnlyList<NewsArticle> GetByIds(IEnumerable<Guid> articleIds);
+
     Task RefreshAsync(CancellationToken cancellationToken = default);
 }

@@ -52,6 +52,11 @@ public sealed class MockIntelligenceService : IIntelligenceService
             .ThenByDescending(f => f.Confidence)
             .ToList();
 
+    public void Refresh()
+    {
+        // Static mock catalog — nothing to refresh.
+    }
+
     public PlayerIntelligence? GetPlayerIntelligence(Guid playerId)
     {
         var facts = GetFactsForPlayer(playerId);

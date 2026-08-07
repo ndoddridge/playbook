@@ -59,6 +59,19 @@ public sealed class NewsProvider : INewsProvider
             .ToList();
     }
 
+    public NewsArticle? GetById(Guid articleId)
+    {
+        EnsureLoaded();
+        return _articles.FirstOrDefault(a => a.Id == articleId);
+    }
+
+    public IReadOnlyList<NewsArticle> GetByIds(IEnumerable<Guid> articleIds)
+    {
+        EnsureLoaded();
+        var set = articleIds.ToHashSet();
+        return _articles.Where(a => set.Contains(a.Id)).ToList();
+    }
+
     public Task RefreshAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();

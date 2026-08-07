@@ -1,3 +1,4 @@
+using Playbook.Application.Intelligence;
 using Playbook.Application.Intelligence.Interfaces;
 using Playbook.Application.Leagues;
 using Playbook.Application.News;
@@ -39,14 +40,22 @@ public static class DependencyInjection
 
         RegisterPlayerData(services);
         RegisterNews(services);
+        RegisterIntelligence(services);
 
         services.AddSingleton<IPlayerContextService, MockPlayerContextService>();
         services.AddSingleton<ILeagueService, MockLeagueService>();
         services.AddSingleton<IRecommendationService, MockRecommendationService>();
-        services.AddSingleton<IIntelligenceService, MockIntelligenceService>();
 
         services.AddHostedService<DataRefreshBackgroundService>();
         return services;
+    }
+
+    private static void RegisterIntelligence(IServiceCollection services)
+    {
+        services.AddSingleton<IntelligenceSyncStatus>();
+        services.AddSingleton<IIntelligenceSyncStatus>(sp => sp.GetRequiredService<IntelligenceSyncStatus>());
+        services.AddSingleton<IIntelligenceAnalyzer, IntelligenceAnalyzer>();
+        services.AddSingleton<IIntelligenceService, IntelligenceService>();
     }
 
     private static void RegisterPlayerData(IServiceCollection services)

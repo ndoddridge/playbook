@@ -19,6 +19,14 @@ public static class IntelligencePresentation
         IntelligenceCategory.Opportunity => "Opportunity",
         IntelligenceCategory.Efficiency => "Efficiency",
         IntelligenceCategory.Situation => "Situation",
+        IntelligenceCategory.DepthChart => "Depth Chart",
+        IntelligenceCategory.Practice => "Practice",
+        IntelligenceCategory.Transaction => "Transactions",
+        IntelligenceCategory.Suspension => "Suspension",
+        IntelligenceCategory.Contract => "Contract",
+        IntelligenceCategory.GameEnvironment => "Game Environment",
+        IntelligenceCategory.TeamChemistry => "Team Chemistry",
+        IntelligenceCategory.General => "General",
         _ => category.ToString()
     };
 
@@ -53,6 +61,11 @@ public static class IntelligencePresentation
         IntelligenceSource.News => "News",
         _ => source.ToString()
     };
+
+    public static string Reason(IntelligenceFact fact) =>
+        fact.SupportingEvidence.FirstOrDefault(e => e.StartsWith("Reason:", StringComparison.OrdinalIgnoreCase))
+            ?.Replace("Reason: ", "", StringComparison.OrdinalIgnoreCase)
+        ?? fact.Description;
 
     public static string RelativeTime(DateTimeOffset created)
     {

@@ -18,4 +18,9 @@ public interface IIntelligenceService
     PlayerIntelligence? GetPlayerIntelligence(Guid playerId);
 
     IReadOnlyList<IntelligenceFact> GetFactsForPlayer(Guid playerId);
+
+    /// <summary>
+    /// Re-runs analysis against the current news + player catalogs.
+    /// </summary>
+    void Refresh();
 }

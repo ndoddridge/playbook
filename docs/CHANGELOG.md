@@ -2,6 +2,25 @@
 
 All notable project changes are recorded here.
 
+## [Unreleased] — Intelligence Engine V1
+
+### Added
+
+- Rule-based `IntelligenceAnalyzer` turning `NewsArticle` + player catalog into deterministic `IntelligenceFact`s
+- Live `IntelligenceService` replacing mock-as-default for the app pipeline
+- Categories expanded: Depth Chart, Practice, Transaction, Suspension, Contract, Game Environment, Team Chemistry, General
+- `RelatedNewsArticleIds` on facts for explainability / source links
+- Dashboard **Top Intelligence** (replaces Latest Football News)
+- Player Overlay Intelligence tab: summary, recent facts, confidence/importance, supporting articles + links
+- Developer Monitor: Articles Processed, Facts Generated, Analyzer Runtime, Last Analysis Time
+- Background refresh now re-runs intelligence after news updates
+
+### Architecture notes
+
+- Deterministic: same news + players ⇒ same fact ids/outputs
+- Explainable: every fact cites rule id, matched phrase, and source article
+- No ML/LLMs — heuristics only; future ML can replace the analyzer behind `IIntelligenceAnalyzer`
+
 ## [Unreleased] — Live News Provider
 
 ### Added

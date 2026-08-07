@@ -1,29 +1,33 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Playbook.Application.Intelligence.Interfaces;
 using Playbook.Application.News;
 using Playbook.Application.Players;
 
 namespace Playbook.Infrastructure.Hosting;
 
 /// <summary>
-/// Periodically refreshes player and news catalogs. Each refresh is logged separately.
+/// Periodically refreshes player data, news, and intelligence. Each step is logged separately.
 /// </summary>
 public sealed class DataRefreshBackgroundService : BackgroundService
 {
     private readonly IPlayerService _players;
     private readonly INewsProvider _news;
+    private readonly IIntelligenceService _intelligence;
     private readonly BackgroundRefreshOptions _options;
     private readonly ILogger<DataRefreshBackgroundService> _logger;
 
     public DataRefreshBackgroundService(
         IPlayerService players,
         INewsProvider news,
+        IIntelligenceService intelligence,
         IOptions<BackgroundRefreshOptions> options,
         ILogger<DataRefreshBackgroundService> logger)
     {
         _players = players;
         _news = news;
+        _intelligence = intelligence;
         _options = options.Value;
         _logger = logger;
     }
@@ -53,6 +57,7 @@ public sealed class DataRefreshBackgroundService : BackgroundService
         {
             RefreshPlayers();
             await RefreshNewsAsync(stoppingToken).ConfigureAwait(false);
+            RefreshIntelligence();
 
             try
             {
@@ -91,6 +96,19 @@ public sealed class DataRefreshBackgroundService : BackgroundService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Background refresh: news data update failed");
+        }
+    }
+
+    private void RefreshIntelligence()
+    {
+        try
+        {
+            _intelligence.Refresh();
+            _logger.LogInformation("Background refresh: intelligence analysis updated successfully");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Background refresh: intelligence analysis failed");
         }
     }
 }

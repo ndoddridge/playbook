@@ -253,11 +253,48 @@ Live ESPN articles are mapped into `NewsArticle`. Athlete names from ESPN catego
 
 ### Future Intelligence integration
 
-The Intelligence Engine should consume `INewsProvider` (or a future `INewsIntelligenceAdapter`) to turn articles into `IntelligenceFact` / signals. Do not parse ESPN (or any wire format) inside Intelligence — only consume normalized `NewsArticle` values.
+The Intelligence Engine consumes `INewsProvider` (normalized `NewsArticle` values) plus the player catalog. Do not parse ESPN (or any wire format) inside Intelligence.
+
+## Intelligence Engine (V1)
+
+Playbook's first reasoning layer. It transforms raw news into actionable **football** intelligence — not fantasy recommendations.
+
+### Pipeline
+
+```
+NewsArticle (INewsProvider) + Player catalog
+        │
+        ▼
+ IntelligenceAnalyzer (deterministic rules)
+        │
+        ▼
+ IntelligenceFact (+ RelatedNewsArticleIds)
+        │
+        ▼
+ IIntelligenceService → Dashboard / Player Overlay
+```
+
+### Analyzer / rule engine
+
+`IntelligenceAnalyzer` applies ordered, explainable keyword heuristics (injury, usage, transactions, suspensions, practice, coaching, weather, etc.). Each match emits an `IntelligenceFact` with:
+
+- Category, importance, confidence
+- Supporting evidence: rule id, matched phrase, reason
+- Related news article id(s) and optional player/team links
+
+Given the same articles and players, outputs are identical (deterministic Guids).
+
+### Explainability
+
+UI surfaces reasons and source article links. Downstream engines should treat facts as evidence packages, not opaque scores.
+
+### Future ML integration
+
+Replace or augment `IIntelligenceAnalyzer` with an ML model that still emits `IntelligenceFact` with article references and human-readable evidence. Keep `IIntelligenceService` and UI unchanged.
 
 ### Background refresh
 
-`DataRefreshBackgroundService` refreshes player data and news on an interval (`BackgroundRefresh`). Each refresh is logged separately so failures in one catalog do not block the other.
+`DataRefreshBackgroundService` refreshes players, then news, then intelligence — each step logged separately.
 
 ## Player Overlay
 

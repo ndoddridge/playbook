@@ -1,4 +1,5 @@
 @page "/"
+@using Playbook.Application.Intelligence
 @using Playbook.Application.Intelligence.Interfaces
 @using Playbook.Application.Leagues
 @using Playbook.Application.News
@@ -6,14 +7,13 @@
 @using Playbook.Application.Players.Data
 @using Playbook.Application.Recommendations
 @using Playbook.Core.Intelligence.Models
-@using Playbook.Core.News
 @using Playbook.Core.Recommendations
 @using Playbook.Web.Features.Intelligence.Models
 @using Playbook.Web.Features.League.Models
-@using Playbook.Web.Features.News.Models
 @inject ILeagueState LeagueState
 @inject IRecommendationService RecommendationService
 @inject IIntelligenceService IntelligenceService
+@inject IIntelligenceSyncStatus IntelligenceSyncStatus
 @inject IPlayerService PlayerService
 @inject IPlayerDataSyncStatus PlayerDataSyncStatus
 @inject INewsProvider NewsProvider
@@ -146,6 +146,22 @@
                     <span class="pb-meta-label">News Provider Response Time</span>
                     <span class="pb-meta-value">@newsResponseTime</span>
                 </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Articles Processed</span>
+                    <span class="pb-meta-value">@intelArticlesProcessed</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Intelligence Facts Generated</span>
+                    <span class="pb-meta-value">@intelFactsGenerated</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Analyzer Runtime</span>
+                    <span class="pb-meta-value">@intelRuntime</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Last Analysis Time</span>
+                    <span class="pb-meta-value">@intelLastAnalysis</span>
+                </div>
             </div>
         </article>
 
@@ -163,39 +179,38 @@
         </article>
     </section>
 
-    <section class="dashboard-news" aria-labelledby="latest-news-heading">
-        <h2 id="latest-news-heading" class="pb-card__title">Latest Football News</h2>
+    <section class="dashboard-news" aria-labelledby="top-intelligence-heading">
+        <h2 id="top-intelligence-heading" class="pb-card__title">Top Intelligence</h2>
         <div class="news-stack">
-            @foreach (var article in latestNews)
+            @foreach (var fact in topFacts)
             {
                 <article class="news-item">
                     <div class="news-item__header">
-                        <h3 class="news-item__title">
-                            @if (!string.IsNullOrWhiteSpace(article.Url))
-                            {
-                                <a href="@article.Url" target="_blank" rel="noopener noreferrer">@article.Title</a>
-                            }
-                            else
-                            {
-                                @article.Title
-                            }
-                        </h3>
-                        <span class="@NewsPresentation.PriorityClass(article.Priority)">
-                            @NewsPresentation.Priority(article.Priority)
+                        <h3 class="news-item__title">@fact.Title</h3>
+                        <span class="@IntelligencePresentation.ImportanceClass(fact.Importance)">
+                            @IntelligencePresentation.Importance(fact.Importance)
                         </span>
                     </div>
-                    <p class="news-item__summary">@article.Summary</p>
+                    <p class="news-item__summary">@IntelligencePresentation.Reason(fact)</p>
                     <div class="news-item__meta">
-                        <span>@NewsPresentation.RelativeTime(article.Published)</span>
-                        <span>@article.Source</span>
-                        <span>@article.Published.LocalDateTime.ToString("h:mm tt")</span>
+                        <span>@fact.Confidence% confidence</span>
+                        <span>@IntelligencePresentation.Category(fact.Category)</span>
+                        @if (fact.RelatedPlayerId is Guid playerId)
+                        {
+                            <span>@ResolvePlayerName(playerId)</span>
+                        }
+                        else if (!string.IsNullOrWhiteSpace(fact.RelatedTeamId))
+                        {
+                            <span>@fact.RelatedTeamId</span>
+                        }
+                        <span>@IntelligencePresentation.RelativeTime(fact.Created)</span>
                     </div>
                 </article>
             }
 
-            @if (latestNews.Count == 0)
+            @if (topFacts.Count == 0)
             {
-                <p class="player-section__muted">No news articles loaded.</p>
+                <p class="player-section__muted">No intelligence facts generated yet.</p>
             }
         </div>
     </section>
@@ -211,32 +226,6 @@
     </section>
 
     <div class="dashboard-grid dashboard-grid--stack">
-        <article class="pb-card dashboard-intel">
-            <h2 class="pb-card__title">Football Intelligence</h2>
-            <div class="pb-card__body">
-                @foreach (var fact in topFacts)
-                {
-                    <article class="intel-fact">
-                        <div class="intel-fact__header">
-                            <h3 class="intel-fact__title">@fact.Title</h3>
-                            <div class="intel-fact__meta">
-                                <span class="@IntelligencePresentation.ImportanceClass(fact.Importance)">
-                                    @IntelligencePresentation.Importance(fact.Importance)
-                                </span>
-                                <span>@fact.Confidence%</span>
-                                <span>@IntelligencePresentation.RelativeTime(fact.Created)</span>
-                            </div>
-                        </div>
-                        <p class="intel-fact__description">@fact.Description</p>
-                        <div class="intel-fact__meta">
-                            <span>@IntelligencePresentation.Category(fact.Category)</span>
-                            <span>@IntelligencePresentation.Source(fact.Source)</span>
-                        </div>
-                    </article>
-                }
-            </div>
-        </article>
-
         <article class="pb-card">
             <h2 class="pb-card__title">Trending Players</h2>
             <div class="pb-card__body">
@@ -255,7 +244,6 @@
 @code {
     private IReadOnlyList<Recommendation> recommendations = [];
     private IReadOnlyList<IntelligenceFact> topFacts = [];
-    private IReadOnlyList<NewsArticle> latestNews = [];
 
     private string buildStatus = "Succeeded";
     private string backgroundServiceStatus = "Running";
@@ -288,6 +276,10 @@
     private string newsArticleCount = "—";
     private string newsLastSync = "—";
     private string newsResponseTime = "—";
+    private string intelArticlesProcessed = "—";
+    private string intelFactsGenerated = "—";
+    private string intelRuntime = "—";
+    private string intelLastAnalysis = "—";
 
     protected override void OnInitialized()
     {
@@ -348,7 +340,7 @@
             ? (PlayerDataSyncStatus.UsedFallback ? "Fallback Active" : "Active")
             : "Standby";
 
-        latestNews = NewsProvider.GetLatest(8);
+        _ = NewsProvider.GetLatest(1);
         newsProviderActive = NewsSyncStatus.UsedFallback
             ? $"{NewsSyncStatus.ActiveProvider} (fallback)"
             : NewsSyncStatus.ActiveProvider;
@@ -358,9 +350,19 @@
             ? $"{newsElapsed.TotalMilliseconds:0} ms"
             : "—";
 
+        topFacts = IntelligenceService.GetTopFacts(8);
+        intelArticlesProcessed = IntelligenceSyncStatus.ArticlesProcessed.ToString();
+        intelFactsGenerated = IntelligenceSyncStatus.FactsGenerated.ToString();
+        intelRuntime = IntelligenceSyncStatus.AnalyzerRuntime is { } runtime
+            ? $"{runtime.TotalMilliseconds:0} ms"
+            : "—";
+        intelLastAnalysis = IntelligenceSyncStatus.LastAnalysisTime?.ToLocalTime().ToString("h:mm:ss tt") ?? "—";
+
         recommendations = RecommendationService.GetTopRecommendations();
-        topFacts = IntelligenceService.GetTopFacts(6);
     }
+
+    private string ResolvePlayerName(Guid playerId) =>
+        PlayerService.GetPlayer(playerId)?.FullName ?? "Linked player";
 
     private void OnLeagueChanged()
     {
