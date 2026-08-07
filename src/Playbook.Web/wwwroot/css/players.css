@@ -16,6 +16,10 @@
     overflow: hidden;
 }
 
+.player-explorer__list-panel--solo {
+    max-width: 36rem;
+}
+
 .player-search {
     display: flex;
     flex-direction: column;

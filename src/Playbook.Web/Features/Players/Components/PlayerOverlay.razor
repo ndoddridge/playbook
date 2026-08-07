@@ -1,0 +1,215 @@
+@using Playbook.Application.Players
+@using Playbook.Core.Leagues
+@using Playbook.Core.Players
+@inject IPlayerOverlayState Overlay
+@implements IDisposable
+
+@if (Overlay.IsOpen && Overlay.Context is { } context)
+{
+    var player = context.Player;
+
+    <div class="player-overlay" role="dialog" aria-modal="true" aria-label="@player.FullName">
+        <div class="player-overlay__backdrop" @onclick="Close"></div>
+
+        <div class="player-overlay__panel">
+            <header class="player-overlay__header">
+                <div class="player-overlay__identity">
+                    <div class="player-avatar player-avatar--lg" aria-hidden="true">
+                        @PlayerPresentation.Initials(player)
+                    </div>
+                    <div>
+                        <h2 class="player-overlay__name">@player.FullName</h2>
+                        <p class="player-overlay__meta">
+                            @PlayerPresentation.PositionLabel(player.Position) · @player.Team
+                            @if (player.JerseyNumber is int number)
+                            {
+                                <text> · #@number</text>
+                            }
+                            · @PlayerPresentation.StatusLabel(player.Status)
+                        </p>
+                        <p class="player-overlay__league">
+                            @(context.League?.Name ?? "No League Selected")
+                            · @FormatScoring(context.ScoringType)
+                        </p>
+                    </div>
+                </div>
+
+                <button type="button" class="player-overlay__close" aria-label="Close player overlay" @onclick="Close">
+                    ✕
+                </button>
+            </header>
+
+            <nav class="player-overlay__tabs" aria-label="Player sections">
+                @foreach (var tab in Tabs)
+                {
+                    <button type="button"
+                            class="player-overlay__tab @(activeTab == tab ? "is-active" : null)"
+                            @onclick="() => activeTab = tab">
+                        @tab
+                    </button>
+                }
+            </nav>
+
+            <div class="player-overlay__body">
+                @if (activeTab == "Overview")
+                {
+                    <section class="player-section">
+                        <h3 class="player-section__title">Overview</h3>
+                        <div class="player-profile__grid">
+                            <div class="player-stat">
+                                <span class="player-stat__label">Years Pro</span>
+                                <span class="player-stat__value">@(player.YearsPro?.ToString() ?? "—")</span>
+                            </div>
+                            <div class="player-stat">
+                                <span class="player-stat__label">College</span>
+                                <span class="player-stat__value">@(player.College ?? "—")</span>
+                            </div>
+                            <div class="player-stat">
+                                <span class="player-stat__label">Age</span>
+                                <span class="player-stat__value">@(player.Age?.ToString() ?? "—")</span>
+                            </div>
+                            <div class="player-stat">
+                                <span class="player-stat__label">Bye</span>
+                                <span class="player-stat__value">@(player.ByeWeek?.ToString() ?? "—")</span>
+                            </div>
+                        </div>
+                        @if (context.Profile?.Trend is { } trend)
+                        {
+                            <p class="player-section__text" style="margin-top:1rem;">
+                                @PlayerPresentation.TrendLabel(trend.Direction) — @trend.Label
+                            </p>
+                        }
+                    </section>
+                }
+                else if (activeTab == "Fantasy")
+                {
+                    <section class="player-section">
+                        <h3 class="player-section__title">Fantasy Context</h3>
+                        <div class="player-profile__grid">
+                            <div class="player-stat">
+                                <span class="player-stat__label">Weekly Projection</span>
+                                <span class="player-stat__value">@context.WeeklyProjection.ToString("0.0")</span>
+                            </div>
+                            <div class="player-stat">
+                                <span class="player-stat__label">ROS Rank</span>
+                                <span class="player-stat__value">#@context.RestOfSeasonRank</span>
+                            </div>
+                            <div class="player-stat">
+                                <span class="player-stat__label">Positional Rank</span>
+                                <span class="player-stat__value">@PlayerPresentation.PositionLabel(player.Position)@context.PositionalRank</span>
+                            </div>
+                            <div class="player-stat">
+                                <span class="player-stat__label">VORP</span>
+                                <span class="player-stat__value">@context.ValueOverReplacement.ToString("+0.0;-0.0")</span>
+                            </div>
+                            <div class="player-stat">
+                                <span class="player-stat__label">Confidence</span>
+                                <span class="player-stat__value">@context.Confidence%</span>
+                            </div>
+                        </div>
+                        <p class="player-section__text" style="margin-top:1rem;">@context.RecommendationSummary</p>
+                    </section>
+                }
+                else if (activeTab == "Career")
+                {
+                    <section class="player-section">
+                        <h3 class="player-section__title">Career</h3>
+                        @if (context.Profile?.CareerStats is { } career)
+                        {
+                            <div class="player-profile__grid">
+                                <div class="player-stat">
+                                    <span class="player-stat__label">Seasons</span>
+                                    <span class="player-stat__value">@career.Seasons</span>
+                                </div>
+                                <div class="player-stat">
+                                    <span class="player-stat__label">Games</span>
+                                    <span class="player-stat__value">@career.GamesPlayed</span>
+                                </div>
+                                <div class="player-stat">
+                                    <span class="player-stat__label">Fantasy Pts</span>
+                                    <span class="player-stat__value">@career.FantasyPoints.ToString("0.0")</span>
+                                </div>
+                            </div>
+                        }
+                        else
+                        {
+                            <p class="player-section__muted">Career details coming soon.</p>
+                        }
+                    </section>
+                }
+                else if (activeTab == "College")
+                {
+                    <section class="player-section">
+                        <h3 class="player-section__title">College</h3>
+                        @if (context.Profile?.CollegeStats is { } college)
+                        {
+                            <p class="player-section__text">@(college.School ?? "—")</p>
+                            @if (!string.IsNullOrWhiteSpace(college.NotableNote))
+                            {
+                                <p class="player-section__muted">@college.NotableNote</p>
+                            }
+                        }
+                        else
+                        {
+                            <p class="player-section__muted">College details coming soon.</p>
+                        }
+                    </section>
+                }
+                else
+                {
+                    <section class="player-section">
+                        <h3 class="player-section__title">Injuries</h3>
+                        @if (context.Profile?.InjuryHistory is { Count: > 0 } injuries)
+                        {
+                            <ul class="player-injury-list">
+                                @foreach (var injury in injuries)
+                                {
+                                    <li>
+                                        <strong>@injury.ReportedOn.ToString("MMM d, yyyy")</strong>
+                                        — @injury.Description (@injury.Status)
+                                    </li>
+                                }
+                            </ul>
+                        }
+                        else
+                        {
+                            <p class="player-section__muted">No injury records on file.</p>
+                        }
+                    </section>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private static readonly string[] Tabs = ["Overview", "Fantasy", "Career", "College", "Injuries"];
+    private string activeTab = "Overview";
+
+    protected override void OnInitialized()
+    {
+        Overlay.Changed += OnOverlayChanged;
+    }
+
+    private void OnOverlayChanged() => InvokeAsync(() =>
+    {
+        if (Overlay.IsOpen)
+        {
+            activeTab = "Overview";
+        }
+
+        StateHasChanged();
+    });
+
+    private void Close() => Overlay.Close();
+
+    private static string FormatScoring(ScoringType scoring) => scoring switch
+    {
+        ScoringType.Ppr => "PPR",
+        ScoringType.HalfPpr => "Half PPR",
+        ScoringType.Standard => "Standard",
+        _ => scoring.ToString()
+    };
+
+    public void Dispose() => Overlay.Changed -= OnOverlayChanged;
+}

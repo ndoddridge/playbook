@@ -167,3 +167,24 @@ The Player Engine is the football domain model — not an ingestion pipeline. Ev
 ### Future Data Engine integration
 
 The Data Engine will populate and refresh player records (stats, injuries, depth charts). Swap `MockPlayerService` for a Data-Engine-backed `IPlayerService` without changing Player Explorer or downstream recommendation engines that depend on `PlayerProfile`.
+
+## Player Overlay
+
+`PlayerOverlay` is the single reusable surface for player details. It opens above the current page (no navigation), hosted from `MainLayout`, so Dashboard, Player Explorer, and future features share one experience.
+
+### PlayerContext
+
+`PlayerContext` wraps a `Player` with league-aware fantasy fields: scoring type, weekly projection, ROS rank, positional rank, VORP, recommendation summary, and confidence. The overlay consumes `PlayerContext`, not raw `Player`.
+
+### League-aware player rendering
+
+`IPlayerOverlayState` keeps the selected player id. On league switch (`ILeagueState.Changed`), it refreshes context via `IPlayerContextService` so fantasy values update while the player stays selected. The app top bar stays above the overlay (z-index) so the league switcher remains usable without closing the player.
+
+### Contracts
+
+- `IPlayerContextService` / `MockPlayerContextService` — builds context (UI never calculates fantasy values)
+- `IPlayerOverlayState` / `PlayerOverlayState` — open/close/refresh
+
+### Future API replacement strategy
+
+Replace `MockPlayerContextService` with projection/value engines that still return `PlayerContext`. Keep `PlayerOverlay` and `IPlayerOverlayState` unchanged. Wire more surfaces through `RelatedPlayerId` / overlay open calls.

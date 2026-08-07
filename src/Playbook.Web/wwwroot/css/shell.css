@@ -107,7 +107,8 @@
     border-bottom: 1px solid var(--pb-color-border);
     background: var(--pb-color-topbar);
     backdrop-filter: blur(12px);
-    z-index: 20;
+    /* Above Player Overlay so league switching remains available while a player is open. */
+    z-index: 90;
 }
 
 .app-topbar__left,

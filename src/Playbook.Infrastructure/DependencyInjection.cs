@@ -19,6 +19,7 @@ public static class DependencyInjection
         services.AddSingleton<ILeagueService, MockLeagueService>();
         services.AddSingleton<IRecommendationService, MockRecommendationService>();
         services.AddSingleton<IPlayerService, MockPlayerService>();
+        services.AddSingleton<IPlayerContextService, MockPlayerContextService>();
         return services;
     }
 }

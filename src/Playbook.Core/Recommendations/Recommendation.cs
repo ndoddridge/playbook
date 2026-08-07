@@ -38,6 +38,11 @@ public sealed class Recommendation
     public required EngineType SourceEngine { get; init; }
 
     /// <summary>
+    /// Optional linked player for overlay navigation from recommendation surfaces.
+    /// </summary>
+    public Guid? RelatedPlayerId { get; init; }
+
+    /// <summary>
     /// Optional UI hint for initial expand state. Components may still manage expand locally.
     /// </summary>
     public bool IsExpanded { get; init; }

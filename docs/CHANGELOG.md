@@ -2,6 +2,23 @@
 
 All notable project changes are recorded here.
 
+## [Unreleased] — Player Overlay
+
+### Added
+
+- `PlayerContext` league-aware player view model
+- `IPlayerContextService` / `MockPlayerContextService`
+- `IPlayerOverlayState` / `PlayerOverlayState` with league-change refresh
+- Reusable `PlayerOverlay` component (Overview / Fantasy / Career / College / Injuries)
+- Player Explorer opens overlay without navigation
+- Decision Card titles open overlay via `Recommendation.RelatedPlayerId`
+
+### Architecture notes
+
+- Overlay is the single player detail surface across features
+- Fantasy values come only from `IPlayerContextService`
+- League switching updates contextual fantasy data while keeping the same player selected
+
 ## [Unreleased] — Player Engine Foundation
 
 ### Added

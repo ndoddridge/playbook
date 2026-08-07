@@ -2,259 +2,63 @@
 @using Playbook.Application.Players
 @using Playbook.Core.Players
 @inject IPlayerService PlayerService
+@inject IPlayerOverlayState PlayerOverlay
 
 <PageTitle>Player Explorer — Playbook</PageTitle>
 
 <section class="pb-page player-explorer">
     <header class="pb-page__header">
         <h1 class="pb-page__title">Player Explorer</h1>
-        <p class="pb-page__subtitle">Browse the mock player catalog. Profiles come from IPlayerService only.</p>
+        <p class="pb-page__subtitle">Search the catalog and open any player in the shared Player Overlay.</p>
     </header>
 
-    <div class="player-explorer__layout">
-        <aside class="player-explorer__list-panel">
-            <label class="player-search">
-                <span class="player-search__label">Search</span>
-                <input class="player-search__input"
-                       type="search"
-                       placeholder="Name, team, position, college…"
-                       value="@searchText"
-                       @oninput="OnSearchChanged" />
-            </label>
+    <div class="player-explorer__list-panel player-explorer__list-panel--solo">
+        <label class="player-search">
+            <span class="player-search__label">Search</span>
+            <input class="player-search__input"
+                   type="search"
+                   placeholder="Name, team, position, college…"
+                   value="@searchText"
+                   @oninput="OnSearchChanged" />
+        </label>
 
-            <div class="player-list" role="listbox" aria-label="Players">
-                @foreach (var player in filteredPlayers)
-                {
-                    var selected = player.Id == selectedPlayerId;
-                    <button type="button"
-                            class="player-list__item @(selected ? "is-selected" : null)"
-                            role="option"
-                            aria-selected="@selected"
-                            @onclick="() => SelectPlayer(player.Id)">
-                        <span class="player-avatar" aria-hidden="true">@PlayerPresentation.Initials(player)</span>
-                        <span class="player-list__body">
-                            <span class="player-list__name">@player.FullName</span>
-                            <span class="player-list__meta">
-                                @PlayerPresentation.PositionLabel(player.Position) · @player.Team · @PlayerPresentation.StatusLabel(player.Status)
-                            </span>
+        <div class="player-list" role="listbox" aria-label="Players">
+            @foreach (var player in filteredPlayers)
+            {
+                <button type="button"
+                        class="player-list__item"
+                        role="option"
+                        @onclick="() => PlayerOverlay.Open(player.Id)">
+                    <span class="player-avatar" aria-hidden="true">@PlayerPresentation.Initials(player)</span>
+                    <span class="player-list__body">
+                        <span class="player-list__name">@player.FullName</span>
+                        <span class="player-list__meta">
+                            @PlayerPresentation.PositionLabel(player.Position) · @player.Team · @PlayerPresentation.StatusLabel(player.Status)
                         </span>
-                    </button>
-                }
-
-                @if (filteredPlayers.Count == 0)
-                {
-                    <p class="player-list__empty">No players match that search.</p>
-                }
-            </div>
-        </aside>
-
-        <section class="player-explorer__profile-panel">
-            @if (selectedProfile is null)
-            {
-                <div class="player-profile player-profile--empty">
-                    <p>Select a player to view their profile.</p>
-                </div>
+                    </span>
+                </button>
             }
-            else
+
+            @if (filteredPlayers.Count == 0)
             {
-                var player = selectedProfile.Player;
-                <article class="player-profile">
-                    <header class="player-profile__header">
-                        <div class="player-avatar player-avatar--lg" aria-hidden="true">
-                            @PlayerPresentation.Initials(player)
-                        </div>
-                        <div>
-                            <h2 class="player-profile__name">@player.FullName</h2>
-                            <p class="player-profile__subtitle">
-                                @PlayerPresentation.PositionLabel(player.Position) · @player.Team
-                                @if (player.JerseyNumber is int number)
-                                {
-                                    <text> · #@number</text>
-                                }
-                            </p>
-                        </div>
-                    </header>
-
-                    <div class="player-profile__grid">
-                        <div class="player-stat">
-                            <span class="player-stat__label">Status</span>
-                            <span class="player-stat__value">@PlayerPresentation.StatusLabel(player.Status)</span>
-                        </div>
-                        <div class="player-stat">
-                            <span class="player-stat__label">Years Pro</span>
-                            <span class="player-stat__value">@(player.YearsPro?.ToString() ?? "—")</span>
-                        </div>
-                        <div class="player-stat">
-                            <span class="player-stat__label">College</span>
-                            <span class="player-stat__value">@(player.College ?? "—")</span>
-                        </div>
-                        <div class="player-stat">
-                            <span class="player-stat__label">Age</span>
-                            <span class="player-stat__value">@(player.Age?.ToString() ?? "—")</span>
-                        </div>
-                        <div class="player-stat">
-                            <span class="player-stat__label">Height / Weight</span>
-                            <span class="player-stat__value">
-                                @(player.Height ?? "—")
-                                @if (player.Weight is int weight)
-                                {
-                                    <text> / @weight lbs</text>
-                                }
-                            </span>
-                        </div>
-                        <div class="player-stat">
-                            <span class="player-stat__label">Bye Week</span>
-                            <span class="player-stat__value">@(player.ByeWeek?.ToString() ?? "—")</span>
-                        </div>
-                    </div>
-
-                    @if (selectedProfile.Trend is { } trend)
-                    {
-                        <section class="player-section">
-                            <h3 class="player-section__title">Trend</h3>
-                            <p class="player-section__text">
-                                @PlayerPresentation.TrendLabel(trend.Direction) — @trend.Label
-                            </p>
-                            @if (!string.IsNullOrWhiteSpace(trend.Detail))
-                            {
-                                <p class="player-section__muted">@trend.Detail</p>
-                            }
-                        </section>
-                    }
-
-                    @if (selectedProfile.SeasonStats is { } season)
-                    {
-                        <section class="player-section">
-                            <h3 class="player-section__title">@season.Season Season (mock)</h3>
-                            <div class="player-profile__grid">
-                                <div class="player-stat">
-                                    <span class="player-stat__label">Games</span>
-                                    <span class="player-stat__value">@season.GamesPlayed</span>
-                                </div>
-                                <div class="player-stat">
-                                    <span class="player-stat__label">Fantasy Pts</span>
-                                    <span class="player-stat__value">@season.FantasyPoints.ToString("0.0")</span>
-                                </div>
-                                @if (season.PassingYards > 0)
-                                {
-                                    <div class="player-stat">
-                                        <span class="player-stat__label">Pass Yds / TD</span>
-                                        <span class="player-stat__value">@season.PassingYards / @season.PassingTouchdowns</span>
-                                    </div>
-                                }
-                                @if (season.RushingYards > 0)
-                                {
-                                    <div class="player-stat">
-                                        <span class="player-stat__label">Rush Yds / TD</span>
-                                        <span class="player-stat__value">@season.RushingYards / @season.RushingTouchdowns</span>
-                                    </div>
-                                }
-                                @if (season.Receptions > 0)
-                                {
-                                    <div class="player-stat">
-                                        <span class="player-stat__label">Rec / Yds / TD</span>
-                                        <span class="player-stat__value">@season.Receptions / @season.ReceivingYards / @season.ReceivingTouchdowns</span>
-                                    </div>
-                                }
-                            </div>
-                        </section>
-                    }
-
-                    @if (selectedProfile.CareerStats is { } career)
-                    {
-                        <section class="player-section">
-                            <h3 class="player-section__title">Career (mock)</h3>
-                            <div class="player-profile__grid">
-                                <div class="player-stat">
-                                    <span class="player-stat__label">Seasons</span>
-                                    <span class="player-stat__value">@career.Seasons</span>
-                                </div>
-                                <div class="player-stat">
-                                    <span class="player-stat__label">Games</span>
-                                    <span class="player-stat__value">@career.GamesPlayed</span>
-                                </div>
-                                <div class="player-stat">
-                                    <span class="player-stat__label">Fantasy Pts</span>
-                                    <span class="player-stat__value">@career.FantasyPoints.ToString("0.0")</span>
-                                </div>
-                            </div>
-                        </section>
-                    }
-
-                    @if (selectedProfile.CollegeStats is { } college)
-                    {
-                        <section class="player-section">
-                            <h3 class="player-section__title">College</h3>
-                            <p class="player-section__text">@(college.School ?? "—")</p>
-                            @if (!string.IsNullOrWhiteSpace(college.NotableNote))
-                            {
-                                <p class="player-section__muted">@college.NotableNote</p>
-                            }
-                        </section>
-                    }
-
-                    <section class="player-section">
-                        <h3 class="player-section__title">Injury History</h3>
-                        @if (selectedProfile.InjuryHistory.Count == 0)
-                        {
-                            <p class="player-section__muted">No injury records on file.</p>
-                        }
-                        else
-                        {
-                            <ul class="player-injury-list">
-                                @foreach (var injury in selectedProfile.InjuryHistory)
-                                {
-                                    <li>
-                                        <strong>@injury.ReportedOn.ToString("MMM d, yyyy")</strong>
-                                        — @injury.Description (@injury.Status)
-                                    </li>
-                                }
-                            </ul>
-                        }
-                    </section>
-                </article>
+                <p class="player-list__empty">No players match that search.</p>
             }
-        </section>
+        </div>
     </div>
 </section>
 
 @code {
     private string searchText = string.Empty;
     private IReadOnlyList<Player> filteredPlayers = [];
-    private Guid? selectedPlayerId;
-    private PlayerProfile? selectedProfile;
 
     protected override void OnInitialized()
     {
         filteredPlayers = PlayerService.GetAllPlayers();
-        if (filteredPlayers.Count > 0)
-        {
-            SelectPlayer(filteredPlayers[0].Id);
-        }
     }
 
     private void OnSearchChanged(ChangeEventArgs args)
     {
         searchText = args.Value?.ToString() ?? string.Empty;
         filteredPlayers = PlayerService.SearchPlayers(searchText);
-
-        if (selectedPlayerId is Guid id && filteredPlayers.All(p => p.Id != id))
-        {
-            if (filteredPlayers.Count > 0)
-            {
-                SelectPlayer(filteredPlayers[0].Id);
-            }
-            else
-            {
-                selectedPlayerId = null;
-                selectedProfile = null;
-            }
-        }
-    }
-
-    private void SelectPlayer(Guid playerId)
-    {
-        selectedPlayerId = playerId;
-        selectedProfile = PlayerService.GetPlayerProfile(playerId);
     }
 }

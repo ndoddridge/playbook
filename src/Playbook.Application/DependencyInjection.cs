@@ -1,4 +1,5 @@
 using Playbook.Application.Leagues;
+using Playbook.Application.Players;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Playbook.Application;
@@ -11,6 +12,7 @@ public static class DependencyInjection
     public static IServiceCollection AddApplication(this IServiceCollection services)
     {
         services.AddSingleton<ILeagueState, LeagueStateService>();
+        services.AddSingleton<IPlayerOverlayState, PlayerOverlayState>();
         return services;
     }
 }

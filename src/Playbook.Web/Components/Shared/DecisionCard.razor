@@ -1,4 +1,6 @@
+@using Playbook.Application.Players
 @using Playbook.Core.Recommendations
+@inject IPlayerOverlayState PlayerOverlay
 
 <article class="decision-card @RecommendationPresentation.ActionCss(Recommendation.ActionType) @(expanded ? "is-expanded" : null)">
     <button type="button"
@@ -21,7 +23,21 @@
                 <span class="decision-confidence">@RecommendationPresentation.ConfidenceLabel(Recommendation.Confidence)</span>
             </div>
 
-            <h3 class="decision-card__title">@Recommendation.Title</h3>
+            <h3 class="decision-card__title">
+                @if (Recommendation.RelatedPlayerId is Guid playerId)
+                {
+                    <button type="button"
+                            class="player-link"
+                            @onclick="() => OpenPlayer(playerId)"
+                            @onclick:stopPropagation="true">
+                        @Recommendation.Title
+                    </button>
+                }
+                else
+                {
+                    @Recommendation.Title
+                }
+            </h3>
             <p class="decision-card__summary">@Recommendation.Summary</p>
 
             <div class="decision-card__meta">
@@ -98,4 +114,6 @@
     }
 
     private void Toggle() => expanded = !expanded;
+
+    private void OpenPlayer(Guid playerId) => PlayerOverlay.Open(playerId);
 }

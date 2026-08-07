@@ -42,6 +42,7 @@ public sealed class MockRecommendationService : IRecommendationService
                 FutureNotes = "Revisit if weather or inactive status changes before lock.",
                 LastUpdated = now.AddMinutes(-18),
                 SourceEngine = EngineType.Decision,
+                RelatedPlayerId = Guid.Parse("11111111-1111-1111-1111-111111111101"),
                 IsExpanded = false
             },
             new Recommendation
@@ -70,6 +71,7 @@ public sealed class MockRecommendationService : IRecommendationService
                 FutureNotes = "Convert to Start guidance if workload clears a sustained threshold.",
                 LastUpdated = now.AddHours(-2),
                 SourceEngine = EngineType.Projection,
+                RelatedPlayerId = Guid.Parse("11111111-1111-1111-1111-111111111104"),
                 IsExpanded = false
             },
             new Recommendation
@@ -98,6 +100,7 @@ public sealed class MockRecommendationService : IRecommendationService
                 FutureNotes = "Place claim only if bench flexibility remains after other adds.",
                 LastUpdated = now.AddHours(-5),
                 SourceEngine = EngineType.Waiver,
+                RelatedPlayerId = Guid.Parse("11111111-1111-1111-1111-111111111107"),
                 IsExpanded = false
             },
             new Recommendation
@@ -126,6 +129,7 @@ public sealed class MockRecommendationService : IRecommendationService
                 FutureNotes = "Do not force if counteroffers erode positional balance.",
                 LastUpdated = now.AddHours(-9),
                 SourceEngine = EngineType.Trade,
+                RelatedPlayerId = Guid.Parse("11111111-1111-1111-1111-111111111110"),
                 IsExpanded = false
             },
             new Recommendation
@@ -153,6 +157,7 @@ public sealed class MockRecommendationService : IRecommendationService
                 FutureNotes = "Flip back to Start if late news improves route volume.",
                 LastUpdated = now.AddHours(-11),
                 SourceEngine = EngineType.Decision,
+                RelatedPlayerId = Guid.Parse("11111111-1111-1111-1111-111111111108"),
                 IsExpanded = false
             }
         ];

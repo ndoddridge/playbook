@@ -1,4 +1,5 @@
 @inherits LayoutComponentBase
+@using Playbook.Web.Features.Players.Components
 
 <div class="app-shell @(sidebarOpen ? "sidebar-open" : null)">
     <div class="app-sidebar-backdrop" @onclick="CloseSidebar"></div>
@@ -22,6 +23,8 @@
         @Body
     </main>
 </div>
+
+<PlayerOverlay />
 
 <div id="blazor-error-ui" data-nosnippet>
     An unhandled error has occurred.

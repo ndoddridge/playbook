@@ -4,6 +4,7 @@
 @import url("css/league.css");
 @import url("css/decision-card.css");
 @import url("css/players.css");
+@import url("css/player-overlay.css");
 
 h1:focus {
     outline: none;
