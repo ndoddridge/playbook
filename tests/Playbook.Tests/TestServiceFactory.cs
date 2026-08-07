@@ -1,5 +1,5 @@
 using Playbook.Application;
-using Playbook.Application.Players;
+using Playbook.Application.News;
 using Playbook.Application.Players.Data;
 using Playbook.Infrastructure;
 using Microsoft.Extensions.Configuration;
@@ -11,14 +11,23 @@ namespace Playbook.Tests;
 internal static class TestServiceFactory
 {
     public static ServiceProvider CreateProvider(
-        PlayerDataProviderKind provider = PlayerDataProviderKind.Mock,
-        string? sleeperBaseUrl = null)
+        PlayerDataProviderKind playerProvider = PlayerDataProviderKind.Mock,
+        NewsProviderKind newsProvider = NewsProviderKind.Mock,
+        string? sleeperBaseUrl = null,
+        string? espnBaseUrl = null,
+        bool backgroundRefreshEnabled = false)
     {
         var values = new Dictionary<string, string?>
         {
-            ["PlayerData:Provider"] = provider.ToString(),
+            ["PlayerData:Provider"] = playerProvider.ToString(),
             ["PlayerData:Sleeper:BaseUrl"] = sleeperBaseUrl ?? "https://api.sleeper.app/v1/",
-            ["PlayerData:Sleeper:TimeoutSeconds"] = "15"
+            ["PlayerData:Sleeper:TimeoutSeconds"] = "15",
+            ["News:Provider"] = newsProvider.ToString(),
+            ["News:Espn:BaseUrl"] = espnBaseUrl ?? "https://site.api.espn.com/apis/site/v2/",
+            ["News:Espn:Limit"] = "20",
+            ["News:Espn:TimeoutSeconds"] = "15",
+            ["BackgroundRefresh:Enabled"] = backgroundRefreshEnabled ? "true" : "false",
+            ["BackgroundRefresh:IntervalMinutes"] = "15"
         };
 
         var configuration = new ConfigurationBuilder()

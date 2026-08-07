@@ -2,6 +2,25 @@
 
 All notable project changes are recorded here.
 
+## [Unreleased] — Live News Provider
+
+### Added
+
+- Normalized `NewsArticle` domain model (title, summary, published, source, url, related players/teams, category, priority)
+- `INewsProvider` application facade with `MockNewsProvider` + `LiveNewsProvider` (ESPN NFL news API)
+- Configuration switch `News:Provider` = `Mock` | `Live` with automatic mock fallback
+- Dashboard **Latest Football News** card (headline, published time, source, priority, summary)
+- Player Overlay **Recent News** section (name-mapped related articles when the API lacks Playbook ids)
+- `INewsSyncStatus` Developer Monitor fields: Current News Provider, Articles Loaded, Last News Sync, response time
+- `DataRefreshBackgroundService` periodically refreshes player data and news (logged separately)
+
+### Architecture notes
+
+- UI consumes only `INewsProvider` — never Mock/Live concretions
+- Live source: ESPN public site API; auth slot reserved in `News:Espn:ApiKey`
+- Athlete names from ESPN are mapped onto Playbook `Player` ids via catalog name matching
+- Not the Intelligence Engine — news is normalized input Intelligence will consume later
+
 ## [Unreleased] — Live Player Data Provider
 
 ### Added

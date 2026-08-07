@@ -1,0 +1,80 @@
+/* Latest Football News dashboard + overlay news */
+
+.dashboard-news {
+    margin-bottom: var(--pb-space-8);
+}
+
+.dashboard-news .pb-card__title {
+    margin-bottom: var(--pb-space-4);
+}
+
+.news-stack {
+    display: flex;
+    flex-direction: column;
+    gap: var(--pb-space-3);
+}
+
+.news-item {
+    display: flex;
+    flex-direction: column;
+    gap: var(--pb-space-2);
+    padding: var(--pb-space-4);
+    border: 1px solid var(--pb-color-border);
+    border-radius: var(--pb-radius-md);
+    background: var(--pb-color-bg-elevated);
+}
+
+.news-item__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--pb-space-3);
+}
+
+.news-item__title {
+    margin: 0;
+    font-size: var(--pb-text-md);
+    font-weight: var(--pb-weight-semibold);
+    line-height: var(--pb-leading-tight);
+}
+
+.news-item__title a {
+    color: var(--pb-color-text);
+}
+
+.news-item__title a:hover {
+    color: var(--pb-color-accent);
+}
+
+.news-item__summary {
+    margin: 0;
+    color: var(--pb-color-text-secondary);
+    font-size: var(--pb-text-sm);
+}
+
+.news-item__meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--pb-space-2) var(--pb-space-3);
+    font-size: var(--pb-text-xs);
+    color: var(--pb-color-text-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.player-news-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--pb-space-3);
+    margin-top: var(--pb-space-3);
+}
+
+.player-news-list .news-item {
+    padding: var(--pb-space-3);
+}
+
+@media (max-width: 640px) {
+    .news-item__header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+}

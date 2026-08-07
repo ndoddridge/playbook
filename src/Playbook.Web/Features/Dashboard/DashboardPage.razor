@@ -1,18 +1,23 @@
 @page "/"
 @using Playbook.Application.Intelligence.Interfaces
 @using Playbook.Application.Leagues
+@using Playbook.Application.News
 @using Playbook.Application.Players
 @using Playbook.Application.Players.Data
 @using Playbook.Application.Recommendations
 @using Playbook.Core.Intelligence.Models
+@using Playbook.Core.News
 @using Playbook.Core.Recommendations
 @using Playbook.Web.Features.Intelligence.Models
 @using Playbook.Web.Features.League.Models
+@using Playbook.Web.Features.News.Models
 @inject ILeagueState LeagueState
 @inject IRecommendationService RecommendationService
 @inject IIntelligenceService IntelligenceService
 @inject IPlayerService PlayerService
 @inject IPlayerDataSyncStatus PlayerDataSyncStatus
+@inject INewsProvider NewsProvider
+@inject INewsSyncStatus NewsSyncStatus
 @implements IDisposable
 
 <PageTitle>Dashboard — Playbook</PageTitle>
@@ -125,6 +130,22 @@
                     <span class="pb-meta-label">Last Error</span>
                     <span class="pb-meta-value">@providerLastError</span>
                 </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Current News Provider</span>
+                    <span class="pb-meta-value pb-meta-value--live">@newsProviderActive</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Articles Loaded</span>
+                    <span class="pb-meta-value">@newsArticleCount</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Last News Sync</span>
+                    <span class="pb-meta-value">@newsLastSync</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">News Provider Response Time</span>
+                    <span class="pb-meta-value">@newsResponseTime</span>
+                </div>
             </div>
         </article>
 
@@ -140,6 +161,43 @@
                 }
             </div>
         </article>
+    </section>
+
+    <section class="dashboard-news" aria-labelledby="latest-news-heading">
+        <h2 id="latest-news-heading" class="pb-card__title">Latest Football News</h2>
+        <div class="news-stack">
+            @foreach (var article in latestNews)
+            {
+                <article class="news-item">
+                    <div class="news-item__header">
+                        <h3 class="news-item__title">
+                            @if (!string.IsNullOrWhiteSpace(article.Url))
+                            {
+                                <a href="@article.Url" target="_blank" rel="noopener noreferrer">@article.Title</a>
+                            }
+                            else
+                            {
+                                @article.Title
+                            }
+                        </h3>
+                        <span class="@NewsPresentation.PriorityClass(article.Priority)">
+                            @NewsPresentation.Priority(article.Priority)
+                        </span>
+                    </div>
+                    <p class="news-item__summary">@article.Summary</p>
+                    <div class="news-item__meta">
+                        <span>@NewsPresentation.RelativeTime(article.Published)</span>
+                        <span>@article.Source</span>
+                        <span>@article.Published.LocalDateTime.ToString("h:mm tt")</span>
+                    </div>
+                </article>
+            }
+
+            @if (latestNews.Count == 0)
+            {
+                <p class="player-section__muted">No news articles loaded.</p>
+            }
+        </div>
     </section>
 
     <section class="dashboard-decisions" aria-labelledby="top-decisions-heading">
@@ -197,6 +255,7 @@
 @code {
     private IReadOnlyList<Recommendation> recommendations = [];
     private IReadOnlyList<IntelligenceFact> topFacts = [];
+    private IReadOnlyList<NewsArticle> latestNews = [];
 
     private string buildStatus = "Succeeded";
     private string backgroundServiceStatus = "Running";
@@ -225,6 +284,10 @@
     private string providerPlayerCount = "—";
     private string providerResponseTime = "—";
     private string providerLastError = "None";
+    private string newsProviderActive = "—";
+    private string newsArticleCount = "—";
+    private string newsLastSync = "—";
+    private string newsResponseTime = "—";
 
     protected override void OnInitialized()
     {
@@ -245,7 +308,6 @@
                 RefreshDashboard();
                 await InvokeAsync(StateHasChanged);
 
-                // Brief CSS flash so the heartbeat visibly updates on each refresh.
                 heartbeatTick = true;
                 await InvokeAsync(StateHasChanged);
                 await Task.Delay(450, cancellationToken);
@@ -269,7 +331,6 @@
         buildStatus = "Succeeded";
         backgroundServiceStatus = "Running";
 
-        // Touch the player service so sync status reflects the active provider.
         _ = PlayerService.GetAllPlayers();
         providerConfigured = PlayerDataSyncStatus.ConfiguredProvider;
         providerActive = PlayerDataSyncStatus.UsedFallback
@@ -286,6 +347,16 @@
         mockDataStatus = PlayerDataSyncStatus.ActiveProvider.Equals("Mock", StringComparison.OrdinalIgnoreCase)
             ? (PlayerDataSyncStatus.UsedFallback ? "Fallback Active" : "Active")
             : "Standby";
+
+        latestNews = NewsProvider.GetLatest(8);
+        newsProviderActive = NewsSyncStatus.UsedFallback
+            ? $"{NewsSyncStatus.ActiveProvider} (fallback)"
+            : NewsSyncStatus.ActiveProvider;
+        newsArticleCount = NewsSyncStatus.ArticlesLoaded.ToString();
+        newsLastSync = NewsSyncStatus.LastSuccessfulSync?.ToLocalTime().ToString("h:mm:ss tt") ?? "—";
+        newsResponseTime = NewsSyncStatus.ProviderResponseTime is { } newsElapsed
+            ? $"{newsElapsed.TotalMilliseconds:0} ms"
+            : "—";
 
         recommendations = RecommendationService.GetTopRecommendations();
         topFacts = IntelligenceService.GetTopFacts(6);

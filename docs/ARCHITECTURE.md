@@ -222,6 +222,43 @@ Add new providers the same way: define an application interface (e.g. `INewsData
 
 The Data Engine will eventually orchestrate these providers and refresh `Player` / `PlayerProfile` without changing Player Explorer or overlay UI.
 
+## News Provider
+
+The News Provider retrieves and normalizes football news. It is **not** the Intelligence Engine — it only supplies structured `NewsArticle` objects.
+
+### Contracts
+
+- `NewsArticle` — Id, Title, Summary, Published, Source, Url, RelatedPlayerIds, RelatedTeamIds, Category, Priority
+- `INewsProvider` — UI-facing API (`GetLatest`, `GetForPlayer`, `RefreshAsync`)
+- `INewsSource` — Mock/Live adapters
+- `INewsSyncStatus` — developer telemetry
+
+### Provider flow
+
+```
+appsettings News:Provider = Mock | Live
+        │
+        ▼
+   INewsProvider (NewsProvider facade)
+        │
+        ├── MockNewsProvider
+        └── LiveNewsProvider (ESPN)
+        │
+        └── on live failure ──► MockNewsProvider
+```
+
+### Normalization
+
+Live ESPN articles are mapped into `NewsArticle`. Athlete names from ESPN categories are resolved to Playbook player Guids by matching against the loaded player catalog when the API does not provide Playbook ids.
+
+### Future Intelligence integration
+
+The Intelligence Engine should consume `INewsProvider` (or a future `INewsIntelligenceAdapter`) to turn articles into `IntelligenceFact` / signals. Do not parse ESPN (or any wire format) inside Intelligence — only consume normalized `NewsArticle` values.
+
+### Background refresh
+
+`DataRefreshBackgroundService` refreshes player data and news on an interval (`BackgroundRefresh`). Each refresh is logged separately so failures in one catalog do not block the other.
+
 ## Player Overlay
 
 `PlayerOverlay` is the single reusable surface for player details. It opens above the current page (no navigation), hosted from `MainLayout`, so Dashboard, Player Explorer, and future features share one experience.

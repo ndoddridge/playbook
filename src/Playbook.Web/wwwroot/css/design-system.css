@@ -243,6 +243,11 @@ ul, ol {
     color: var(--pb-color-warning);
 }
 
+.pb-badge--danger {
+    background: rgba(224, 107, 107, 0.16);
+    color: var(--pb-color-danger);
+}
+
 .pb-dot {
     width: 0.45rem;
     height: 0.45rem;

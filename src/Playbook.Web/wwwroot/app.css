@@ -7,6 +7,7 @@
 @import url("css/player-overlay.css");
 @import url("css/intelligence.css");
 @import url("css/dev-status.css");
+@import url("css/news.css");
 
 h1:focus {
     outline: none;

@@ -88,6 +88,15 @@ public sealed class PlayerService : IPlayerService
             .ToList();
     }
 
+    public void Refresh()
+    {
+        lock (_gate)
+        {
+            LoadCatalog();
+            _loaded = true;
+        }
+    }
+
     private void EnsureLoaded()
     {
         if (_loaded)

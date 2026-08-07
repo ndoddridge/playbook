@@ -34,6 +34,7 @@ playbook.sln
 | Backend | ASP.NET Core (.NET 9) |
 | UI | Blazor Server (Interactive Server render mode) |
 | Player data | Mock catalog **or** live Sleeper NFL API (config switch) |
+| News | Mock wire **or** live ESPN NFL news (config switch) |
 | Data access | Entity Framework Core + PostgreSQL *(planned; not wired yet)* |
 | Testing | xUnit |
 
@@ -74,6 +75,29 @@ In `src/Playbook.Web/appsettings.json`:
 
 `ApiKey` is reserved for future authenticated providers; public Sleeper reads do not require it.
 
+## News source (Mock vs Live)
+
+Football news is normalized into `NewsArticle` objects behind `INewsProvider`.
+
+```json
+"News": {
+  "Provider": "Live",
+  "Espn": {
+    "BaseUrl": "https://site.api.espn.com/apis/site/v2/",
+    "ApiKey": "",
+    "Limit": 40,
+    "TimeoutSeconds": 30
+  }
+}
+```
+
+| `Provider` | Behavior |
+| --- | --- |
+| `Mock` | In-memory headlines with related player names |
+| `Live` | ESPN NFL news. On failure, **automatically falls back to Mock** |
+
+Background refresh (`BackgroundRefresh`) periodically reloads players and news and logs each update separately.
+
 ## Run the web app
 
 ```bash
@@ -90,7 +114,7 @@ dotnet test
 
 ## Current Status
 
-**Developer monitoring dashboard** plus **first live data integration**: `IPlayerDataProvider` with Mock/Live switch, Sleeper-backed `LivePlayerDataProvider`, graceful mock fallback, and provider telemetry on the dashboard. UI still consumes `IPlayerService` only.
+**Developer monitoring**, **live Sleeper players**, and **live ESPN news** behind provider abstractions with Mock/Live config switches, graceful fallback, and background refresh. UI consumes `IPlayerService` / `INewsProvider` only.
 
 ## Documentation
 
