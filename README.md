@@ -1,4 +1,4 @@
-# Football Genie
+# Playbook
 
 A professional football intelligence platform focused on maximizing fantasy football decision making through explainable recommendations.
 
@@ -6,21 +6,21 @@ This is **not** a fantasy football website. It is a personal football intelligen
 
 ## Vision
 
-When you open Football Genie, you should immediately understand the highest-impact decisions you can make. The system will continuously ingest football information, convert it into recommendations, explain every recommendation clearly, and adapt as news breaks or rosters change.
+When you open Playbook, you should immediately understand the highest-impact decisions you can make. The system will continuously ingest football information, convert it into recommendations, explain every recommendation clearly, and adapt as news breaks or rosters change.
 
 See [docs/DESIGN.md](docs/DESIGN.md) for the full product design.
 
 ## Solution Structure
 
 ```
-football-genie.sln
+playbook.sln
 ├── src
-│   ├── FootballGenie.Web            # Blazor Server UI
-│   ├── FootballGenie.Core           # Domain models & abstractions
-│   ├── FootballGenie.Application    # Use cases & application services
-│   └── FootballGenie.Infrastructure # Persistence & external adapters (stubbed)
+│   ├── Playbook.Web            # Blazor Server UI
+│   ├── Playbook.Core           # Domain models & abstractions
+│   ├── Playbook.Application    # Use cases & application services
+│   └── Playbook.Infrastructure # Persistence & external adapters (stubbed)
 ├── tests
-│   └── FootballGenie.Tests          # xUnit tests
+│   └── Playbook.Tests          # xUnit tests
 └── docs
     ├── DESIGN.md
     ├── ARCHITECTURE.md
@@ -44,7 +44,7 @@ football-genie.sln
 
 ```bash
 git clone <repository-url>
-cd football-genie
+cd playbook
 dotnet restore
 dotnet build
 ```
@@ -52,7 +52,7 @@ dotnet build
 ## Run the web app
 
 ```bash
-dotnet run --project src/FootballGenie.Web
+dotnet run --project src/Playbook.Web
 ```
 
 Then open the URL shown in the console (typically `https://localhost:7xxx`).
@@ -65,10 +65,11 @@ dotnet test
 
 ## Current Status
 
-**Foundation only.** The solution builds, DI composition is in place, and the Blazor home page confirms the app is ready. No database, APIs, or fantasy logic have been implemented yet.
+**Application shell complete under the Playbook brand.** The solution builds with layered projects, DI composition, and a Blazor shell (sidebar, top bar, dashboard + placeholder feature pages). No database, APIs, or fantasy logic have been implemented yet.
 
 ## Documentation
 
 - [Design](docs/DESIGN.md) — product vision, pages, and engines
 - [Architecture](docs/ARCHITECTURE.md) — layered structure and future engine pipeline
 - [Development Rules](docs/DEVELOPMENT_RULES.md) — engineering standards for this repo
+- [Changelog](docs/CHANGELOG.md) — notable project changes

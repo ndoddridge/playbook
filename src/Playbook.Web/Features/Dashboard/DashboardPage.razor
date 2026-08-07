@@ -1,0 +1,100 @@
+@page "/"
+
+<PageTitle>Dashboard — Playbook</PageTitle>
+
+<section class="pb-page">
+    <header class="pb-page__header">
+        <h1 class="pb-page__title">Dashboard</h1>
+        <p class="pb-page__subtitle">Highest-priority signals at a glance. Mock data only.</p>
+    </header>
+
+    <div class="dashboard-grid">
+        <article class="pb-card">
+            <h2 class="pb-card__title">Latest NFL News</h2>
+            <div class="pb-card__body">
+                @foreach (var item in News)
+                {
+                    <div class="pb-meta-row">
+                        <span class="pb-meta-label">@item.Headline</span>
+                        <span class="pb-meta-value">@item.When</span>
+                    </div>
+                }
+            </div>
+        </article>
+
+        <article class="pb-card">
+            <h2 class="pb-card__title">Top Decisions</h2>
+            <div class="pb-card__body">
+                @foreach (var item in Decisions)
+                {
+                    <div class="pb-meta-row">
+                        <span class="pb-meta-label">@item.Action</span>
+                        <span class="pb-badge pb-badge--accent">@item.Confidence</span>
+                    </div>
+                }
+            </div>
+        </article>
+
+        <article class="pb-card">
+            <h2 class="pb-card__title">Trending Players</h2>
+            <div class="pb-card__body">
+                @foreach (var item in Trending)
+                {
+                    <div class="pb-meta-row">
+                        <span class="pb-meta-label">@item.Name</span>
+                        <span class="pb-meta-value">@item.Trend</span>
+                    </div>
+                }
+            </div>
+        </article>
+
+        <article class="pb-card">
+            <h2 class="pb-card__title">System Status</h2>
+            <div class="pb-card__body">
+                @foreach (var item in SystemStatus)
+                {
+                    <div class="pb-meta-row">
+                        <span class="pb-meta-label">@item.Component</span>
+                        <span class="pb-badge">@item.Status</span>
+                    </div>
+                }
+            </div>
+        </article>
+    </div>
+</section>
+
+@code {
+    private static readonly NewsItem[] News =
+    [
+        new("Practice report: WR limited in walkthrough", "2h ago"),
+        new("Depth chart shuffle at RB room", "5h ago"),
+        new("Weather upgrade for Sunday night slate", "8h ago")
+    ];
+
+    private static readonly DecisionItem[] Decisions =
+    [
+        new("Start flex upside over safe floor", "92%"),
+        new("Hold lottery ticket on waivers", "81%"),
+        new("Avoid panic drop after quiet week", "74%")
+    ];
+
+    private static readonly TrendingItem[] Trending =
+    [
+        new("Jordan Love", "↑ Usage"),
+        new("Brian Thomas Jr.", "↑ Targets"),
+        new("Bucky Irving", "↑ Snap share")
+    ];
+
+    private static readonly StatusItem[] SystemStatus =
+    [
+        new("Data Engine", "Stubbed"),
+        new("News Engine", "Stubbed"),
+        new("Decision Engine", "Offline"),
+        new("Application Shell", "Ready")
+    ];
+
+    private sealed record NewsItem(string Headline, string When);
+    private sealed record DecisionItem(string Action, string Confidence);
+    private sealed record TrendingItem(string Name, string Trend);
+    private sealed record StatusItem(string Component, string Status);
+}

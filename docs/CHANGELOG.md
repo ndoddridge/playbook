@@ -2,6 +2,16 @@
 
 All notable project changes are recorded here.
 
+## [Unreleased] — Rebrand to Playbook
+
+### Changed
+
+- Official product and solution name renamed from Football Genie to **Playbook**
+- Solution file renamed to `playbook.sln`
+- Projects and namespaces renamed: `Playbook.Core`, `Playbook.Application`, `Playbook.Infrastructure`, `Playbook.Web`, `Playbook.Tests`
+- UI branding, page titles, docs, and design-system CSS token prefix (`--pb-*`) updated to Playbook
+- Git remote points to `https://github.com/ndoddridge/playbook.git`
+
 ## [Unreleased] — Application Shell
 
 ### Added
@@ -14,35 +24,35 @@ All notable project changes are recorded here.
 - Dashboard page with four mock cards: Latest NFL News, Top Decisions, Trending Players, System Status
 - Placeholder feature pages (Coming Soon) for My Teams, Quick Picks, Draft Assistant, Player Explorer, Replay Lab, and Settings
 - Shared `ComingSoonPage` component for consistent placeholder pages
-- Feature folder structure under `src/FootballGenie.Web/Features/`
+- Feature folder structure under `src/Playbook.Web/Features/`
 
 ### Files created
 
-- `src/FootballGenie.Web/wwwroot/css/design-system.css`
-- `src/FootballGenie.Web/wwwroot/css/shell.css`
-- `src/FootballGenie.Web/Components/Layout/NavMenu.razor`
-- `src/FootballGenie.Web/Components/Layout/TopBar.razor`
-- `src/FootballGenie.Web/Components/Shared/ComingSoonPage.razor`
-- `src/FootballGenie.Web/Features/_Imports.razor`
-- `src/FootballGenie.Web/Features/Dashboard/DashboardPage.razor`
-- `src/FootballGenie.Web/Features/MyTeams/MyTeamsPage.razor`
-- `src/FootballGenie.Web/Features/QuickPicks/QuickPicksPage.razor`
-- `src/FootballGenie.Web/Features/DraftAssistant/DraftAssistantPage.razor`
-- `src/FootballGenie.Web/Features/PlayerExplorer/PlayerExplorerPage.razor`
-- `src/FootballGenie.Web/Features/ReplayLab/ReplayLabPage.razor`
-- `src/FootballGenie.Web/Features/Settings/SettingsPage.razor`
+- `src/Playbook.Web/wwwroot/css/design-system.css`
+- `src/Playbook.Web/wwwroot/css/shell.css`
+- `src/Playbook.Web/Components/Layout/NavMenu.razor`
+- `src/Playbook.Web/Components/Layout/TopBar.razor`
+- `src/Playbook.Web/Components/Shared/ComingSoonPage.razor`
+- `src/Playbook.Web/Features/_Imports.razor`
+- `src/Playbook.Web/Features/Dashboard/DashboardPage.razor`
+- `src/Playbook.Web/Features/MyTeams/MyTeamsPage.razor`
+- `src/Playbook.Web/Features/QuickPicks/QuickPicksPage.razor`
+- `src/Playbook.Web/Features/DraftAssistant/DraftAssistantPage.razor`
+- `src/Playbook.Web/Features/PlayerExplorer/PlayerExplorerPage.razor`
+- `src/Playbook.Web/Features/ReplayLab/ReplayLabPage.razor`
+- `src/Playbook.Web/Features/Settings/SettingsPage.razor`
 - `docs/CHANGELOG.md`
 
 ### Files modified
 
-- `src/FootballGenie.Web/wwwroot/app.css` — imports fonts, design system, and shell styles
-- `src/FootballGenie.Web/Components/Layout/MainLayout.razor` — shell composition (sidebar / top bar / main)
-- `src/FootballGenie.Web/Components/Layout/MainLayout.razor.css` — error UI aligned to design tokens
-- `src/FootballGenie.Web/Components/_Imports.razor` — shared usings for layout and features
+- `src/Playbook.Web/wwwroot/app.css` — imports fonts, design system, and shell styles
+- `src/Playbook.Web/Components/Layout/MainLayout.razor` — shell composition (sidebar / top bar / main)
+- `src/Playbook.Web/Components/Layout/MainLayout.razor.css` — error UI aligned to design tokens
+- `src/Playbook.Web/Components/_Imports.razor` — shared usings for layout and features
 
 ### Files removed
 
-- `src/FootballGenie.Web/Components/Pages/Home.razor` — replaced by `Features/Dashboard/DashboardPage.razor`
+- `src/Playbook.Web/Components/Pages/Home.razor` — replaced by `Features/Dashboard/DashboardPage.razor`
 
 ### Architectural decisions
 

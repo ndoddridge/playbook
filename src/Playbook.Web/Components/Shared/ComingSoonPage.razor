@@ -1,0 +1,19 @@
+<section class="pb-page">
+    <header class="pb-page__header">
+        <h1 class="pb-page__title">@Title</h1>
+        @if (!string.IsNullOrWhiteSpace(Subtitle))
+        {
+            <p class="pb-page__subtitle">@Subtitle</p>
+        }
+    </header>
+
+    <div class="pb-coming-soon">Coming Soon</div>
+</section>
+
+@code {
+    [Parameter, EditorRequired]
+    public string Title { get; set; } = string.Empty;
+
+    [Parameter]
+    public string? Subtitle { get; set; }
+}

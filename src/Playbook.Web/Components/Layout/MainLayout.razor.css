@@ -1,0 +1,26 @@
+#blazor-error-ui {
+    background: var(--pb-color-surface);
+    border-top: 1px solid var(--pb-color-border);
+    bottom: 0;
+    box-shadow: var(--pb-shadow-md);
+    color: var(--pb-color-text);
+    display: none;
+    left: 0;
+    padding: 0.75rem 1.25rem;
+    position: fixed;
+    width: 100%;
+    z-index: 1000;
+}
+
+#blazor-error-ui .dismiss {
+    cursor: pointer;
+    position: absolute;
+    right: 0.75rem;
+    top: 0.55rem;
+    color: var(--pb-color-text-muted);
+}
+
+#blazor-error-ui .reload {
+    color: var(--pb-color-accent);
+    margin-left: 0.5rem;
+}

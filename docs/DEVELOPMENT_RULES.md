@@ -1,6 +1,6 @@
 # Development Rules
 
-These rules keep Football Genie professional, maintainable, and easy to evolve.
+These rules keep Playbook professional, maintainable, and easy to evolve.
 
 ## 1. Single responsibility
 

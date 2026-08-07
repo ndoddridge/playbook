@@ -2,24 +2,24 @@
 
 ## Overview
 
-Football Genie uses a clean, layered architecture so domain logic, application workflows, infrastructure adapters, and the UI stay independently testable and easy to evolve.
+Playbook uses a clean, layered architecture so domain logic, application workflows, infrastructure adapters, and the UI stay independently testable and easy to evolve.
 
 ```
-FootballGenie.Web
+Playbook.Web
         │
-        ├──► FootballGenie.Application
+        ├──► Playbook.Application
         │            │
-        │            └──► FootballGenie.Core
+        │            └──► Playbook.Core
         │
-        └──► FootballGenie.Infrastructure
+        └──► Playbook.Infrastructure
                      │
-                     ├──► FootballGenie.Application
-                     └──► FootballGenie.Core
+                     ├──► Playbook.Application
+                     └──► Playbook.Core
 ```
 
 ## Layers
 
-### FootballGenie.Core
+### Playbook.Core
 
 The innermost layer. Contains domain models, value objects, enums, and abstractions that define what the system *is*.
 
@@ -27,7 +27,7 @@ The innermost layer. Contains domain models, value objects, enums, and abstracti
 - No framework concerns
 - Engine contracts and shared domain types belong here
 
-### FootballGenie.Application
+### Playbook.Application
 
 Orchestrates use cases. Coordinates domain behavior without knowing how data is stored or how the UI renders.
 
@@ -35,7 +35,7 @@ Orchestrates use cases. Coordinates domain behavior without knowing how data is 
 - Registers application services through dependency injection
 - Houses application ports (interfaces) that Infrastructure implements
 
-### FootballGenie.Infrastructure
+### Playbook.Infrastructure
 
 Implements technical details: persistence, external APIs, file systems, and other adapters.
 
@@ -43,7 +43,7 @@ Implements technical details: persistence, external APIs, file systems, and othe
 - Entity Framework Core and PostgreSQL will live here when introduced
 - Database wiring is intentionally stubbed in the foundation
 
-### FootballGenie.Web
+### Playbook.Web
 
 Blazor Server presentation layer.
 
@@ -51,7 +51,7 @@ Blazor Server presentation layer.
 - Composes the DI container at startup
 - Remains thin: UI concerns only; no business logic
 
-### FootballGenie.Tests
+### Playbook.Tests
 
 xUnit test project referencing Core, Application, and Infrastructure so each layer can be verified in isolation or together.
 

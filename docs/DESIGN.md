@@ -1,8 +1,8 @@
-# Fantasy Decision Engine (Working Design Doc v1)
+# Playbook — Design Doc v1
 
 ## Vision
 
-Build a fast, intelligent fantasy football decision engine whose sole purpose is maximizing the user's chances of winning. It should prioritize concise, actionable recommendations over raw data while remaining fully explainable. Every recommendation should adapt in real time as new information arrives or the user makes roster changes.
+**Playbook** is a fast, intelligent fantasy football decision engine whose sole purpose is maximizing the user's chances of winning. It should prioritize concise, actionable recommendations over raw data while remaining fully explainable. Every recommendation should adapt in real time as new information arrives or the user makes roster changes.
 
 This is **not** a fantasy football website. It is a personal football intelligence platform.
 
@@ -530,4 +530,4 @@ Browser extension
 
 # Guiding Goal
 
-When the user opens the application, they should immediately understand the highest-impact decisions they can make to improve their chances of winning. The application should continuously ingest football information, convert it into actionable recommendations, explain every recommendation clearly, and automatically adapt whenever news breaks or the user changes their roster. Over time, the same intelligence engine should expand beyond fantasy football into a general football prediction platform while remaining grounded in transparent, testable, and verifiable decision making.
+When the user opens Playbook, they should immediately understand the highest-impact decisions they can make to improve their chances of winning. The application should continuously ingest football information, convert it into actionable recommendations, explain every recommendation clearly, and automatically adapt whenever news breaks or the user changes their roster. Over time, the same intelligence engine should expand beyond fantasy football into a general football prediction platform while remaining grounded in transparent, testable, and verifiable decision making.
