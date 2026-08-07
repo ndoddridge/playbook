@@ -1,5 +1,6 @@
 @page "/"
 @using Playbook.Application.Leagues
+@using Playbook.Core.Decisions
 @using Playbook.Web.Features.League.Models
 @inject ILeagueState LeagueState
 @implements IDisposable
@@ -47,6 +48,16 @@
         }
     </header>
 
+    <section class="dashboard-decisions" aria-labelledby="top-decisions-heading">
+        <h2 id="top-decisions-heading" class="pb-card__title">Top Decisions</h2>
+        <div class="decision-stack">
+            @foreach (var decision in MockDecisions)
+            {
+                <DecisionCard Decision="decision" />
+            }
+        </div>
+    </section>
+
     <div class="dashboard-grid">
         <article class="pb-card">
             <h2 class="pb-card__title">Latest NFL News</h2>
@@ -56,19 +67,6 @@
                     <div class="pb-meta-row">
                         <span class="pb-meta-label">@item.Headline</span>
                         <span class="pb-meta-value">@item.When</span>
-                    </div>
-                }
-            </div>
-        </article>
-
-        <article class="pb-card">
-            <h2 class="pb-card__title">Top Decisions</h2>
-            <div class="pb-card__body">
-                @foreach (var item in Decisions)
-                {
-                    <div class="pb-meta-row">
-                        <span class="pb-meta-label">@item.Action</span>
-                        <span class="pb-badge pb-badge--accent">@item.Confidence</span>
                     </div>
                 }
             </div>
@@ -112,18 +110,141 @@
 
     public void Dispose() => LeagueState.Changed -= OnLeagueChanged;
 
+    private static readonly DateTimeOffset Now = new(2026, 8, 7, 14, 30, 0, TimeSpan.FromHours(-7));
+
+    private static readonly Decision[] MockDecisions =
+    [
+        new()
+        {
+            ActionType = DecisionActionType.Start,
+            Title = "Start Jayden Daniels",
+            Confidence = 91,
+            Priority = DecisionPriority.Critical,
+            Impact = "+6.3% Win Probability",
+            Status = DecisionStatus.Active,
+            Summary = "Elevated weekly outlook with a favorable matchup and clean supporting cast.",
+            Category = "Lineup",
+            Timestamp = Now.AddMinutes(-18),
+            Reasoning = "Projected edge comes from pace, red-zone opportunity, and opponent pass efficiency allowed.",
+            SupportingSignals =
+            [
+                "Opponent allows top-8 QB fantasy points per game",
+                "Projected game script supports multi-score environment",
+                "No practice limitations reported"
+            ],
+            Evidence =
+            [
+                "Mock projection: 21.4 expected points",
+                "Mock floor/ceiling: 14.1 / 29.8"
+            ],
+            FutureNotes = "Revisit if weather or inactive status changes before lock."
+        },
+        new()
+        {
+            ActionType = DecisionActionType.Hold,
+            Title = "Hold Bucky Irving",
+            Confidence = 84,
+            Priority = DecisionPriority.High,
+            Impact = "League Winning Potential",
+            Status = DecisionStatus.Watching,
+            Summary = "Short-term noise should not override rising opportunity and role trajectory.",
+            Category = "Roster",
+            Timestamp = Now.AddHours(-2),
+            Reasoning = "Usage trend and efficiency markers remain constructive despite a quieter recent outing.",
+            SupportingSignals =
+            [
+                "Snap share trending upward across recent weeks",
+                "Route participation supports receiving floor",
+                "Depth-chart competition remains manageable"
+            ],
+            Evidence =
+            [
+                "Mock rest-of-season rank holds inside starter range",
+                "Drop candidates elsewhere offer weaker upside"
+            ],
+            FutureNotes = "Convert to Start guidance if workload clears a sustained threshold."
+        },
+        new()
+        {
+            ActionType = DecisionActionType.Add,
+            Title = "Add Rookie RB before waivers",
+            Confidence = 78,
+            Priority = DecisionPriority.High,
+            Impact = "High Value",
+            Status = DecisionStatus.Active,
+            Summary = "Priority stash with expanding opportunity if the current lead back is limited.",
+            Category = "Waivers",
+            Timestamp = Now.AddHours(-5),
+            Reasoning = "Availability and role pathway create asymmetric upside relative to roster cost.",
+            SupportingSignals =
+            [
+                "Practice reports hint at increased early-down work",
+                "Waiver competition expected to rise by midweek",
+                "Roster construction has an open flex-capable slot"
+            ],
+            Evidence =
+            [
+                "Mock free-agent rank: top-5 available RB",
+                "Ownership still below breakout threshold"
+            ],
+            FutureNotes = "Place claim only if bench flexibility remains after other adds."
+        },
+        new()
+        {
+            ActionType = DecisionActionType.Trade,
+            Title = "Trade veteran WR while value high",
+            Confidence = 73,
+            Priority = DecisionPriority.Medium,
+            Impact = "Low Risk",
+            Status = DecisionStatus.Active,
+            Summary = "Sell-high window remains open before schedule difficulty increases.",
+            Category = "Trades",
+            Timestamp = Now.AddHours(-9),
+            Reasoning = "Market value currently outpaces rest-of-season projection confidence.",
+            SupportingSignals =
+            [
+                "Recent spike in target share may regress",
+                "Upcoming opponents rank well against perimeter receivers",
+                "Roster needs stronger RB contingency"
+            ],
+            Evidence =
+            [
+                "Mock trade market: +1 starter-tier RB package interest",
+                "Projection delta favors rebalancing toward rushers"
+            ],
+            FutureNotes = "Do not force if counteroffers erode positional balance."
+        },
+        new()
+        {
+            ActionType = DecisionActionType.Bench,
+            Title = "Bench boom/bust flex option",
+            Confidence = 69,
+            Priority = DecisionPriority.Low,
+            Impact = "Low Risk",
+            Status = DecisionStatus.Watching,
+            Summary = "Safer floor alternative reduces weekly volatility without sacrificing much ceiling.",
+            Category = "Lineup",
+            Timestamp = Now.AddHours(-11),
+            Reasoning = "Matchup and volatility profile favor the steadier flex candidate this week.",
+            SupportingSignals =
+            [
+                "Opponent suppresses explosive plays",
+                "Recent target concentration is unstable",
+                "Alternative flex has stronger floor projection"
+            ],
+            Evidence =
+            [
+                "Mock flex delta: -1.2 expected points, +18% floor retention"
+            ],
+            FutureNotes = "Flip back to Start if late news improves route volume."
+        }
+    ];
+
     private static readonly NewsItem[] News =
     [
         new("Practice report: WR limited in walkthrough", "2h ago"),
         new("Depth chart shuffle at RB room", "5h ago"),
         new("Weather upgrade for Sunday night slate", "8h ago")
-    ];
-
-    private static readonly DecisionItem[] Decisions =
-    [
-        new("Start flex upside over safe floor", "92%"),
-        new("Hold lottery ticket on waivers", "81%"),
-        new("Avoid panic drop after quiet week", "74%")
     ];
 
     private static readonly TrendingItem[] Trending =
@@ -142,7 +263,6 @@
     ];
 
     private sealed record NewsItem(string Headline, string When);
-    private sealed record DecisionItem(string Action, string Confidence);
     private sealed record TrendingItem(string Name, string Trend);
     private sealed record StatusItem(string Component, string Status);
 }

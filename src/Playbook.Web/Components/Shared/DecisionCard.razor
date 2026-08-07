@@ -1,0 +1,104 @@
+@using Playbook.Core.Decisions
+
+<article class="decision-card @DecisionPresentation.ActionCss(Decision.ActionType) @(expanded ? "is-expanded" : null)">
+    <button type="button"
+            class="decision-card__main"
+            aria-expanded="@expanded"
+            @onclick="Toggle">
+        <div class="decision-card__accent" aria-hidden="true"></div>
+
+        <div class="decision-card__body">
+            <div class="decision-card__topline">
+                <span class="decision-action">
+                    <span class="decision-action__icon" aria-hidden="true">@DecisionPresentation.ActionIcon(Decision.ActionType)</span>
+                    <span class="decision-action__label">@DecisionPresentation.ActionLabel(Decision.ActionType)</span>
+                </span>
+
+                <span class="decision-priority @DecisionPresentation.PriorityCss(Decision.Priority)">
+                    @DecisionPresentation.PriorityLabel(Decision.Priority)
+                </span>
+
+                <span class="decision-confidence">@DecisionPresentation.ConfidenceLabel(Decision.Confidence)</span>
+            </div>
+
+            <h3 class="decision-card__title">@Decision.Title</h3>
+            <p class="decision-card__summary">@Decision.Summary</p>
+
+            <div class="decision-card__meta">
+                <span class="decision-meta">
+                    <span class="decision-meta__label">Impact</span>
+                    <span class="decision-meta__value">@Decision.Impact</span>
+                </span>
+                <span class="decision-meta">
+                    <span class="decision-meta__label">Status</span>
+                    <span class="decision-meta__value">@DecisionPresentation.StatusLabel(Decision.Status)</span>
+                </span>
+                <span class="decision-meta">
+                    <span class="decision-meta__label">Category</span>
+                    <span class="decision-meta__value">@Decision.Category</span>
+                </span>
+                <span class="decision-meta">
+                    <span class="decision-meta__label">Updated</span>
+                    <span class="decision-meta__value">@DecisionPresentation.TimestampLabel(Decision.Timestamp)</span>
+                </span>
+            </div>
+        </div>
+
+        <span class="decision-card__chevron" aria-hidden="true">@(expanded ? "▴" : "▾")</span>
+    </button>
+
+    @if (expanded)
+    {
+        <div class="decision-card__details">
+            <section class="decision-detail">
+                <h4 class="decision-detail__title">Reasoning</h4>
+                <p class="decision-detail__text">@Decision.Reasoning</p>
+            </section>
+
+            <section class="decision-detail">
+                <h4 class="decision-detail__title">Supporting Signals</h4>
+                <ul class="decision-detail__list">
+                    @foreach (var signal in Decision.SupportingSignals)
+                    {
+                        <li>@signal</li>
+                    }
+                </ul>
+            </section>
+
+            <section class="decision-detail">
+                <h4 class="decision-detail__title">Evidence</h4>
+                <ul class="decision-detail__list">
+                    @foreach (var item in Decision.Evidence)
+                    {
+                        <li>@item</li>
+                    }
+                </ul>
+            </section>
+
+            @if (!string.IsNullOrWhiteSpace(Decision.FutureNotes))
+            {
+                <section class="decision-detail">
+                    <h4 class="decision-detail__title">Future Notes</h4>
+                    <p class="decision-detail__text">@Decision.FutureNotes</p>
+                </section>
+            }
+        </div>
+    }
+</article>
+
+@code {
+    [Parameter, EditorRequired]
+    public Decision Decision { get; set; } = default!;
+
+    [Parameter]
+    public bool InitiallyExpanded { get; set; }
+
+    private bool expanded;
+
+    protected override void OnInitialized()
+    {
+        expanded = InitiallyExpanded;
+    }
+
+    private void Toggle() => expanded = !expanded;
+}

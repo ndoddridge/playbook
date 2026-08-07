@@ -195,10 +195,22 @@
 }
 
 /* ---------- Dashboard grid ---------- */
+.dashboard-decisions {
+    margin-bottom: var(--pb-space-8);
+}
+
+.dashboard-decisions .pb-card__title {
+    margin-bottom: var(--pb-space-4);
+}
+
 .dashboard-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: var(--pb-space-5);
+}
+
+.dashboard-grid .pb-card:last-child {
+    grid-column: 1 / -1;
 }
 
 /* ---------- Responsive ---------- */

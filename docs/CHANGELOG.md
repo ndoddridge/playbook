@@ -2,6 +2,33 @@
 
 All notable project changes are recorded here.
 
+## [Unreleased] — Decision Card System
+
+### Added
+
+- Generic `Decision` model and enums (`DecisionActionType`, `DecisionPriority`, `DecisionStatus`) in Core
+- Reusable `DecisionCard` Blazor component with action styling, priority, confidence, impact, status, category, and timestamp
+- Expand/collapse details for reasoning, supporting signals, evidence, and future notes
+- Distinct icon + accent color per action type (Start, Bench, Trade, Waiver, Add, Drop, Hold, Draft, Quick Pick, News)
+- Dashboard Top Decisions section powered by 5 mock Decision Cards
+- Shared `DecisionPresentation` helpers for labels, icons, and CSS hooks
+
+### Decision Card component
+
+`DecisionCard` is a pure presentation component. It accepts a `Decision` object and renders it — it contains no fantasy-football knowledge and no recommendation logic. Engines will populate `Decision` instances later.
+
+### Expand/collapse behavior
+
+Clicking a card toggles an expanded details panel with smooth fade-up animation. Collapsed state shows action, title, summary, confidence, priority, impact, status, category, and timestamp.
+
+### Reuse strategy
+
+Use `DecisionCard` anywhere recommendations appear (Dashboard, My Teams, Draft Assistant, Quick Picks, Replay Lab). Pass different `Decision` payloads; keep styling centralized in `decision-card.css`.
+
+### Future recommendation engines
+
+Decision, Projection, and related engines should emit `Decision` objects (action, confidence, impact, explainable reasoning). Swap dashboard mock arrays for injected services without rewriting the card UI.
+
 ## [Unreleased] — League Management Foundation
 
 ### Added
