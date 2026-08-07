@@ -32,7 +32,7 @@ public class IntelligenceServiceTests
     }
 
     [Fact]
-    public void IntelligenceService_Generates_Facts_From_News()
+    public void Aggregator_Builds_Profiles_Deterministically()
     {
         using var provider = TestServiceFactory.CreateProvider(
             PlayerDataProviderKind.Mock,
@@ -40,14 +40,35 @@ public class IntelligenceServiceTests
         var intelligence = provider.GetRequiredService<IIntelligenceService>();
         var status = provider.GetRequiredService<IIntelligenceSyncStatus>();
 
-        var top = intelligence.GetTopFacts(5);
+        var first = intelligence.GetAllProfiles();
+        intelligence.Refresh();
+        var second = intelligence.GetAllProfiles();
+
+        Assert.NotEmpty(first);
+        Assert.Equal(first.Select(p => p.PlayerId), second.Select(p => p.PlayerId));
+        Assert.Equal(first.Select(p => p.OverallConfidence), second.Select(p => p.OverallConfidence));
+        Assert.True(status.ProfilesGenerated > 0);
+        Assert.True(status.FactsAggregated > 0);
+        Assert.True(status.AverageFactsPerPlayer > 0);
+        Assert.NotNull(status.AggregationRuntime);
+    }
+
+    [Fact]
+    public void IntelligenceService_Generates_Facts_And_Profiles_From_News()
+    {
+        using var provider = TestServiceFactory.CreateProvider(
+            PlayerDataProviderKind.Mock,
+            NewsProviderKind.Mock);
+        var intelligence = provider.GetRequiredService<IIntelligenceService>();
+        var status = provider.GetRequiredService<IIntelligenceSyncStatus>();
+
+        var top = intelligence.GetTopProfiles(5);
 
         Assert.NotEmpty(top);
         Assert.True(status.ArticlesProcessed > 0);
-        Assert.True(status.FactsGenerated >= top.Count);
-        Assert.NotNull(status.LastAnalysisTime);
-        Assert.NotNull(status.AnalyzerRuntime);
-        Assert.All(top, f => Assert.Equal(IntelligenceSource.News, f.Source));
+        Assert.True(status.FactsGenerated > 0);
+        Assert.All(top, p => Assert.NotEmpty(p.SupportingFacts));
+        Assert.All(top, p => Assert.False(string.IsNullOrWhiteSpace(p.Headline)));
     }
 
     [Fact]
@@ -72,5 +93,6 @@ public class IntelligenceServiceTests
         Assert.InRange(facts.Count, 75, 120);
         sut.Refresh();
         Assert.Equal(5, sut.GetTopFacts(5).Count);
+        Assert.NotNull(sut.GetPlayerProfile(Guid.Parse("11111111-1111-1111-1111-111111111101")));
     }
 }

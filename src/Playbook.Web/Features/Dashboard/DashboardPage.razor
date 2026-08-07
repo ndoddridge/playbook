@@ -162,6 +162,22 @@
                     <span class="pb-meta-label">Last Analysis Time</span>
                     <span class="pb-meta-value">@intelLastAnalysis</span>
                 </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Profiles Generated</span>
+                    <span class="pb-meta-value">@intelProfilesGenerated</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Facts Aggregated</span>
+                    <span class="pb-meta-value">@intelFactsAggregated</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Average Facts Per Player</span>
+                    <span class="pb-meta-value">@intelAvgFacts</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Aggregation Runtime</span>
+                    <span class="pb-meta-value">@intelAggRuntime</span>
+                </div>
             </div>
         </article>
 
@@ -180,37 +196,32 @@
     </section>
 
     <section class="dashboard-news" aria-labelledby="top-intelligence-heading">
-        <h2 id="top-intelligence-heading" class="pb-card__title">Top Intelligence</h2>
+        <h2 id="top-intelligence-heading" class="pb-card__title">Top Player Intelligence Changes</h2>
         <div class="news-stack">
-            @foreach (var fact in topFacts)
+            @foreach (var profile in topProfiles)
             {
                 <article class="news-item">
                     <div class="news-item__header">
-                        <h3 class="news-item__title">@fact.Title</h3>
-                        <span class="@IntelligencePresentation.ImportanceClass(fact.Importance)">
-                            @IntelligencePresentation.Importance(fact.Importance)
-                        </span>
+                        <h3 class="news-item__title">
+                            @IntelligencePresentation.ChangeArrow(profile.ChangeSignal)
+                            @ResolvePlayerName(profile.PlayerId)
+                        </h3>
+                        <span class="pb-badge pb-badge--accent">@profile.OverallConfidence%</span>
                     </div>
-                    <p class="news-item__summary">@IntelligencePresentation.Reason(fact)</p>
+                    <p class="news-item__summary">@profile.Headline</p>
                     <div class="news-item__meta">
-                        <span>@fact.Confidence% confidence</span>
-                        <span>@IntelligencePresentation.Category(fact.Category)</span>
-                        @if (fact.RelatedPlayerId is Guid playerId)
-                        {
-                            <span>@ResolvePlayerName(playerId)</span>
-                        }
-                        else if (!string.IsNullOrWhiteSpace(fact.RelatedTeamId))
-                        {
-                            <span>@fact.RelatedTeamId</span>
-                        }
-                        <span>@IntelligencePresentation.RelativeTime(fact.Created)</span>
+                        <span>Health @profile.HealthScore</span>
+                        <span>Opportunity @profile.OpportunityScore</span>
+                        <span>Usage @profile.UsageScore</span>
+                        <span>@IntelligencePresentation.TrendLabel(profile.TrendDirection)</span>
+                        <span>@IntelligencePresentation.RelativeTime(profile.LastUpdated)</span>
                     </div>
                 </article>
             }
 
-            @if (topFacts.Count == 0)
+            @if (topProfiles.Count == 0)
             {
-                <p class="player-section__muted">No intelligence facts generated yet.</p>
+                <p class="player-section__muted">No player intelligence profiles generated yet.</p>
             }
         </div>
     </section>
@@ -243,7 +254,7 @@
 
 @code {
     private IReadOnlyList<Recommendation> recommendations = [];
-    private IReadOnlyList<IntelligenceFact> topFacts = [];
+    private IReadOnlyList<PlayerIntelligenceProfile> topProfiles = [];
 
     private string buildStatus = "Succeeded";
     private string backgroundServiceStatus = "Running";
@@ -280,6 +291,10 @@
     private string intelFactsGenerated = "—";
     private string intelRuntime = "—";
     private string intelLastAnalysis = "—";
+    private string intelProfilesGenerated = "—";
+    private string intelFactsAggregated = "—";
+    private string intelAvgFacts = "—";
+    private string intelAggRuntime = "—";
 
     protected override void OnInitialized()
     {
@@ -350,13 +365,19 @@
             ? $"{newsElapsed.TotalMilliseconds:0} ms"
             : "—";
 
-        topFacts = IntelligenceService.GetTopFacts(8);
+        topProfiles = IntelligenceService.GetTopProfiles(8);
         intelArticlesProcessed = IntelligenceSyncStatus.ArticlesProcessed.ToString();
         intelFactsGenerated = IntelligenceSyncStatus.FactsGenerated.ToString();
         intelRuntime = IntelligenceSyncStatus.AnalyzerRuntime is { } runtime
             ? $"{runtime.TotalMilliseconds:0} ms"
             : "—";
         intelLastAnalysis = IntelligenceSyncStatus.LastAnalysisTime?.ToLocalTime().ToString("h:mm:ss tt") ?? "—";
+        intelProfilesGenerated = IntelligenceSyncStatus.ProfilesGenerated.ToString();
+        intelFactsAggregated = IntelligenceSyncStatus.FactsAggregated.ToString();
+        intelAvgFacts = IntelligenceSyncStatus.AverageFactsPerPlayer.ToString("0.00");
+        intelAggRuntime = IntelligenceSyncStatus.AggregationRuntime is { } aggRuntime
+            ? $"{aggRuntime.TotalMilliseconds:0} ms"
+            : "—";
 
         recommendations = RecommendationService.GetTopRecommendations();
     }

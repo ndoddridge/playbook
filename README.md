@@ -114,7 +114,7 @@ dotnet test
 
 ## Current Status
 
-**Developer monitoring**, **live Sleeper players**, **live ESPN news**, and **Intelligence Engine V1** (rule-based news → `IntelligenceFact`). UI consumes `IPlayerService` / `INewsProvider` / `IIntelligenceService` only.
+**Developer monitoring**, **live players/news**, **Intelligence Analyzer V1**, and **Player Intelligence Profiles** (aggregated evidence for downstream engines).
 
 ## Documentation
 

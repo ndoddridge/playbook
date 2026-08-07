@@ -292,6 +292,25 @@ UI surfaces reasons and source article links. Downstream engines should treat fa
 
 Replace or augment `IIntelligenceAnalyzer` with an ML model that still emits `IntelligenceFact` with article references and human-readable evidence. Keep `IIntelligenceService` and UI unchanged.
 
+### Aggregation pipeline
+
+```
+IntelligenceFact[]
+        │
+        ▼
+ IntelligenceAggregator
+   (group by player → dedupe → weighted scores)
+        │
+        ▼
+ PlayerIntelligenceProfile  ← canonical engine input
+```
+
+Weighted scoring starts at a configurable baseline (default 50) and applies rule deltas from `Intelligence:Scoring` (e.g. limited practice −25 health, full practice +15 health, starter language +20 opportunity). Importance and confidence scale each delta.
+
+### Future engine inputs
+
+Projection, Prediction, and Decision engines should take `PlayerIntelligenceProfile` as their football-intelligence input. Raw facts remain available for explainability UI only.
+
 ### Background refresh
 
 `DataRefreshBackgroundService` refreshes players, then news, then intelligence — each step logged separately.

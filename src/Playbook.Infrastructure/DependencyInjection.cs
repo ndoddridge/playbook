@@ -30,12 +30,14 @@ public static class DependencyInjection
             services.Configure<PlayerDataOptions>(configuration.GetSection(PlayerDataOptions.SectionName));
             services.Configure<NewsOptions>(configuration.GetSection(NewsOptions.SectionName));
             services.Configure<BackgroundRefreshOptions>(configuration.GetSection(BackgroundRefreshOptions.SectionName));
+            services.Configure<IntelligenceScoringOptions>(configuration.GetSection(IntelligenceScoringOptions.SectionName));
         }
         else
         {
             services.Configure<PlayerDataOptions>(_ => { });
             services.Configure<NewsOptions>(_ => { });
             services.Configure<BackgroundRefreshOptions>(_ => { });
+            services.Configure<IntelligenceScoringOptions>(_ => { });
         }
 
         RegisterPlayerData(services);
@@ -55,6 +57,7 @@ public static class DependencyInjection
         services.AddSingleton<IntelligenceSyncStatus>();
         services.AddSingleton<IIntelligenceSyncStatus>(sp => sp.GetRequiredService<IntelligenceSyncStatus>());
         services.AddSingleton<IIntelligenceAnalyzer, IntelligenceAnalyzer>();
+        services.AddSingleton<IIntelligenceAggregator, IntelligenceAggregator>();
         services.AddSingleton<IIntelligenceService, IntelligenceService>();
     }
 

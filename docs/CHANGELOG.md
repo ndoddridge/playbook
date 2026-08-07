@@ -2,6 +2,22 @@
 
 All notable project changes are recorded here.
 
+## [Unreleased] — Intelligence Aggregation (Player Profiles)
+
+### Added
+
+- `PlayerIntelligenceProfile` — canonical per-player intelligence (health, opportunity, usage, risk, momentum, trend, supporting facts)
+- `IIntelligenceAggregator` / `IntelligenceAggregator` — groups facts, dedupes, applies weighted scoring
+- Configurable scoring rules via `Intelligence:Scoring` (centralized deltas for limited practice, full practice, starter language, signings, etc.)
+- Dashboard **Top Player Intelligence Changes** (⬆/⬇ player + headline + confidence)
+- Player Overlay Intelligence tab shows full profile scores + category-grouped supporting facts
+- Developer Monitor: Profiles Generated, Facts Aggregated, Average Facts Per Player, Aggregation Runtime
+
+### Architecture notes
+
+- Future Projection / Prediction / Decision engines must consume `PlayerIntelligenceProfile`, not raw `IntelligenceFact`s
+- Aggregation is deterministic given the same fact set and scoring config
+
 ## [Unreleased] — Intelligence Engine V1
 
 ### Added

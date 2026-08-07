@@ -1,4 +1,5 @@
 using Playbook.Core.Intelligence.Models;
+using Playbook.Core.Players;
 
 namespace Playbook.Web.Features.Intelligence.Models;
 
@@ -66,6 +67,24 @@ public static class IntelligencePresentation
         fact.SupportingEvidence.FirstOrDefault(e => e.StartsWith("Reason:", StringComparison.OrdinalIgnoreCase))
             ?.Replace("Reason: ", "", StringComparison.OrdinalIgnoreCase)
         ?? fact.Description;
+
+    public static string ChangeArrow(IntelligenceChangeSignal signal) => signal switch
+    {
+        IntelligenceChangeSignal.OpportunityIncreasing => "⬆",
+        IntelligenceChangeSignal.UsageIncreasing => "⬆",
+        IntelligenceChangeSignal.HealthImproving => "⬆",
+        IntelligenceChangeSignal.HealthConcern => "⬇",
+        IntelligenceChangeSignal.OpportunityDecreasing => "⬇",
+        IntelligenceChangeSignal.ElevatedRisk => "⬇",
+        _ => "•"
+    };
+
+    public static string TrendLabel(TrendDirection trend) => trend switch
+    {
+        TrendDirection.Up => "Up",
+        TrendDirection.Down => "Down",
+        _ => "Flat"
+    };
 
     public static string RelativeTime(DateTimeOffset created)
     {
