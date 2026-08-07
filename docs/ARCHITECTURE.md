@@ -69,26 +69,50 @@ The product vision is a pipeline of single-responsibility engines. Each engine s
 ```
 Data Engine
     ↓
-News Engine
-    ↓
 Intelligence Engine
     ↓
 Projection Engine
     ↓
+Prediction Engine
+    ↓
 Decision Engine
+    ↓
+Recommendation Service
     ↓
 UI (Blazor)
 ```
 
 | Engine | Responsibility |
 | --- | --- |
-| **Data Engine** | Ingest and normalize NFL, fantasy, and market data |
-| **News Engine** | Monitor, deduplicate, and prioritize fantasy-relevant news |
-| **Intelligence Engine** | Maintain live player value and risk scores |
-| **Projection Engine** | Produce expected points, floor, ceiling, and confidence |
-| **Decision Engine** | Turn scores and context into lineup, waiver, trade, and draft recommendations |
+| **Data Engine** | Ingest and normalize NFL, injury, weather, tracking, and market inputs |
+| **Intelligence Engine** | Convert football information into structured `IntelligenceFact` / `PlayerIntelligence` — no fantasy scoring |
+| **Projection Engine** | Produce expected points, floor, ceiling, and confidence from intelligence + league context |
+| **Prediction Engine** | Estimate outcomes (win probability, game script, volume distributions) |
+| **Decision Engine** | Turn projections/predictions into actionable choices (start/sit, waiver, trade, draft) |
+| **Recommendation Service** | Aggregate, rank, and expose `Recommendation` objects to the UI |
 
 Engines communicate through clear contracts. Recommendations always carry action, confidence, impact, and reasoning so every suggestion remains explainable.
+
+### Intelligence Engine
+
+`Playbook.Core.Intelligence.Models` holds football-only insight models:
+
+- `IntelligenceFact` — one inferred insight (usage, matchup, weather, coaching, etc.) with confidence, importance, source, evidence, and optional player/team/game links
+- `PlayerIntelligence` — aggregated profile for one player (facts + trend/risk/opportunity summaries)
+
+Contracts:
+
+- `IIntelligenceService` (`Playbook.Application.Intelligence.Interfaces`)
+- `MockIntelligenceService` (`Playbook.Infrastructure.Intelligence.Services`)
+
+The Intelligence Engine knows nothing about fantasy points, rankings, recommendations, or league settings. Its job ends at structured football intelligence. Projection and Decision engines consume it later.
+
+UI surfaces today:
+
+- Dashboard **Football Intelligence** — `GetTopFacts`
+- Player Overlay **Intelligence** tab — `GetPlayerIntelligence`
+
+Swap `MockIntelligenceService` for a Data-Engine-backed implementation without changing consumers.
 
 ## Design Goals
 

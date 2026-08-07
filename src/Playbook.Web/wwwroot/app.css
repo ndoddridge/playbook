@@ -5,6 +5,7 @@
 @import url("css/decision-card.css");
 @import url("css/players.css");
 @import url("css/player-overlay.css");
+@import url("css/intelligence.css");
 
 h1:focus {
     outline: none;

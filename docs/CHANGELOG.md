@@ -2,6 +2,23 @@
 
 All notable project changes are recorded here.
 
+## [Unreleased] — Intelligence Engine Foundation
+
+### Added
+
+- `IntelligenceFact` and `PlayerIntelligence` domain models (football-only)
+- Enums: `IntelligenceCategory`, `IntelligenceImportance`, `IntelligenceSource`
+- `IIntelligenceService` / `MockIntelligenceService` (~75 mock facts)
+- Feature layout: Core Models, Application Interfaces, Infrastructure Services, Web UI helpers
+- Player Overlay **Intelligence** tab (facts grouped by category)
+- Dashboard **Football Intelligence** panel (highest-priority facts)
+
+### Architecture notes
+
+- Intelligence Engine produces structured football insights — not predictions, recommendations, or fantasy values
+- Downstream engines should consume `PlayerIntelligence` rather than assembling facts themselves
+- Reuses shared `TrendDirection` from the Player domain (no duplicate enum)
+
 ## [Unreleased] — Player Overlay
 
 ### Added

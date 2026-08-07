@@ -1,7 +1,11 @@
+@using Playbook.Application.Intelligence.Interfaces
 @using Playbook.Application.Players
+@using Playbook.Core.Intelligence.Models
 @using Playbook.Core.Leagues
 @using Playbook.Core.Players
+@using Playbook.Web.Features.Intelligence.Models
 @inject IPlayerOverlayState Overlay
+@inject IIntelligenceService IntelligenceService
 @implements IDisposable
 
 @if (Overlay.IsOpen && Overlay.Context is { } context)
@@ -44,7 +48,7 @@
                 {
                     <button type="button"
                             class="player-overlay__tab @(activeTab == tab ? "is-active" : null)"
-                            @onclick="() => activeTab = tab">
+                            @onclick="() => SelectTab(tab)">
                         @tab
                     </button>
                 }
@@ -108,6 +112,80 @@
                             </div>
                         </div>
                         <p class="player-section__text" style="margin-top:1rem;">@context.RecommendationSummary</p>
+                    </section>
+                }
+                else if (activeTab == "Intelligence")
+                {
+                    <section class="player-section">
+                        <h3 class="player-section__title">Intelligence</h3>
+                        @if (playerIntelligence is null)
+                        {
+                            <p class="player-section__muted">No football intelligence available for this player yet.</p>
+                        }
+                        else
+                        {
+                            <div class="player-profile__grid" style="margin-bottom:1rem;">
+                                <div class="player-stat">
+                                    <span class="player-stat__label">Overall Confidence</span>
+                                    <span class="player-stat__value">@playerIntelligence.OverallConfidence%</span>
+                                </div>
+                                <div class="player-stat">
+                                    <span class="player-stat__label">Facts</span>
+                                    <span class="player-stat__value">@playerIntelligence.Facts.Count</span>
+                                </div>
+                                <div class="player-stat">
+                                    <span class="player-stat__label">Updated</span>
+                                    <span class="player-stat__value">@IntelligencePresentation.RelativeTime(playerIntelligence.LastUpdated)</span>
+                                </div>
+                            </div>
+
+                            <div class="intel-summary">
+                                <div class="intel-summary__item">
+                                    <span class="intel-summary__label">Trend</span>
+                                    <p class="intel-summary__text">@playerIntelligence.TrendSummary</p>
+                                </div>
+                                <div class="intel-summary__item">
+                                    <span class="intel-summary__label">Risk</span>
+                                    <p class="intel-summary__text">@playerIntelligence.RiskSummary</p>
+                                </div>
+                                <div class="intel-summary__item">
+                                    <span class="intel-summary__label">Opportunity</span>
+                                    <p class="intel-summary__text">@playerIntelligence.OpportunitySummary</p>
+                                </div>
+                            </div>
+
+                            @foreach (var group in playerIntelligence.Facts.GroupBy(f => f.Category).OrderBy(g => g.Key))
+                            {
+                                <div class="intel-group">
+                                    <h4 class="intel-group__title">@IntelligencePresentation.Category(group.Key)</h4>
+                                    @foreach (var fact in group.OrderByDescending(f => f.Importance).ThenByDescending(f => f.Confidence))
+                                    {
+                                        <article class="intel-fact">
+                                            <div class="intel-fact__header">
+                                                <h5 class="intel-fact__title">@fact.Title</h5>
+                                                <div class="intel-fact__meta">
+                                                    <span>@fact.Confidence%</span>
+                                                    <span class="@IntelligencePresentation.ImportanceClass(fact.Importance)">
+                                                        @IntelligencePresentation.Importance(fact.Importance)
+                                                    </span>
+                                                    <span>@IntelligencePresentation.RelativeTime(fact.Created)</span>
+                                                </div>
+                                            </div>
+                                            <p class="intel-fact__description">@fact.Description</p>
+                                            @if (fact.SupportingEvidence.Count > 0)
+                                            {
+                                                <ul class="intel-fact__evidence">
+                                                    @foreach (var evidence in fact.SupportingEvidence)
+                                                    {
+                                                        <li>@evidence</li>
+                                                    }
+                                                </ul>
+                                            }
+                                        </article>
+                                    }
+                                </div>
+                            }
+                        }
                     </section>
                 }
                 else if (activeTab == "Career")
@@ -183,8 +261,12 @@
 }
 
 @code {
-    private static readonly string[] Tabs = ["Overview", "Fantasy", "Career", "College", "Injuries"];
+    private static readonly string[] Tabs =
+        ["Overview", "Fantasy", "Intelligence", "Career", "College", "Injuries"];
+
     private string activeTab = "Overview";
+    private PlayerIntelligence? playerIntelligence;
+    private Guid? loadedPlayerId;
 
     protected override void OnInitialized()
     {
@@ -196,10 +278,37 @@
         if (Overlay.IsOpen)
         {
             activeTab = "Overview";
+            playerIntelligence = null;
+            loadedPlayerId = null;
         }
 
         StateHasChanged();
     });
+
+    private void SelectTab(string tab)
+    {
+        activeTab = tab;
+        if (tab == "Intelligence")
+        {
+            EnsurePlayerIntelligence();
+        }
+    }
+
+    private void EnsurePlayerIntelligence()
+    {
+        if (Overlay.Context is not { } context)
+        {
+            return;
+        }
+
+        if (loadedPlayerId == context.Player.Id && playerIntelligence is not null)
+        {
+            return;
+        }
+
+        playerIntelligence = IntelligenceService.GetPlayerIntelligence(context.Player.Id);
+        loadedPlayerId = context.Player.Id;
+    }
 
     private void Close() => Overlay.Close();
 

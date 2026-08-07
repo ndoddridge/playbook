@@ -1,10 +1,14 @@
 @page "/"
+@using Playbook.Application.Intelligence.Interfaces
 @using Playbook.Application.Leagues
 @using Playbook.Application.Recommendations
+@using Playbook.Core.Intelligence.Models
 @using Playbook.Core.Recommendations
+@using Playbook.Web.Features.Intelligence.Models
 @using Playbook.Web.Features.League.Models
 @inject ILeagueState LeagueState
 @inject IRecommendationService RecommendationService
+@inject IIntelligenceService IntelligenceService
 @implements IDisposable
 
 <PageTitle>Dashboard — Playbook</PageTitle>
@@ -61,15 +65,28 @@
     </section>
 
     <div class="dashboard-grid">
-        <article class="pb-card">
-            <h2 class="pb-card__title">Latest NFL News</h2>
+        <article class="pb-card dashboard-intel">
+            <h2 class="pb-card__title">Football Intelligence</h2>
             <div class="pb-card__body">
-                @foreach (var item in News)
+                @foreach (var fact in topFacts)
                 {
-                    <div class="pb-meta-row">
-                        <span class="pb-meta-label">@item.Headline</span>
-                        <span class="pb-meta-value">@item.When</span>
-                    </div>
+                    <article class="intel-fact">
+                        <div class="intel-fact__header">
+                            <h3 class="intel-fact__title">@fact.Title</h3>
+                            <div class="intel-fact__meta">
+                                <span class="@IntelligencePresentation.ImportanceClass(fact.Importance)">
+                                    @IntelligencePresentation.Importance(fact.Importance)
+                                </span>
+                                <span>@fact.Confidence%</span>
+                                <span>@IntelligencePresentation.RelativeTime(fact.Created)</span>
+                            </div>
+                        </div>
+                        <p class="intel-fact__description">@fact.Description</p>
+                        <div class="intel-fact__meta">
+                            <span>@IntelligencePresentation.Category(fact.Category)</span>
+                            <span>@IntelligencePresentation.Source(fact.Source)</span>
+                        </div>
+                    </article>
                 }
             </div>
         </article>
@@ -104,23 +121,18 @@
 
 @code {
     private IReadOnlyList<Recommendation> recommendations = [];
+    private IReadOnlyList<IntelligenceFact> topFacts = [];
 
     protected override void OnInitialized()
     {
         LeagueState.Changed += OnLeagueChanged;
         recommendations = RecommendationService.GetTopRecommendations();
+        topFacts = IntelligenceService.GetTopFacts(6);
     }
 
     private void OnLeagueChanged() => InvokeAsync(StateHasChanged);
 
     public void Dispose() => LeagueState.Changed -= OnLeagueChanged;
-
-    private static readonly NewsItem[] News =
-    [
-        new("Practice report: WR limited in walkthrough", "2h ago"),
-        new("Depth chart shuffle at RB room", "5h ago"),
-        new("Weather upgrade for Sunday night slate", "8h ago")
-    ];
 
     private static readonly TrendingItem[] Trending =
     [
@@ -132,12 +144,12 @@
     private static readonly StatusItem[] SystemStatus =
     [
         new("Data Engine", "Stubbed"),
+        new("Intelligence Engine", "Mock Ready"),
         new("News Engine", "Stubbed"),
         new("Decision Engine", "Offline"),
         new("League State", "Ready")
     ];
 
-    private sealed record NewsItem(string Headline, string When);
     private sealed record TrendingItem(string Name, string Trend);
     private sealed record StatusItem(string Component, string Status);
 }

@@ -1,0 +1,109 @@
+/* Football Intelligence */
+
+.intel-summary {
+    display: grid;
+    gap: var(--pb-space-3);
+    margin-bottom: var(--pb-space-5);
+}
+
+.intel-summary__item {
+    padding: var(--pb-space-3) var(--pb-space-4);
+    border: 1px solid var(--pb-color-border);
+    border-radius: var(--pb-radius-md);
+    background: var(--pb-color-bg-elevated);
+}
+
+.intel-summary__label {
+    display: block;
+    margin-bottom: var(--pb-space-1);
+    font-size: var(--pb-text-xs);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--pb-color-text-secondary);
+}
+
+.intel-summary__text {
+    margin: 0;
+    font-size: var(--pb-text-sm);
+    color: var(--pb-color-text);
+}
+
+.intel-group {
+    margin-bottom: var(--pb-space-5);
+}
+
+.intel-group__title {
+    margin: 0 0 var(--pb-space-3);
+    font-size: var(--pb-text-sm);
+    font-weight: var(--pb-weight-semibold);
+    color: var(--pb-color-accent);
+}
+
+.intel-fact {
+    padding: var(--pb-space-3) 0;
+    border-bottom: 1px solid var(--pb-color-border);
+}
+
+.intel-fact:last-child {
+    border-bottom: none;
+}
+
+.intel-fact__header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--pb-space-2);
+    margin-bottom: var(--pb-space-2);
+}
+
+.intel-fact__title {
+    margin: 0;
+    font-size: var(--pb-text-base);
+    font-weight: var(--pb-weight-semibold);
+}
+
+.intel-fact__meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--pb-space-2);
+    font-size: var(--pb-text-xs);
+    color: var(--pb-color-text-secondary);
+}
+
+.intel-fact__description {
+    margin: 0 0 var(--pb-space-2);
+    font-size: var(--pb-text-sm);
+    color: var(--pb-color-text-secondary);
+}
+
+.intel-fact__evidence {
+    margin: 0;
+    padding-left: 1.1rem;
+    font-size: var(--pb-text-xs);
+    color: var(--pb-color-text-muted);
+}
+
+.intel-importance--critical {
+    color: #f07178;
+}
+
+.intel-importance--high {
+    color: var(--pb-color-accent);
+}
+
+.intel-importance--medium {
+    color: var(--pb-color-text);
+}
+
+.intel-importance--low {
+    color: var(--pb-color-text-secondary);
+}
+
+.dashboard-intel .intel-fact {
+    padding: var(--pb-space-3) 0;
+}
+
+.dashboard-intel .intel-fact__title {
+    font-size: var(--pb-text-sm);
+}
