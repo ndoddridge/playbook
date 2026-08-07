@@ -1,0 +1,174 @@
+/* Developer monitoring surfaces — status cards, heartbeat, engine grid */
+
+.dashboard-monitor {
+    display: flex;
+    flex-direction: column;
+    gap: var(--pb-space-5);
+    margin-bottom: var(--pb-space-8);
+}
+
+.dashboard-monitor__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--pb-space-4);
+    flex-wrap: wrap;
+}
+
+.dashboard-heartbeat {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--pb-space-2);
+    padding: 0.35rem 0.75rem;
+    border-radius: var(--pb-radius-md);
+    border: 1px solid var(--pb-color-border);
+    background: var(--pb-color-bg-elevated);
+    font-size: var(--pb-text-sm);
+    font-weight: var(--pb-weight-medium);
+    color: var(--pb-color-text);
+    font-variant-numeric: tabular-nums;
+}
+
+.dashboard-heartbeat__dot {
+    display: inline-block;
+    line-height: 1;
+    animation: dashboard-heartbeat-pulse 1.2s var(--pb-ease) infinite;
+}
+
+.dashboard-heartbeat--tick .dashboard-heartbeat__dot {
+    animation: dashboard-heartbeat-flash 0.45s var(--pb-ease);
+}
+
+.dashboard-heartbeat__label {
+    color: var(--pb-color-accent);
+}
+
+.dashboard-heartbeat__tick {
+    font-family: var(--pb-font-mono);
+    font-size: var(--pb-text-xs);
+    color: var(--pb-color-text-muted);
+}
+
+.dev-status-card {
+    max-width: 28rem;
+}
+
+.dev-status-card .pb-meta-value {
+    font-family: var(--pb-font-mono);
+    font-size: var(--pb-text-xs);
+    font-variant-numeric: tabular-nums;
+}
+
+.dev-status-card .pb-meta-value--live {
+    color: var(--pb-color-accent);
+}
+
+.engine-status {
+    margin-top: 0;
+}
+
+.engine-status__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(10.5rem, 1fr));
+    gap: var(--pb-space-3);
+}
+
+.engine-status__item {
+    display: flex;
+    flex-direction: column;
+    gap: var(--pb-space-2);
+    padding: var(--pb-space-3);
+    border-radius: var(--pb-radius-md);
+    border: 1px solid var(--pb-color-border);
+    background: var(--pb-color-bg-elevated);
+    min-width: 0;
+}
+
+.engine-status__name {
+    font-size: var(--pb-text-sm);
+    font-weight: var(--pb-weight-medium);
+    color: var(--pb-color-text);
+}
+
+.engine-status__state {
+    font-size: var(--pb-text-xs);
+    font-weight: var(--pb-weight-medium);
+}
+
+.engine-status__state--ready {
+    color: var(--pb-color-accent);
+}
+
+.engine-status__state--development {
+    color: var(--pb-color-warning);
+}
+
+.engine-status__state--offline {
+    color: var(--pb-color-text-muted);
+}
+
+.app-topbar__dev-badge {
+    flex-shrink: 0;
+    letter-spacing: var(--pb-tracking-wide);
+    text-transform: uppercase;
+    font-size: 0.65rem;
+}
+
+.dashboard-grid--stack {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.dashboard-grid--stack .pb-card {
+    grid-column: auto;
+}
+
+@keyframes dashboard-heartbeat-pulse {
+    0%,
+    100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 0.55;
+        transform: scale(0.92);
+    }
+}
+
+@keyframes dashboard-heartbeat-flash {
+    0% {
+        opacity: 0.35;
+        transform: scale(0.75);
+    }
+    40% {
+        opacity: 1;
+        transform: scale(1.15);
+    }
+    100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+@media (max-width: 960px) {
+    .dashboard-grid--stack {
+        grid-template-columns: 1fr;
+    }
+
+    .dev-status-card {
+        max-width: none;
+    }
+}
+
+@media (max-width: 640px) {
+    .dashboard-monitor__header {
+        align-items: flex-start;
+    }
+
+    .engine-status__grid {
+        grid-template-columns: 1fr;
+    }
+
+    .app-topbar__right .app-topbar__divider {
+        display: none;
+    }
+}

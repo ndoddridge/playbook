@@ -210,7 +210,7 @@
     gap: var(--pb-space-5);
 }
 
-.dashboard-grid .pb-card:last-child {
+.dashboard-grid .pb-card:last-child:nth-child(odd) {
     grid-column: 1 / -1;
 }
 

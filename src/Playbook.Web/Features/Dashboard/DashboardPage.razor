@@ -54,6 +54,66 @@
         }
     </header>
 
+    <section class="dashboard-monitor" aria-labelledby="dev-monitor-heading">
+        <div class="dashboard-monitor__header">
+            <h2 id="dev-monitor-heading" class="pb-card__title" style="margin-bottom: 0;">Developer Monitor</h2>
+            <div class="dashboard-heartbeat @(heartbeatTick ? "dashboard-heartbeat--tick" : null)"
+                 aria-live="polite"
+                 title="Updates every 30 seconds">
+                <span class="dashboard-heartbeat__dot" aria-hidden="true">🟢</span>
+                <span class="dashboard-heartbeat__label">Running</span>
+                <span class="dashboard-heartbeat__tick">#@refreshCount · @lastUpdateDisplay</span>
+            </div>
+        </div>
+
+        <article class="pb-card dev-status-card">
+            <h2 class="pb-card__title">Development Status</h2>
+            <div class="pb-card__body">
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Build Status</span>
+                    <span class="pb-meta-value pb-meta-value--live">@buildStatus</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Background Service Status</span>
+                    <span class="pb-meta-value">@backgroundServiceStatus</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Last Update Time</span>
+                    <span class="pb-meta-value">@lastUpdateDisplay</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Mock Data Status</span>
+                    <span class="pb-meta-value">@mockDataStatus</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Current League</span>
+                    <span class="pb-meta-value">@currentLeagueName</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Application Version</span>
+                    <span class="pb-meta-value">@AppInfo.Version</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Current Time</span>
+                    <span class="pb-meta-value">@currentTimeDisplay</span>
+                </div>
+            </div>
+        </article>
+
+        <article class="pb-card engine-status">
+            <h2 class="pb-card__title">Engine Status</h2>
+            <div class="engine-status__grid">
+                @foreach (var engine in engines)
+                {
+                    <div class="engine-status__item">
+                        <span class="engine-status__name">@engine.Name</span>
+                        <span class="@EngineStateClass(engine.State)">@engine.State</span>
+                    </div>
+                }
+            </div>
+        </article>
+    </section>
+
     <section class="dashboard-decisions" aria-labelledby="top-decisions-heading">
         <h2 id="top-decisions-heading" class="pb-card__title">Top Decisions</h2>
         <div class="decision-stack">
@@ -64,7 +124,7 @@
         </div>
     </section>
 
-    <div class="dashboard-grid">
+    <div class="dashboard-grid dashboard-grid--stack">
         <article class="pb-card dashboard-intel">
             <h2 class="pb-card__title">Football Intelligence</h2>
             <div class="pb-card__body">
@@ -103,19 +163,6 @@
                 }
             </div>
         </article>
-
-        <article class="pb-card">
-            <h2 class="pb-card__title">System Status</h2>
-            <div class="pb-card__body">
-                @foreach (var item in SystemStatus)
-                {
-                    <div class="pb-meta-row">
-                        <span class="pb-meta-label">@item.Component</span>
-                        <span class="pb-badge">@item.Status</span>
-                    </div>
-                }
-            </div>
-        </article>
     </div>
 </section>
 
@@ -123,16 +170,94 @@
     private IReadOnlyList<Recommendation> recommendations = [];
     private IReadOnlyList<IntelligenceFact> topFacts = [];
 
+    private string buildStatus = "Succeeded";
+    private string backgroundServiceStatus = "Running";
+    private string mockDataStatus = "Active";
+    private string currentLeagueName = "—";
+    private string lastUpdateDisplay = "—";
+    private string currentTimeDisplay = "—";
+    private int refreshCount;
+    private bool heartbeatTick;
+
+    private PeriodicTimer? refreshTimer;
+    private CancellationTokenSource? cts;
+
+    private static readonly EngineStatusItem[] engines =
+    [
+        new("Player Engine", "Ready"),
+        new("League Engine", "Ready"),
+        new("Recommendation Engine", "In Development"),
+        new("Intelligence Engine", "Ready"),
+        new("Data Engine", "Offline")
+    ];
+
     protected override void OnInitialized()
     {
         LeagueState.Changed += OnLeagueChanged;
+        RefreshDashboard();
+        cts = new CancellationTokenSource();
+        _ = RunAutoRefreshAsync(cts.Token);
+    }
+
+    private async Task RunAutoRefreshAsync(CancellationToken cancellationToken)
+    {
+        refreshTimer = new PeriodicTimer(TimeSpan.FromSeconds(30));
+
+        try
+        {
+            while (await refreshTimer.WaitForNextTickAsync(cancellationToken))
+            {
+                RefreshDashboard();
+                await InvokeAsync(StateHasChanged);
+
+                // Brief CSS flash so the heartbeat visibly updates on each refresh.
+                heartbeatTick = true;
+                await InvokeAsync(StateHasChanged);
+                await Task.Delay(450, cancellationToken);
+                heartbeatTick = false;
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Dashboard disposed.
+        }
+    }
+
+    private void RefreshDashboard()
+    {
+        var now = DateTime.Now;
+        refreshCount++;
+        lastUpdateDisplay = now.ToString("h:mm:ss tt");
+        currentTimeDisplay = now.ToString("h:mm:ss tt");
+        currentLeagueName = LeagueState.CurrentLeague?.Name ?? "None selected";
+        buildStatus = "Succeeded";
+        backgroundServiceStatus = "Running";
+        mockDataStatus = "Active";
         recommendations = RecommendationService.GetTopRecommendations();
         topFacts = IntelligenceService.GetTopFacts(6);
     }
 
-    private void OnLeagueChanged() => InvokeAsync(StateHasChanged);
+    private void OnLeagueChanged()
+    {
+        currentLeagueName = LeagueState.CurrentLeague?.Name ?? "None selected";
+        _ = InvokeAsync(StateHasChanged);
+    }
 
-    public void Dispose() => LeagueState.Changed -= OnLeagueChanged;
+    private static string EngineStateClass(string state) => state switch
+    {
+        "Ready" => "engine-status__state engine-status__state--ready",
+        "In Development" => "engine-status__state engine-status__state--development",
+        _ => "engine-status__state engine-status__state--offline"
+    };
+
+    public void Dispose()
+    {
+        LeagueState.Changed -= OnLeagueChanged;
+        cts?.Cancel();
+        cts?.Dispose();
+        refreshTimer?.Dispose();
+    }
 
     private static readonly TrendingItem[] Trending =
     [
@@ -141,15 +266,6 @@
         new("Bucky Irving", "↑ Snap share")
     ];
 
-    private static readonly StatusItem[] SystemStatus =
-    [
-        new("Data Engine", "Stubbed"),
-        new("Intelligence Engine", "Mock Ready"),
-        new("News Engine", "Stubbed"),
-        new("Decision Engine", "Offline"),
-        new("League State", "Ready")
-    ];
-
     private sealed record TrendingItem(string Name, string Trend);
-    private sealed record StatusItem(string Component, string Status);
+    private sealed record EngineStatusItem(string Name, string State);
 }

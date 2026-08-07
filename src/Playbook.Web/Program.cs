@@ -19,7 +19,12 @@ if (!app.Environment.IsDevelopment())
     app.UseHsts();
 }
 
-app.UseHttpsRedirection();
+// Skip HTTPS redirection in Development so phone/tunnel HTTP access works.
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
+
 app.UseAntiforgery();
 
 app.MapStaticAssets();

@@ -2,6 +2,30 @@
 
 All notable project changes are recorded here.
 
+## [Unreleased] — Developer Monitoring Dashboard
+
+### Added
+
+- Automatic dashboard refresh every 30 seconds (recommendations, intelligence, status timestamps)
+- **Development Status** card: Build Status, Background Service Status, Last Update Time, Mock Data Status, Current League, Application Version, Current Time
+- Heartbeat indicator (`🟢 Running`) that visibly ticks on each refresh
+- **Engine Status** section with mock states for Player, League, Recommendation, Intelligence, and Data engines (`Ready` / `In Development` / `Offline`)
+- **Developer Mode** badge in the top bar
+- Shared `AppInfo` version (`0.1.0-dev`) shown in the sidebar footer as `Playbook v0.1.0-dev`
+- Mobile-friendly stacking for monitor and dashboard cards
+
+### Architecture notes
+
+- Monitoring values are developer UX only — mock/static status strings, not wired to real build or background services yet
+- Refresh timer lives on the Dashboard page; heartbeat flash is CSS-driven so phone checks show the app is alive
+- `AppInfo` is the single version string for footer and Development Status
+
+### Future extension points
+
+- Replace mock engine/build/background statuses with health checks from real engines and hosted services
+- Persist last-refresh telemetry and expose a shared `IHealthStatus` application port
+- Optionally surface heartbeat in the top bar for all pages, not only Dashboard
+
 ## [Unreleased] — Intelligence Engine Foundation
 
 ### Added
