@@ -1,6 +1,8 @@
 @page "/"
 @using Playbook.Application.Intelligence.Interfaces
 @using Playbook.Application.Leagues
+@using Playbook.Application.Players
+@using Playbook.Application.Players.Data
 @using Playbook.Application.Recommendations
 @using Playbook.Core.Intelligence.Models
 @using Playbook.Core.Recommendations
@@ -9,6 +11,8 @@
 @inject ILeagueState LeagueState
 @inject IRecommendationService RecommendationService
 @inject IIntelligenceService IntelligenceService
+@inject IPlayerService PlayerService
+@inject IPlayerDataSyncStatus PlayerDataSyncStatus
 @implements IDisposable
 
 <PageTitle>Dashboard — Playbook</PageTitle>
@@ -96,6 +100,30 @@
                 <div class="pb-meta-row">
                     <span class="pb-meta-label">Current Time</span>
                     <span class="pb-meta-value">@currentTimeDisplay</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Current Provider</span>
+                    <span class="pb-meta-value pb-meta-value--live">@providerActive</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Configured Provider</span>
+                    <span class="pb-meta-value">@providerConfigured</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Last Successful Sync</span>
+                    <span class="pb-meta-value">@providerLastSync</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Number of Players Loaded</span>
+                    <span class="pb-meta-value">@providerPlayerCount</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Provider Response Time</span>
+                    <span class="pb-meta-value">@providerResponseTime</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Last Error</span>
+                    <span class="pb-meta-value">@providerLastError</span>
                 </div>
             </div>
         </article>
@@ -188,8 +216,15 @@
         new("League Engine", "Ready"),
         new("Recommendation Engine", "In Development"),
         new("Intelligence Engine", "Ready"),
-        new("Data Engine", "Offline")
+        new("Data Engine", "In Development")
     ];
+
+    private string providerConfigured = "—";
+    private string providerActive = "—";
+    private string providerLastSync = "—";
+    private string providerPlayerCount = "—";
+    private string providerResponseTime = "—";
+    private string providerLastError = "None";
 
     protected override void OnInitialized()
     {
@@ -233,7 +268,25 @@
         currentLeagueName = LeagueState.CurrentLeague?.Name ?? "None selected";
         buildStatus = "Succeeded";
         backgroundServiceStatus = "Running";
-        mockDataStatus = "Active";
+
+        // Touch the player service so sync status reflects the active provider.
+        _ = PlayerService.GetAllPlayers();
+        providerConfigured = PlayerDataSyncStatus.ConfiguredProvider;
+        providerActive = PlayerDataSyncStatus.UsedFallback
+            ? $"{PlayerDataSyncStatus.ActiveProvider} (fallback)"
+            : PlayerDataSyncStatus.ActiveProvider;
+        providerLastSync = PlayerDataSyncStatus.LastSuccessfulSync?.ToLocalTime().ToString("h:mm:ss tt") ?? "—";
+        providerPlayerCount = PlayerDataSyncStatus.PlayersLoaded.ToString();
+        providerResponseTime = PlayerDataSyncStatus.ProviderResponseTime is { } elapsed
+            ? $"{elapsed.TotalMilliseconds:0} ms"
+            : "—";
+        providerLastError = string.IsNullOrWhiteSpace(PlayerDataSyncStatus.LastError)
+            ? "None"
+            : PlayerDataSyncStatus.LastError;
+        mockDataStatus = PlayerDataSyncStatus.ActiveProvider.Equals("Mock", StringComparison.OrdinalIgnoreCase)
+            ? (PlayerDataSyncStatus.UsedFallback ? "Fallback Active" : "Active")
+            : "Standby";
+
         recommendations = RecommendationService.GetTopRecommendations();
         topFacts = IntelligenceService.GetTopFacts(6);
     }

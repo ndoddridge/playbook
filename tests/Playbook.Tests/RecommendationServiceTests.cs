@@ -1,6 +1,5 @@
-using Playbook.Application;
+using Playbook.Application.Players.Data;
 using Playbook.Application.Recommendations;
-using Playbook.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Playbook.Tests;
@@ -10,10 +9,7 @@ public class RecommendationServiceTests
     [Fact]
     public void Mock_Service_Returns_Top_Recommendations()
     {
-        var services = new ServiceCollection();
-        services.AddInfrastructure().AddApplication();
-        using var provider = services.BuildServiceProvider();
-
+        using var provider = TestServiceFactory.CreateProvider(PlayerDataProviderKind.Mock);
         var service = provider.GetRequiredService<IRecommendationService>();
         var top = service.GetTopRecommendations(5);
 

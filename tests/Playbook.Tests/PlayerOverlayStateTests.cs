@@ -1,25 +1,17 @@
-using Playbook.Application;
 using Playbook.Application.Leagues;
 using Playbook.Application.Players;
+using Playbook.Application.Players.Data;
 using Playbook.Core.Leagues;
-using Playbook.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Playbook.Tests;
 
 public class PlayerOverlayStateTests
 {
-    private static ServiceProvider CreateProvider()
-    {
-        var services = new ServiceCollection();
-        services.AddInfrastructure().AddApplication();
-        return services.BuildServiceProvider();
-    }
-
     [Fact]
     public void Open_Close_And_League_Switch_Refresh_Context()
     {
-        using var provider = CreateProvider();
+        using var provider = TestServiceFactory.CreateProvider(PlayerDataProviderKind.Mock);
         var overlay = provider.GetRequiredService<IPlayerOverlayState>();
         var leagues = provider.GetRequiredService<ILeagueState>();
         var playerId = Guid.Parse("11111111-1111-1111-1111-111111111101");

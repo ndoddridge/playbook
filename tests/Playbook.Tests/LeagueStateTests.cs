@@ -1,6 +1,5 @@
-using Playbook.Application;
 using Playbook.Application.Leagues;
-using Playbook.Infrastructure;
+using Playbook.Application.Players.Data;
 using Playbook.Infrastructure.Leagues;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -8,21 +7,10 @@ namespace Playbook.Tests;
 
 public class LeagueStateTests
 {
-    private static ServiceProvider CreateProvider()
-    {
-        var services = new ServiceCollection();
-        services.AddInfrastructure().AddApplication();
-        return services.BuildServiceProvider(new ServiceProviderOptions
-        {
-            ValidateOnBuild = true,
-            ValidateScopes = true
-        });
-    }
-
     [Fact]
     public void Default_Current_League_Is_Friends_League()
     {
-        using var provider = CreateProvider();
+        using var provider = TestServiceFactory.CreateProvider(PlayerDataProviderKind.Mock);
         var state = provider.GetRequiredService<ILeagueState>();
 
         Assert.Equal("Friends League", state.GetCurrentLeague()?.Name);
@@ -32,7 +20,7 @@ public class LeagueStateTests
     [Fact]
     public void SelectLeague_Updates_Current_And_Raises_Changed()
     {
-        using var provider = CreateProvider();
+        using var provider = TestServiceFactory.CreateProvider(PlayerDataProviderKind.Mock);
         var state = provider.GetRequiredService<ILeagueState>();
         var dynasty = state.GetAllLeagues().Single(l => l.Name == "Dynasty League");
         var changed = 0;

@@ -183,14 +183,44 @@ The Player Engine is the football domain model — not an ingestion pipeline. Ev
 - Supplemental structures: `SeasonStats`, `CareerStats`, `CollegeStats`, `InjuryRecord`, `PlayerTrend`
 - `PlayerProfile` — aggregated view engines should request instead of assembling pieces
 - `IPlayerService` — `GetAllPlayers`, `GetPlayer`, `GetPlayerProfile`, `SearchPlayers`
+- `IPlayerDataProvider` — raw catalog source (`Mock` or `Live`); UI never calls this directly
+- `IPlayerDataSyncStatus` — developer telemetry for the active provider
 
-### Mock Service
+### Provider architecture (first live integration)
 
-`MockPlayerService` seeds ~20 players across QB/RB/WR/TE/K/DST with mock profiles. UI never constructs players.
+```
+appsettings PlayerData:Provider = Mock | Live
+        │
+        ▼
+   PlayerService  ──uses──►  IPlayerDataProvider (primary)
+        │                         │
+        │                         ├── MockPlayerDataProvider
+        │                         └── LivePlayerDataProvider (Sleeper)
+        │
+        └── on live failure ──► MockPlayerDataProvider (automatic fallback)
+```
 
-### Future Data Engine integration
+- **Selected live API:** [Sleeper](https://docs.sleeper.com/) `GET /players/nfl` (filtered by fantasy position). Free public reads; `PlayerData:Sleeper:ApiKey` is reserved for future auth.
+- Flip sources with configuration only — no UI or `IPlayerService` consumer changes.
+- `PlayerService` records configured vs active provider, last sync, player count, response time, and last error for the Developer Monitor.
 
-The Data Engine will populate and refresh player records (stats, injuries, depth charts). Swap `MockPlayerService` for a Data-Engine-backed `IPlayerService` without changing Player Explorer or downstream recommendation engines that depend on `PlayerProfile`.
+### Mock enrichment
+
+When the active catalog is mock (configured or fallback), `PlayerService` still attaches rich mock profiles. Live catalogs map identity/status fields only until projection/stats providers exist.
+
+### Future Data Engine / provider additions
+
+Add new providers the same way: define an application interface (e.g. `INewsDataProvider`), implement Mock + Live in Infrastructure, bind a config section, register both, and have the consuming service fall back to mock on failure. Candidates:
+
+| Provider | Purpose |
+| --- | --- |
+| **News** | Headlines and injury blurbs feeding Intelligence |
+| **Odds** | Market lines for projection/decision confidence |
+| **Weather** | Game-environment signals |
+| **Schedules** | Matchups and bye weeks |
+| **Injuries** | Structured injury status beyond player roster flags |
+
+The Data Engine will eventually orchestrate these providers and refresh `Player` / `PlayerProfile` without changing Player Explorer or overlay UI.
 
 ## Player Overlay
 

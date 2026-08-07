@@ -2,6 +2,23 @@
 
 All notable project changes are recorded here.
 
+## [Unreleased] — Live Player Data Provider
+
+### Added
+
+- `IPlayerDataProvider` abstraction with `MockPlayerDataProvider` and `LivePlayerDataProvider` (Sleeper NFL API)
+- Configuration switch `PlayerData:Provider` = `Mock` | `Live` (no code changes to flip sources)
+- `PlayerService` loads from the configured provider and **automatically falls back to mock** on live failure
+- `IPlayerDataSyncStatus` telemetry: configured/active provider, last sync, player count, response time, last error
+- Developer Monitor fields for provider status
+- Auth isolation via `PlayerData:Sleeper:ApiKey` (unused for public Sleeper reads; ready for future keys)
+
+### Architecture notes
+
+- UI still consumes only `IPlayerService` — Player Explorer is unchanged
+- Sleeper selected as the first live provider: free public API with players, teams, positions, and status
+- Future News / Odds / Weather / Schedules / Injuries providers should follow the same provider + config + fallback pattern
+
 ## [Unreleased] — Developer Monitoring Dashboard
 
 ### Added

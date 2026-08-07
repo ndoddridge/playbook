@@ -18,7 +18,7 @@ playbook.sln
 │   ├── Playbook.Web            # Blazor Server UI
 │   ├── Playbook.Core           # Domain models & abstractions
 │   ├── Playbook.Application    # Use cases & application services
-│   └── Playbook.Infrastructure # Persistence & external adapters (stubbed)
+│   └── Playbook.Infrastructure # Persistence & external adapters
 ├── tests
 │   └── Playbook.Tests          # xUnit tests
 └── docs
@@ -33,6 +33,7 @@ playbook.sln
 | --- | --- |
 | Backend | ASP.NET Core (.NET 9) |
 | UI | Blazor Server (Interactive Server render mode) |
+| Player data | Mock catalog **or** live Sleeper NFL API (config switch) |
 | Data access | Entity Framework Core + PostgreSQL *(planned; not wired yet)* |
 | Testing | xUnit |
 
@@ -49,13 +50,37 @@ dotnet restore
 dotnet build
 ```
 
+## Player data source (Mock vs Live)
+
+Playbook can load players from mock data or the live Sleeper API. Switch with configuration only — no code or UI changes.
+
+In `src/Playbook.Web/appsettings.json`:
+
+```json
+"PlayerData": {
+  "Provider": "Live",
+  "Sleeper": {
+    "BaseUrl": "https://api.sleeper.app/v1/",
+    "ApiKey": "",
+    "TimeoutSeconds": 30
+  }
+}
+```
+
+| `Provider` | Behavior |
+| --- | --- |
+| `Mock` | In-memory catalog (~20 players) |
+| `Live` | Sleeper NFL players (teams, positions, status). On failure, **automatically falls back to Mock** |
+
+`ApiKey` is reserved for future authenticated providers; public Sleeper reads do not require it.
+
 ## Run the web app
 
 ```bash
 dotnet run --project src/Playbook.Web
 ```
 
-Then open the URL shown in the console (typically `https://localhost:7xxx`).
+Then open the URL shown in the console (typically `https://localhost:7xxx`). Use the Dashboard **Developer Monitor** to confirm provider, sync time, player count, and any fallback errors.
 
 ## Run tests
 
@@ -65,11 +90,11 @@ dotnet test
 
 ## Current Status
 
-**Application shell complete under the Playbook brand.** The solution builds with layered projects, DI composition, and a Blazor shell (sidebar, top bar, dashboard + placeholder feature pages). No database, APIs, or fantasy logic have been implemented yet.
+**Developer monitoring dashboard** plus **first live data integration**: `IPlayerDataProvider` with Mock/Live switch, Sleeper-backed `LivePlayerDataProvider`, graceful mock fallback, and provider telemetry on the dashboard. UI still consumes `IPlayerService` only.
 
 ## Documentation
 
 - [Design](docs/DESIGN.md) — product vision, pages, and engines
-- [Architecture](docs/ARCHITECTURE.md) — layered structure and future engine pipeline
+- [Architecture](docs/ARCHITECTURE.md) — layered structure, providers, and future engine pipeline
 - [Development Rules](docs/DEVELOPMENT_RULES.md) — engineering standards for this repo
 - [Changelog](docs/CHANGELOG.md) — notable project changes
