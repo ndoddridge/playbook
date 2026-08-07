@@ -148,3 +148,22 @@ Today, `MockRecommendationService` is the single source of recommendations. The 
 ### Future Engine Flow
 
 Each engine returns `Recommendation` instances tagged with `SourceEngine`. A future aggregator implements `IRecommendationService`, merges engine output, ranks by priority/confidence/league context, and feeds the same Decision Card UI without visual rewrites.
+
+## Player Engine
+
+The Player Engine is the football domain model — not an ingestion pipeline. Everything in Playbook eventually revolves around `Player` and `PlayerProfile`.
+
+### Contracts
+
+- `Playbook.Core.Players.Player` — identity (name, position, team, status, physicals, bye)
+- Supplemental structures: `SeasonStats`, `CareerStats`, `CollegeStats`, `InjuryRecord`, `PlayerTrend`
+- `PlayerProfile` — aggregated view engines should request instead of assembling pieces
+- `IPlayerService` — `GetAllPlayers`, `GetPlayer`, `GetPlayerProfile`, `SearchPlayers`
+
+### Mock Service
+
+`MockPlayerService` seeds ~20 players across QB/RB/WR/TE/K/DST with mock profiles. UI never constructs players.
+
+### Future Data Engine integration
+
+The Data Engine will populate and refresh player records (stats, injuries, depth charts). Swap `MockPlayerService` for a Data-Engine-backed `IPlayerService` without changing Player Explorer or downstream recommendation engines that depend on `PlayerProfile`.

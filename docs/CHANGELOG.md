@@ -2,6 +2,22 @@
 
 All notable project changes are recorded here.
 
+## [Unreleased] — Player Engine Foundation
+
+### Added
+
+- Player domain model and enums (`Position`, `PlayerStatus`, `InjuryStatus`, `TrendDirection`)
+- Supplemental structures: `SeasonStats`, `CareerStats`, `CollegeStats`, `InjuryRecord`, `PlayerTrend`, `PlayerProfile`
+- `IPlayerService` and `MockPlayerService` (~20 mock players across QB/RB/WR/TE/K/DST)
+- Player Explorer with search, scrollable list, headshot placeholder, and profile panel
+- Docs for Player Engine / PlayerProfile / future Data Engine integration
+
+### Architecture notes
+
+- UI never creates `Player` objects — everything comes from `IPlayerService`
+- Engines should request `PlayerProfile` as the aggregated unit
+- Future Data Engine replaces only the service implementation
+
 ## [Unreleased] — Recommendation Domain Model
 
 ### Added

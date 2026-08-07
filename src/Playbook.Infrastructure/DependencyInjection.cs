@@ -1,6 +1,8 @@
 using Playbook.Application.Leagues;
+using Playbook.Application.Players;
 using Playbook.Application.Recommendations;
 using Playbook.Infrastructure.Leagues;
+using Playbook.Infrastructure.Players;
 using Playbook.Infrastructure.Recommendations;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -16,6 +18,7 @@ public static class DependencyInjection
     {
         services.AddSingleton<ILeagueService, MockLeagueService>();
         services.AddSingleton<IRecommendationService, MockRecommendationService>();
+        services.AddSingleton<IPlayerService, MockPlayerService>();
         return services;
     }
 }

@@ -3,6 +3,7 @@
 @import url("css/shell.css");
 @import url("css/league.css");
 @import url("css/decision-card.css");
+@import url("css/players.css");
 
 h1:focus {
     outline: none;
