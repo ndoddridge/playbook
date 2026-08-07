@@ -1,0 +1,62 @@
+@using Playbook.Application.Leagues
+@using Playbook.Core.Leagues
+@using Playbook.Web.Features.League.Models
+@inject ILeagueState LeagueState
+@implements IDisposable
+
+<div class="league-switcher" @onclick:stopPropagation="true">
+    <button type="button"
+            class="league-switcher__trigger"
+            aria-haspopup="listbox"
+            aria-expanded="@isOpen"
+            @onclick="Toggle">
+        <span class="app-topbar__item">
+            <span class="app-topbar__label">Current League</span>
+            <span class="app-topbar__value league-switcher__value">
+                @(LeagueState.CurrentLeague?.Name ?? "No League Selected")
+                <span class="league-switcher__caret" aria-hidden="true">▾</span>
+            </span>
+        </span>
+    </button>
+
+    @if (isOpen)
+    {
+        <div class="league-switcher__menu" role="listbox" aria-label="Select league">
+            @foreach (var league in LeagueState.GetAllLeagues())
+            {
+                var isSelected = league.Id == LeagueState.CurrentLeague?.Id;
+                <button type="button"
+                        class="league-switcher__option @(isSelected ? "is-selected" : null)"
+                        role="option"
+                        aria-selected="@isSelected"
+                        @onclick="() => Select(league)">
+                    <span class="league-switcher__option-name">@league.Name</span>
+                    <span class="league-switcher__option-meta">
+                        @LeagueDisplay.Platform(league.Platform) · @LeagueDisplay.LeagueType(league.LeagueType)
+                    </span>
+                </button>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private bool isOpen;
+
+    protected override void OnInitialized()
+    {
+        LeagueState.Changed += OnLeagueChanged;
+    }
+
+    private void Toggle() => isOpen = !isOpen;
+
+    private void Select(League league)
+    {
+        LeagueState.SelectLeague(league.Id);
+        isOpen = false;
+    }
+
+    private void OnLeagueChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => LeagueState.Changed -= OnLeagueChanged;
+}

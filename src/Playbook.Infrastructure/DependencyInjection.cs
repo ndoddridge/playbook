@@ -1,3 +1,5 @@
+using Playbook.Application.Leagues;
+using Playbook.Infrastructure.Leagues;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Playbook.Infrastructure;
@@ -10,8 +12,7 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddInfrastructure(this IServiceCollection services)
     {
-        // Infrastructure services (EF Core, PostgreSQL, external APIs) will be
-        // registered here when those concerns are introduced.
+        services.AddSingleton<ILeagueService, MockLeagueService>();
         return services;
     }
 }

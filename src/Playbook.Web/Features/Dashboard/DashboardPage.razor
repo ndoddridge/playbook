@@ -1,11 +1,50 @@
 @page "/"
+@using Playbook.Application.Leagues
+@using Playbook.Web.Features.League.Models
+@inject ILeagueState LeagueState
+@implements IDisposable
 
 <PageTitle>Dashboard — Playbook</PageTitle>
 
 <section class="pb-page">
     <header class="pb-page__header">
         <h1 class="pb-page__title">Dashboard</h1>
-        <p class="pb-page__subtitle">Highest-priority signals at a glance. Mock data only.</p>
+        <p class="pb-page__subtitle">
+            @if (LeagueState.CurrentLeague is { } league)
+            {
+                <text>Personalized to @league.Name · @league.Season season</text>
+            }
+            else
+            {
+                <text>Select a league to personalize recommendations.</text>
+            }
+        </p>
+
+        @if (LeagueState.CurrentLeague is { } current)
+        {
+            <div class="league-context">
+                <div class="league-context__item">
+                    <span class="league-context__label">Current League</span>
+                    <span class="league-context__value">@current.Name</span>
+                </div>
+                <div class="league-context__item">
+                    <span class="league-context__label">Platform</span>
+                    <span class="league-context__value">@LeagueDisplay.Platform(current.Platform)</span>
+                </div>
+                <div class="league-context__item">
+                    <span class="league-context__label">League Type</span>
+                    <span class="league-context__value">@LeagueDisplay.LeagueType(current.LeagueType)</span>
+                </div>
+                <div class="league-context__item">
+                    <span class="league-context__label">Scoring</span>
+                    <span class="league-context__value">@LeagueDisplay.Scoring(current.ScoringType)</span>
+                </div>
+                <div class="league-context__item">
+                    <span class="league-context__label">Week</span>
+                    <span class="league-context__value">@current.CurrentWeek</span>
+                </div>
+            </div>
+        }
     </header>
 
     <div class="dashboard-grid">
@@ -64,6 +103,15 @@
 </section>
 
 @code {
+    protected override void OnInitialized()
+    {
+        LeagueState.Changed += OnLeagueChanged;
+    }
+
+    private void OnLeagueChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => LeagueState.Changed -= OnLeagueChanged;
+
     private static readonly NewsItem[] News =
     [
         new("Practice report: WR limited in walkthrough", "2h ago"),
@@ -90,7 +138,7 @@
         new("Data Engine", "Stubbed"),
         new("News Engine", "Stubbed"),
         new("Decision Engine", "Offline"),
-        new("Application Shell", "Ready")
+        new("League State", "Ready")
     ];
 
     private sealed record NewsItem(string Headline, string When);

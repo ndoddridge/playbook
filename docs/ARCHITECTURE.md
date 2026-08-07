@@ -97,3 +97,30 @@ Engines communicate through clear contracts. Recommendations always carry action
 - Fast iteration with a never-break-the-build discipline
 - Every feature testable from day one
 - Every recommendation eventually explainable
+
+## League State
+
+The selected fantasy league is global application context. Every future recommendation engine should read from this state so outputs stay league-aware (scoring, roster rules, matchups).
+
+### Contracts
+
+- `Playbook.Core.Leagues.League` — domain model with platform, type, scoring, week, season, and activity flags
+- `ILeagueService` — catalog + selection API (`GetAllLeagues`, `GetCurrentLeague`, `SelectLeague`)
+- `ILeagueState` — process-lifetime selected league plus a `Changed` notification for UI (and later engines)
+
+### Mock Service
+
+`MockLeagueService` (Infrastructure) seeds three in-memory leagues: Friends League, Dynasty League, and Work League. No database or external APIs are involved.
+
+### Dependency Injection
+
+Registered as singletons so selection survives navigation for the lifetime of the running app:
+
+- `ILeagueService` → `MockLeagueService`
+- `ILeagueState` → `LeagueStateService`
+
+UI components (`LeagueSwitcher`, Dashboard) inject `ILeagueState` and subscribe to `Changed`. Avoid static state.
+
+### Future replacement with real APIs
+
+Swap `MockLeagueService` for an API/EF-backed implementation of `ILeagueService` without changing UI or engine consumers. Persist the last-selected league id (cookie/local storage/user profile) when accounts exist.

@@ -11,7 +11,7 @@ public class DependencyInjectionTests
     {
         var services = new ServiceCollection();
 
-        services.AddApplication().AddInfrastructure();
+        services.AddInfrastructure().AddApplication();
 
         using var provider = services.BuildServiceProvider(new ServiceProviderOptions
         {

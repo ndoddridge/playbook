@@ -2,6 +2,40 @@
 
 All notable project changes are recorded here.
 
+## [Unreleased] — League Management Foundation
+
+### Added
+
+- Domain `League` model and enums (`LeaguePlatform`, `LeagueType`, `ScoringType`) in Core
+- `ILeagueService` and `ILeagueState` application contracts
+- `LeagueStateService` for process-lifetime selected league + change notifications
+- `MockLeagueService` with Friends League, Dynasty League, and Work League
+- `LeagueSwitcher` top-bar dropdown for live league selection
+- Dashboard league context header (league, platform, type, scoring, week)
+- xUnit coverage for mock selection and state notifications
+
+### Files created
+
+- `src/Playbook.Core/Leagues/*`
+- `src/Playbook.Application/Leagues/*`
+- `src/Playbook.Infrastructure/Leagues/MockLeagueService.cs`
+- `src/Playbook.Web/Features/League/Components/LeagueSwitcher.razor`
+- `src/Playbook.Web/Features/League/Models/LeagueDisplay.cs`
+- `src/Playbook.Web/wwwroot/css/league.css`
+- `tests/Playbook.Tests/LeagueStateTests.cs`
+
+### Files modified
+
+- `DependencyInjection` in Application and Infrastructure
+- `Program.cs` registration order
+- `TopBar.razor`, `DashboardPage.razor`, `app.css`, docs
+
+### Architectural decisions
+
+- Domain model lives in Core so engines can consume it without referencing Web
+- Mock catalog in Infrastructure; selection notifications in Application state
+- Singleton DI keeps the selected league stable across navigation
+
 ## [Unreleased] — Rebrand to Playbook
 
 ### Changed

@@ -1,4 +1,5 @@
 @implements IDisposable
+@using Playbook.Web.Features.League.Components
 
 <header class="app-topbar">
     <div class="app-topbar__left">
@@ -9,10 +10,7 @@
             ☰
         </button>
 
-        <div class="app-topbar__item">
-            <span class="app-topbar__label">Current League</span>
-            <span class="app-topbar__value">@CurrentLeague</span>
-        </div>
+        <LeagueSwitcher />
 
         <span class="app-topbar__divider" aria-hidden="true"></span>
 
@@ -45,7 +43,6 @@
     [Parameter]
     public EventCallback OnMenuToggle { get; set; }
 
-    private const string CurrentLeague = "No League Selected";
     private const string SyncStatus = "Offline";
 
     private string currentTime = DateTime.Now.ToString("h:mm:ss tt");

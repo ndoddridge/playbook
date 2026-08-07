@@ -1,3 +1,4 @@
+using Playbook.Application.Leagues;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Playbook.Application;
@@ -9,7 +10,7 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddApplication(this IServiceCollection services)
     {
-        // Application services will be registered here as features are added.
+        services.AddSingleton<ILeagueState, LeagueStateService>();
         return services;
     }
 }
