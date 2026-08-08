@@ -43,7 +43,10 @@ internal static class TestServiceFactory
             ["Injuries:CacheTtlMinutes"] = "360",
             ["Injuries:CacheFileName"] = $"player-injuries-cache-tests-{Guid.NewGuid():N}.json",
             ["BackgroundRefresh:Enabled"] = backgroundRefreshEnabled ? "true" : "false",
-            ["BackgroundRefresh:IntervalMinutes"] = "15"
+            ["BackgroundRefresh:IntervalMinutes"] = "15",
+            ["PropLines:Provider"] = "Mock",
+            ["PropLines:StaleAfterMinutes"] = "180",
+            ["PropLines:OddsApi:ApiKey"] = ""
         };
 
         var configuration = new ConfigurationBuilder()

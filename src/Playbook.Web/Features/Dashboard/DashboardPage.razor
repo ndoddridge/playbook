@@ -5,6 +5,8 @@
 @using Playbook.Application.News
 @using Playbook.Application.Players
 @using Playbook.Application.Players.Data
+@using Playbook.Application.Predictions
+@using Playbook.Application.Predictions.Interfaces
 @using Playbook.Application.Projections
 @using Playbook.Application.Projections.Interfaces
 @using Playbook.Application.Recommendations
@@ -23,6 +25,8 @@
 @inject IIntelligenceSyncStatus IntelligenceSyncStatus
 @inject IProjectionService ProjectionService
 @inject IProjectionSyncStatus ProjectionSyncStatus
+@inject IQuickPicksService QuickPicksService
+@inject IQuickPicksSyncStatus QuickPicksSyncStatus
 @inject IPlayerService PlayerService
 @inject IPlayerDataSyncStatus PlayerDataSyncStatus
 @inject IPlayerStatsService PlayerStatsService
@@ -286,6 +290,42 @@
                     <span class="pb-meta-value">@projectionErrors</span>
                 </div>
                 <div class="pb-meta-row">
+                    <span class="pb-meta-label">Prop Provider</span>
+                    <span class="pb-meta-value pb-meta-value--live">@qpProvider</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Games Loaded</span>
+                    <span class="pb-meta-value">@qpGames</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Markets Loaded</span>
+                    <span class="pb-meta-value">@qpMarkets</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Props Loaded</span>
+                    <span class="pb-meta-value">@qpProps</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Predictions Generated</span>
+                    <span class="pb-meta-value">@qpPredictions</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Last Prop Sync</span>
+                    <span class="pb-meta-value">@qpLastPropSync</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Last Prediction Run</span>
+                    <span class="pb-meta-value">@qpLastPredictionRun</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Average Prediction Confidence</span>
+                    <span class="pb-meta-value">@qpAvgConfidence</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Provider Errors</span>
+                    <span class="pb-meta-value">@qpProviderErrors</span>
+                </div>
+                <div class="pb-meta-row">
                     <span class="pb-meta-label">Statistics Providers</span>
                     <span class="pb-meta-value pb-meta-value--live">@statsProviders</span>
                 </div>
@@ -544,6 +584,7 @@
         new("League Engine", "Ready"),
         new("Intelligence Engine", "Ready"),
         new("Projection Engine", "Ready"),
+        new("Quick Picks Engine", "Ready"),
         new("Recommendation Engine", "In Development"),
         new("Data Engine", "In Development")
     ];
@@ -576,6 +617,15 @@
     private string projectionAvgVolatility = "—";
     private string projectionLastRun = "—";
     private string projectionErrors = "None";
+    private string qpProvider = "—";
+    private string qpGames = "—";
+    private string qpMarkets = "—";
+    private string qpProps = "—";
+    private string qpPredictions = "—";
+    private string qpLastPropSync = "—";
+    private string qpLastPredictionRun = "—";
+    private string qpAvgConfidence = "—";
+    private string qpProviderErrors = "None";
     private string statsProviders = "—";
     private string statsProvider = "—";
     private string statsPlayers = "—";
@@ -726,6 +776,23 @@
         projectionErrors = string.IsNullOrWhiteSpace(ProjectionSyncStatus.ProjectionErrors)
             ? "None"
             : ProjectionSyncStatus.ProjectionErrors;
+
+        _ = QuickPicksService.GetAllPredictions();
+        qpProvider = QuickPicksSyncStatus.UsedFallback
+            ? $"{QuickPicksSyncStatus.PropProvider} (fallback)"
+            : QuickPicksSyncStatus.PropProvider;
+        qpGames = QuickPicksSyncStatus.GamesLoaded.ToString();
+        qpMarkets = QuickPicksSyncStatus.MarketsLoaded.ToString();
+        qpProps = QuickPicksSyncStatus.PropsLoaded.ToString();
+        qpPredictions = QuickPicksSyncStatus.PredictionsGenerated.ToString();
+        qpLastPropSync = QuickPicksSyncStatus.LastPropSync?.ToLocalTime().ToString("h:mm:ss tt") ?? "—";
+        qpLastPredictionRun = QuickPicksSyncStatus.LastPredictionRun?.ToLocalTime().ToString("h:mm:ss tt") ?? "—";
+        qpAvgConfidence = QuickPicksSyncStatus.PredictionsGenerated > 0
+            ? QuickPicksSyncStatus.AveragePredictionConfidence.ToString("0.0")
+            : "—";
+        qpProviderErrors = string.IsNullOrWhiteSpace(QuickPicksSyncStatus.ProviderErrors)
+            ? "None"
+            : QuickPicksSyncStatus.ProviderErrors;
 
         _ = PlayerStatsService.GetAllStats();
         statsProviders = PlayerStatsSyncStatus.StatisticsProviders;

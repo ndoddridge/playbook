@@ -7,6 +7,8 @@ using Playbook.Application.Leagues.Sleeper;
 using Playbook.Application.News;
 using Playbook.Application.Players;
 using Playbook.Application.Players.Data;
+using Playbook.Application.Predictions;
+using Playbook.Application.Predictions.Interfaces;
 using Playbook.Application.Projections;
 using Playbook.Application.Projections.Interfaces;
 using Playbook.Application.Recommendations;
@@ -18,6 +20,7 @@ using Playbook.Infrastructure.Intelligence.Services;
 using Playbook.Infrastructure.Leagues;
 using Playbook.Infrastructure.News;
 using Playbook.Infrastructure.Players;
+using Playbook.Infrastructure.Predictions;
 using Playbook.Infrastructure.Projections.Services;
 using Playbook.Infrastructure.Recommendations;
 using Playbook.Infrastructure.Stats;
@@ -45,6 +48,7 @@ public static class DependencyInjection
             services.Configure<PlayerStatsOptions>(configuration.GetSection(PlayerStatsOptions.SectionName));
             services.Configure<CollegeStatsOptions>(configuration.GetSection(CollegeStatsOptions.SectionName));
             services.Configure<InjuryOptions>(configuration.GetSection(InjuryOptions.SectionName));
+            services.Configure<PropLineOptions>(configuration.GetSection(PropLineOptions.SectionName));
         }
         else
         {
@@ -56,6 +60,7 @@ public static class DependencyInjection
             services.Configure<PlayerStatsOptions>(_ => { });
             services.Configure<CollegeStatsOptions>(_ => { });
             services.Configure<InjuryOptions>(_ => { });
+            services.Configure<PropLineOptions>(_ => { });
         }
 
         RegisterPlayerData(services);
@@ -65,6 +70,7 @@ public static class DependencyInjection
         RegisterNews(services);
         RegisterIntelligence(services);
         RegisterProjections(services);
+        RegisterQuickPicks(services);
 
         services.AddSingleton<IPlayerContextService, MockPlayerContextService>();
         RegisterLeagues(services);
@@ -117,6 +123,31 @@ public static class DependencyInjection
         services.AddSingleton<IGameEnvironmentProvider, UnavailableGameEnvironmentProvider>();
         services.AddSingleton<IProjectionEngine, ProjectionEngine>();
         services.AddSingleton<IProjectionService, ProjectionService>();
+    }
+
+    private static void RegisterQuickPicks(IServiceCollection services)
+    {
+        services.AddSingleton<QuickPicksSyncStatus>();
+        services.AddSingleton<IQuickPicksSyncStatus>(sp => sp.GetRequiredService<QuickPicksSyncStatus>());
+        services.AddSingleton<IQuickPicksEngine, QuickPicksEngine>();
+
+        services.AddSingleton<MockPropLineProvider>();
+        services.AddSingleton<IPropLineProvider>(sp => sp.GetRequiredService<MockPropLineProvider>());
+
+        services.AddHttpClient(LivePropLineProvider.HttpClientName, (sp, client) =>
+        {
+            var options = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<PropLineOptions>>().Value.OddsApi;
+            var baseUrl = string.IsNullOrWhiteSpace(options.BaseUrl)
+                ? "https://api.the-odds-api.com/v4/"
+                : options.BaseUrl.TrimEnd('/') + "/";
+            client.BaseAddress = new Uri(baseUrl);
+            client.Timeout = TimeSpan.FromSeconds(Math.Clamp(options.TimeoutSeconds, 5, 120));
+            client.DefaultRequestHeaders.TryAddWithoutValidation("Accept", "application/json");
+        });
+        services.AddSingleton<LivePropLineProvider>();
+        services.AddSingleton<IPropLineProvider>(sp => sp.GetRequiredService<LivePropLineProvider>());
+
+        services.AddSingleton<IQuickPicksService, QuickPicksService>();
     }
 
     private static void RegisterPlayerData(IServiceCollection services)

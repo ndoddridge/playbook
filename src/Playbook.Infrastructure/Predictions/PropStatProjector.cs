@@ -1,0 +1,123 @@
+using Playbook.Core.Intelligence.Models;
+using Playbook.Core.Predictions;
+using Playbook.Core.Projections.Models;
+using Playbook.Core.Stats.Models;
+
+namespace Playbook.Infrastructure.Predictions;
+
+/// <summary>
+/// Estimates football counting-stat expectations for prop markets.
+/// Uses production + recent usage — not fantasy scoring settings.
+/// </summary>
+public static class PropStatProjector
+{
+    public static (decimal? Projection, int Confidence, int Volatility) Project(
+        PredictionMarketType market,
+        PlayerProductionSnapshot? production,
+        PlayerStatisticalContext? stats,
+        PlayerIntelligenceProfile? intelligence)
+    {
+        if (production is null && market is PredictionMarketType.GameTotal
+            or PredictionMarketType.TeamTotal or PredictionMarketType.Winner
+            or PredictionMarketType.Spread)
+        {
+            return market switch
+            {
+                PredictionMarketType.GameTotal => (45.5m, 42, 55),
+                PredictionMarketType.TeamTotal => (22.5m, 40, 58),
+                PredictionMarketType.Winner => (0.55m, 38, 60),
+                PredictionMarketType.Spread => (-2.5m, 38, 60),
+                _ => (null, 30, 70)
+            };
+        }
+
+        if (production is null)
+        {
+            return (null, 25, 70);
+        }
+
+        var games = Math.Max(1, production.GamesPlayed);
+        decimal PerGame(decimal total) => Math.Round(total / games, 1, MidpointRounding.AwayFromZero);
+
+        var seasonValue = market switch
+        {
+            PredictionMarketType.PassingYards => PerGame(production.PassingYards),
+            PredictionMarketType.RushingYards => PerGame(production.RushingYards),
+            PredictionMarketType.ReceivingYards => PerGame(production.ReceivingYards),
+            PredictionMarketType.Receptions => PerGame(production.Receptions),
+            PredictionMarketType.PassingTouchdowns => PerGame(production.PassingTouchdowns),
+            PredictionMarketType.AnytimeTouchdown => PerGame(
+                production.RushingTouchdowns + production.ReceivingTouchdowns +
+                (production.Position == Core.Players.Position.QB ? production.PassingTouchdowns * 0.15m : 0)),
+            _ => (decimal?)null
+        };
+
+        if (seasonValue is null)
+        {
+            return (null, 30, 65);
+        }
+
+        var projected = seasonValue.Value;
+        var confidence = production.Source switch
+        {
+            ProductionDataSource.StatsService => 72,
+            ProductionDataSource.CuratedSeason => 68,
+            ProductionDataSource.ProfileSeason => 64,
+            _ => 45
+        };
+        var volatility = 40;
+
+        if (stats?.RecentProduction?.PerGame is { } recent &&
+            stats.RecentProduction.Games is int rg &&
+            rg >= 2)
+        {
+            var recentValue = market switch
+            {
+                PredictionMarketType.PassingYards => recent.PassYards ?? projected,
+                PredictionMarketType.RushingYards => recent.RushYards ?? projected,
+                PredictionMarketType.ReceivingYards => recent.ReceivingYards ?? projected,
+                PredictionMarketType.Receptions => recent.Receptions ?? projected,
+                PredictionMarketType.PassingTouchdowns => recent.PassTouchdowns ?? projected,
+                PredictionMarketType.AnytimeTouchdown =>
+                    (recent.RushTouchdowns ?? 0) + (recent.ReceivingTouchdowns ?? 0),
+                _ => projected
+            };
+            projected = Math.Round(projected * 0.45m + recentValue * 0.55m, 1, MidpointRounding.AwayFromZero);
+            confidence += 6;
+            if (stats.VolatilityScore is decimal volScore)
+            {
+                volatility = (int)Math.Clamp(volScore, 20, 90);
+            }
+        }
+
+        if (intelligence is not null)
+        {
+            // Usage / opportunity nudge counting-stat outlook slightly.
+            var usageTilt = (intelligence.UsageScore - 50) / 50m * 0.08m;
+            var oppTilt = (intelligence.OpportunityScore - 50) / 50m * 0.07m;
+            projected = Math.Round(projected * (1 + usageTilt + oppTilt), 1, MidpointRounding.AwayFromZero);
+            confidence = (int)Math.Round(confidence * 0.55 + intelligence.OverallConfidence * 0.45);
+            if (intelligence.HealthScore < 40)
+            {
+                projected = Math.Round(projected * 0.85m, 1, MidpointRounding.AwayFromZero);
+                confidence -= 12;
+                volatility += 15;
+            }
+            else if (intelligence.HealthScore > 70)
+            {
+                confidence += 4;
+            }
+        }
+
+        if (market == PredictionMarketType.AnytimeTouchdown)
+        {
+            // Express as scoring rate 0–1.5-ish for comparison vs 0.5 "Yes" threshold.
+            projected = Math.Clamp(projected, 0m, 1.8m);
+        }
+
+        return (
+            projected,
+            Math.Clamp(confidence, 15, 95),
+            Math.Clamp(volatility, 15, 95));
+    }
+}

@@ -1,0 +1,208 @@
+/* Quick Picks — football prediction board (not fantasy dashboard) */
+
+.qp-page__header {
+    margin-bottom: var(--pb-space-6);
+}
+
+.qp-page__meta {
+    margin: var(--pb-space-3) 0 0;
+    color: var(--pb-color-text-secondary);
+    font-size: var(--pb-text-sm);
+}
+
+.qp-section {
+    margin-bottom: var(--pb-space-8);
+}
+
+.qp-section__title {
+    margin: 0;
+    font-size: var(--pb-text-xl);
+    font-weight: var(--pb-weight-semibold);
+    letter-spacing: -0.02em;
+}
+
+.qp-section__subtitle {
+    margin: 0.25rem 0 var(--pb-space-4);
+    color: var(--pb-color-text-secondary);
+    font-size: var(--pb-text-sm);
+}
+
+.qp-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
+    gap: var(--pb-space-4);
+}
+
+.qp-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--pb-space-3);
+    padding: var(--pb-space-4);
+    border: 1px solid var(--pb-color-border);
+    border-radius: var(--pb-radius-lg);
+    background:
+        linear-gradient(160deg, rgba(62, 207, 142, 0.06), transparent 42%),
+        var(--pb-color-surface);
+}
+
+.qp-card__header {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--pb-space-3);
+    align-items: flex-start;
+}
+
+.qp-card__subject {
+    margin: 0;
+    font-size: var(--pb-text-lg);
+    font-weight: var(--pb-weight-semibold);
+}
+
+.qp-card__event {
+    margin: 0.2rem 0 0;
+    color: var(--pb-color-text-secondary);
+    font-size: var(--pb-text-xs);
+}
+
+.qp-freshness {
+    flex-shrink: 0;
+    padding: 0.15rem 0.45rem;
+    border-radius: var(--pb-radius-sm);
+    font-size: 0.65rem;
+    font-weight: var(--pb-weight-medium);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.qp-freshness--live {
+    color: #0b3d2e;
+    background: var(--pb-color-accent-soft);
+    border: 1px solid var(--pb-color-accent);
+}
+
+.qp-freshness--mock {
+    color: var(--pb-color-text-secondary);
+    background: var(--pb-color-surface-hover);
+    border: 1px solid var(--pb-color-border);
+}
+
+.qp-freshness--stale,
+.qp-freshness--unavailable {
+    color: #7a4b00;
+    background: rgba(230, 184, 77, 0.12);
+    border: 1px solid var(--pb-color-warning);
+}
+
+.qp-card__market {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--pb-space-2);
+    align-items: baseline;
+}
+
+.qp-card__market-name {
+    color: var(--pb-color-text-secondary);
+    font-size: var(--pb-text-sm);
+}
+
+.qp-card__direction {
+    font-weight: var(--pb-weight-semibold);
+    color: var(--pb-color-accent);
+}
+
+.qp-card__stats {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: var(--pb-space-2);
+}
+
+.qp-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+}
+
+.qp-stat__label {
+    color: var(--pb-color-text-muted);
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.qp-stat__value {
+    font-size: var(--pb-text-sm);
+    font-weight: var(--pb-weight-medium);
+}
+
+.qp-card__reasoning {
+    margin: 0;
+    color: var(--pb-color-text-secondary);
+    font-size: var(--pb-text-sm);
+    line-height: 1.45;
+}
+
+.qp-card__footer {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--pb-space-2);
+    color: var(--pb-color-text-muted);
+    font-size: var(--pb-text-xs);
+}
+
+.qp-card__expand {
+    align-self: flex-start;
+    padding: 0;
+    color: var(--pb-color-accent);
+    font-size: var(--pb-text-xs);
+    font-weight: var(--pb-weight-medium);
+}
+
+.qp-card__calc {
+    margin: 0;
+    padding-left: 1.1rem;
+    color: var(--pb-color-text-muted);
+    font-size: var(--pb-text-xs);
+}
+
+.qp-card__calc li + li {
+    margin-top: 0.25rem;
+}
+
+.qp-upcoming {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    border: 1px solid var(--pb-color-border);
+    border-radius: var(--pb-radius-lg);
+    background: var(--pb-color-surface);
+}
+
+.qp-upcoming li {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--pb-space-3);
+    padding: var(--pb-space-3) var(--pb-space-4);
+}
+
+.qp-upcoming li + li {
+    border-top: 1px solid var(--pb-color-border);
+}
+
+.qp-upcoming__match {
+    font-weight: var(--pb-weight-medium);
+}
+
+.qp-upcoming__time {
+    color: var(--pb-color-text-secondary);
+    font-size: var(--pb-text-sm);
+}
+
+@media (max-width: 640px) {
+    .qp-card__stats {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .qp-upcoming li {
+        flex-direction: column;
+    }
+}

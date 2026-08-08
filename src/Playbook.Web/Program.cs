@@ -1,6 +1,8 @@
 using Playbook.Application;
 using Playbook.Infrastructure;
 using Playbook.Web.Components;
+using Playbook.Web.Features.QuickPicks.Interfaces;
+using Playbook.Web.Features.QuickPicks.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -10,6 +12,8 @@ builder.Services.AddRazorComponents()
 builder.Services
     .AddInfrastructure(builder.Configuration)
     .AddApplication();
+
+builder.Services.AddSingleton<IQuickPicksBoard, QuickPicksBoard>();
 
 var app = builder.Build();
 

@@ -2,6 +2,23 @@
 
 All notable project changes are recorded here.
 
+## [Unreleased] — Quick Picks (Prediction Engine v0.1)
+
+### Added
+
+- Quick Picks domain (`Prediction`, `PropLine`, `FootballEvent`) independent of fantasy league/roster
+- `IPropLineProvider` with `MockPropLineProvider` + `LivePropLineProvider` (The Odds API)
+- `IQuickPicksEngine` / `QuickPicksEngine` — deterministic projection-vs-line edge with confidence/volatility/health weighting
+- `IQuickPicksService` orchestration + Developer Monitor sync fields
+- Quick Picks board UI (Top / Watch / Upcoming) with human-readable reasoning and expandable calculation notes
+- Line freshness labels: Live / Mock / Stale / Unavailable
+- Configuration + docs: `PropLines` / `docs/PROP_LINES.md`
+
+### Architecture
+
+Football data → Intelligence → PropStatProjector → Prediction Engine → Quick Picks  
+Fantasy path remains separate and must not influence Quick Picks.
+
 ## [Unreleased] — League/Team as Personalized Source of Truth
 
 ### Added

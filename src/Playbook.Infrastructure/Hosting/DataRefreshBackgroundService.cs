@@ -5,13 +5,14 @@ using Playbook.Application.Injuries.Interfaces;
 using Playbook.Application.Intelligence.Interfaces;
 using Playbook.Application.News;
 using Playbook.Application.Players;
+using Playbook.Application.Predictions.Interfaces;
 using Playbook.Application.Projections.Interfaces;
 using Playbook.Application.Stats.Interfaces;
 
 namespace Playbook.Infrastructure.Hosting;
 
 /// <summary>
-/// Periodically refreshes players, stats, news, injuries, intelligence, and projections.
+/// Periodically refreshes players, stats, news, injuries, intelligence, projections, and Quick Picks.
 /// </summary>
 public sealed class DataRefreshBackgroundService : BackgroundService
 {
@@ -21,6 +22,7 @@ public sealed class DataRefreshBackgroundService : BackgroundService
     private readonly IPlayerInjuryService _injuries;
     private readonly IIntelligenceService _intelligence;
     private readonly IProjectionService _projections;
+    private readonly IQuickPicksService _quickPicks;
     private readonly BackgroundRefreshOptions _options;
     private readonly ILogger<DataRefreshBackgroundService> _logger;
 
@@ -31,6 +33,7 @@ public sealed class DataRefreshBackgroundService : BackgroundService
         IPlayerInjuryService injuries,
         IIntelligenceService intelligence,
         IProjectionService projections,
+        IQuickPicksService quickPicks,
         IOptions<BackgroundRefreshOptions> options,
         ILogger<DataRefreshBackgroundService> logger)
     {
@@ -40,6 +43,7 @@ public sealed class DataRefreshBackgroundService : BackgroundService
         _injuries = injuries;
         _intelligence = intelligence;
         _projections = projections;
+        _quickPicks = quickPicks;
         _options = options.Value;
         _logger = logger;
     }
@@ -73,6 +77,7 @@ public sealed class DataRefreshBackgroundService : BackgroundService
             await RefreshInjuriesAsync(stoppingToken).ConfigureAwait(false);
             RefreshIntelligence();
             RefreshProjections();
+            RefreshQuickPicks();
 
             try
             {
@@ -163,6 +168,19 @@ public sealed class DataRefreshBackgroundService : BackgroundService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Background refresh: projection update failed");
+        }
+    }
+
+    private void RefreshQuickPicks()
+    {
+        try
+        {
+            _quickPicks.Refresh();
+            _logger.LogInformation("Background refresh: Quick Picks updated successfully");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Background refresh: Quick Picks update failed");
         }
     }
 }

@@ -1,0 +1,76 @@
+@using Playbook.Core.Predictions
+@using Playbook.Web.Features.QuickPicks.Models
+
+<article class="qp-card">
+    <header class="qp-card__header">
+        <div>
+            <h3 class="qp-card__subject">@Prediction.SubjectLabel</h3>
+            <p class="qp-card__event">@Prediction.Event.DisplayName</p>
+        </div>
+        <span class="@QuickPickDisplay.FreshnessCss(Prediction.LineFreshness)">
+            @QuickPickDisplay.FreshnessLabel(Prediction.LineFreshness)
+        </span>
+    </header>
+
+    <div class="qp-card__market">
+        <span class="qp-card__market-name">@Prediction.MarketLabel</span>
+        <span class="qp-card__direction">@QuickPickDisplay.LineText(Prediction)</span>
+    </div>
+
+    <div class="qp-card__stats">
+        <div class="qp-stat">
+            <span class="qp-stat__label">Line</span>
+            <span class="qp-stat__value">@(Prediction.Line?.ToString("0.0") ?? "—")</span>
+        </div>
+        <div class="qp-stat">
+            <span class="qp-stat__label">Playbook</span>
+            <span class="qp-stat__value">@QuickPickDisplay.ProjectionText(Prediction)</span>
+        </div>
+        <div class="qp-stat">
+            <span class="qp-stat__label">Probability</span>
+            <span class="qp-stat__value">@Prediction.Probability%</span>
+        </div>
+        <div class="qp-stat">
+            <span class="qp-stat__label">Edge</span>
+            <span class="qp-stat__value">@Prediction.Edge.ToString("0.0")</span>
+        </div>
+        <div class="qp-stat">
+            <span class="qp-stat__label">Confidence</span>
+            <span class="qp-stat__value">@Prediction.Confidence%</span>
+        </div>
+    </div>
+
+    <p class="qp-card__reasoning">@Prediction.Reasoning</p>
+
+    <footer class="qp-card__footer">
+        <span>@Prediction.Source@(string.IsNullOrWhiteSpace(Prediction.Bookmaker) ? "" : $" · {Prediction.Bookmaker}")</span>
+        <span>Updated @QuickPickDisplay.Timestamp(Prediction.LastUpdated)</span>
+    </footer>
+
+    <button type="button" class="qp-card__expand" @onclick="Toggle">
+        @(expanded ? "Hide calculation" : "Show calculation")
+    </button>
+
+    @if (expanded)
+    {
+        <ul class="qp-card__calc">
+            @foreach (var note in Prediction.CalculationNotes)
+            {
+                <li>@note</li>
+            }
+            @foreach (var signal in Prediction.SupportingIntelligence)
+            {
+                <li>@signal</li>
+            }
+        </ul>
+    }
+</article>
+
+@code {
+    [Parameter, EditorRequired]
+    public Prediction Prediction { get; set; } = default!;
+
+    private bool expanded;
+
+    private void Toggle() => expanded = !expanded;
+}

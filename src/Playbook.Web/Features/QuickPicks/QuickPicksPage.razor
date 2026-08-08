@@ -1,6 +1,92 @@
 @page "/quick-picks"
+@using Playbook.Application.Predictions
+@using Playbook.Core.Predictions
+@using Playbook.Web.Features.QuickPicks.Components
+@using Playbook.Web.Features.QuickPicks.Interfaces
+@using Playbook.Web.Features.QuickPicks.Models
+@inject IQuickPicksBoard Board
+@inject IQuickPicksSyncStatus SyncStatus
 
 <PageTitle>Quick Picks — Playbook</PageTitle>
 
-<ComingSoonPage Title="Quick Picks"
-                Subtitle="Probability-driven props and outcome picks will live here." />
+<section class="pb-page qp-page">
+    <header class="pb-page__header qp-page__header">
+        <h1 class="pb-page__title">Quick Picks</h1>
+        <p class="pb-page__subtitle">Playbook's strongest football predictions.</p>
+        <p class="qp-page__meta">
+            Independent of fantasy leagues ·
+            Provider @(SyncStatus.UsedFallback ? $"{SyncStatus.PropProvider} (fallback)" : SyncStatus.PropProvider) ·
+            Last updated @(SyncStatus.LastPredictionRun?.ToLocalTime().ToString("h:mm:ss tt") ?? "—")
+        </p>
+    </header>
+
+    <section class="qp-section" aria-labelledby="qp-top-heading">
+        <h2 id="qp-top-heading" class="qp-section__title">Top Picks</h2>
+        <p class="qp-section__subtitle">Strongest opportunities</p>
+        @if (topPicks.Count == 0)
+        {
+            <p class="pb-empty">No high-confidence picks yet. Check Watch or wait for fresh lines.</p>
+        }
+        else
+        {
+            <div class="qp-grid">
+                @foreach (var pick in topPicks)
+                {
+                    <PredictionCard Prediction="pick" />
+                }
+            </div>
+        }
+    </section>
+
+    <section class="qp-section" aria-labelledby="qp-watch-heading">
+        <h2 id="qp-watch-heading" class="qp-section__title">Watch</h2>
+        <p class="qp-section__subtitle">Interesting but lower-confidence predictions</p>
+        @if (watchPicks.Count == 0)
+        {
+            <p class="pb-empty">No watch-list predictions right now.</p>
+        }
+        else
+        {
+            <div class="qp-grid">
+                @foreach (var pick in watchPicks)
+                {
+                    <PredictionCard Prediction="pick" />
+                }
+            </div>
+        }
+    </section>
+
+    <section class="qp-section" aria-labelledby="qp-upcoming-heading">
+        <h2 id="qp-upcoming-heading" class="qp-section__title">Upcoming</h2>
+        <p class="qp-section__subtitle">Upcoming games/events</p>
+        @if (events.Count == 0)
+        {
+            <p class="pb-empty">No upcoming events loaded.</p>
+        }
+        else
+        {
+            <ul class="qp-upcoming">
+                @foreach (var ev in events)
+                {
+                    <li>
+                        <span class="qp-upcoming__match">@ev.DisplayName</span>
+                        <span class="qp-upcoming__time">@ev.CommenceTime.ToLocalTime().ToString("ddd MMM d · h:mm tt")</span>
+                    </li>
+                }
+            </ul>
+        }
+    </section>
+</section>
+
+@code {
+    private IReadOnlyList<Prediction> topPicks = [];
+    private IReadOnlyList<Prediction> watchPicks = [];
+    private IReadOnlyList<FootballEvent> events = [];
+
+    protected override void OnInitialized()
+    {
+        topPicks = Board.TopPicks;
+        watchPicks = Board.WatchPicks;
+        events = Board.Upcoming;
+    }
+}
