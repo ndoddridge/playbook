@@ -45,10 +45,10 @@ public sealed class OddsApiOptions
 
     /// <summary>
     /// API key from https://the-odds-api.com/
-    /// Supply via:
-    /// - config key <c>PropLines:OddsApi:ApiKey</c>, or
-    /// - environment variable <c>PropLines__OddsApi__ApiKey</c>
-    /// Never commit a real key.
+    /// Supply via (never commit a real key):
+    /// - env <c>PropLines__OddsApi__ApiKey</c> (preferred),
+    /// - config/user-secret <c>PropLines:OddsApi:ApiKey</c>,
+    /// - aliases <c>ODDS_API_KEY</c> or <c>THE_ODDS_API_KEY</c>.
     /// </summary>
     public string ApiKey { get; set; } = string.Empty;
 

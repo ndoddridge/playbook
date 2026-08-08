@@ -298,6 +298,10 @@
                     <span class="pb-meta-value">@qpProviderStatus</span>
                 </div>
                 <div class="pb-meta-row">
+                    <span class="pb-meta-label">Api Key Configured</span>
+                    <span class="pb-meta-value">@qpApiKeyConfigured</span>
+                </div>
+                <div class="pb-meta-row">
                     <span class="pb-meta-label">Markets Loaded</span>
                     <span class="pb-meta-value">@qpMarkets</span>
                 </div>
@@ -627,6 +631,7 @@
     private string projectionErrors = "None";
     private string qpProvider = "—";
     private string qpProviderStatus = "—";
+    private string qpApiKeyConfigured = "—";
     private string qpGames = "—";
     private string qpMarkets = "—";
     private string qpProps = "—";
@@ -792,6 +797,7 @@
             ? $"{QuickPicksSyncStatus.PropProvider} (fallback from {QuickPicksSyncStatus.ConfiguredProvider})"
             : QuickPicksSyncStatus.PropProvider;
         qpProviderStatus = QuickPicksSyncStatus.ProviderStatus;
+        qpApiKeyConfigured = QuickPicksSyncStatus.ApiKeyConfigured ? "Yes" : "No";
         qpGames = QuickPicksSyncStatus.GamesLoaded.ToString();
         qpMarkets = QuickPicksSyncStatus.MarketsLoaded.ToString();
         qpProps = QuickPicksSyncStatus.PropsLoaded.ToString();

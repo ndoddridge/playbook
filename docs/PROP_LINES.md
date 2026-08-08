@@ -27,55 +27,85 @@ Quick Picks uses structured sportsbook lines via `IPropLineProvider`. It never r
 
 Each normalized `PropLine` includes book/source, line, American odds when available, and `UpdatedAt` for freshness.
 
-## Configuration
+## Configuration path (trace)
 
-In `appsettings.json` (or environment / user secrets):
-
-```json
-"PropLines": {
-  "Provider": "Live",
-  "StaleAfterMinutes": 180,
-  "FallbackToMockWhenEmpty": true,
-  "OddsApi": {
-    "BaseUrl": "https://api.the-odds-api.com/v4/",
-    "ApiKey": "",
-    "SportKey": "americanfootball_nfl",
-    "Regions": "us",
-    "GameMarkets": "h2h,spreads,totals",
-    "PlayerPropMarkets": "player_pass_yds,player_rush_yds,player_reception_yds,player_receptions,player_anytime_td,player_pass_tds",
-    "PreferredBookmakers": "draftkings,fanduel,betmgm,williamhill_us",
-    "FetchPlayerProps": true,
-    "TimeoutSeconds": 30
-  }
-}
+```
+Environment / user-secrets / appsettings
+        ↓  (ASP.NET Core configuration)
+PropLines:OddsApi:ApiKey  (+ aliases ODDS_API_KEY / THE_ODDS_API_KEY)
+        ↓
+IOptions<PropLineOptions>  (PostConfigure applies aliases)
+        ↓
+QuickPicksService.LoadLines()
+        ↓  Provider=Live AND key present?
+LivePropLineProvider (TheOddsAPI)  →  PropLine (Freshness=Live)
+        ↓  else
+MockPropLineProvider               →  PropLine (Freshness=Mock) + Fallback status
 ```
 
-### Required environment variables (live)
+`appsettings.json` sets `"PropLines:Provider": "Live"` by default with an **empty** `ApiKey`.  
+An empty key is intentional — never commit a real key. Without a runtime key, Live **correctly** falls back to Mock (this is why the board may show `MOCK LINE` / `MockBook`).
 
-| Variable | Purpose |
-|----------|---------|
-| `PropLines__OddsApi__ApiKey` | The Odds API key (required for live lines) |
-| `PropLines__Provider` | Optional override: `Live` (default) or `Mock` |
+## Required credentials
 
-Config-key equivalents:
-
-- `PropLines:OddsApi:ApiKey`
-- `PropLines:Provider`
-
-### Supplying a live key
-
-1. Create a free key at https://the-odds-api.com/
-2. Set `PropLines__OddsApi__ApiKey` (or user secrets / local config)
-3. Keep `"PropLines:Provider": "Live"` (default)
+| Name | Kind | Required for live |
+|------|------|-------------------|
+| `PropLines__OddsApi__ApiKey` | Environment variable (preferred) | **Yes** |
+| `PropLines:OddsApi:ApiKey` | Config / user secrets | Yes (same value) |
+| `ODDS_API_KEY` | Alias env var | Optional alias |
+| `THE_ODDS_API_KEY` | Alias env var | Optional alias |
+| `PropLines__Provider` | Env override `Live` / `Mock` | No (default Live) |
 
 **Never commit a real API key.**
 
-### Fallback behavior
+## How to supply the key
+
+### Local machine (recommended)
+
+```bash
+# From src/Playbook.Web
+dotnet user-secrets set "PropLines:OddsApi:ApiKey" "<your-key>"
+```
+
+Or export before `dotnet run`:
+
+```bash
+export PropLines__OddsApi__ApiKey="<your-key>"
+# optional aliases also work:
+# export ODDS_API_KEY="<your-key>"
+dotnet run --project src/Playbook.Web
+```
+
+### Cursor Cloud Agent / remote VM
+
+Add a secret named exactly:
+
+```text
+PropLines__OddsApi__ApiKey
+```
+
+Then **restart** the Playbook process so configuration is reloaded.  
+This cloud run currently has **no** Odds API key in the process environment, which is why Quick Picks shows Mock.
+
+### Verify without exposing the key
+
+Open the Dashboard Developer Monitor:
+
+| Field | Expected when live works |
+|-------|---------------------------|
+| Prop Provider | `TheOddsAPI` |
+| Provider Status | `Live` |
+| Api Key Configured | `Yes` |
+| Last Error | `None` |
+
+If **Api Key Configured = No**, the key never reached the process — fix configuration, don’t change the prediction engine.
+
+## Fallback behavior
 
 | Situation | Result |
 |-----------|--------|
 | `Provider=Mock` | Uses `MockPropLineProvider` |
-| `Provider=Live` + missing API key | Falls back to Mock; monitor shows Fallback + Last Error |
+| `Provider=Live` + missing API key | Falls back to Mock; monitor shows Fallback + Api Key Configured=No |
 | `Provider=Live` + HTTP/API failure | Falls back to Mock |
 | `Provider=Live` + empty markets (e.g. offseason) | Falls back to Mock when `FallbackToMockWhenEmpty` is true |
 

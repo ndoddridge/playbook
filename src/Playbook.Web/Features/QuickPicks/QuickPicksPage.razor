@@ -19,9 +19,20 @@
             @SyncStatus.PropProvider ·
             Last updated @(SyncStatus.LastPredictionRun?.ToLocalTime().ToString("h:mm:ss tt") ?? "—")
         </p>
-        @if (!string.IsNullOrWhiteSpace(SyncStatus.LastError) && SyncStatus.UsedFallback)
+        @if (SyncStatus.UsedFallback)
         {
-            <p class="qp-page__note">Using mock market lines — live provider unavailable. @SyncStatus.LastError</p>
+            <p class="qp-page__note">
+                Using mock market lines
+                @(SyncStatus.ApiKeyConfigured ? "(live request failed)." : "(Odds API key not configured).")
+                @if (!SyncStatus.ApiKeyConfigured)
+                {
+                    <text> Set environment variable <code>PropLines__OddsApi__ApiKey</code>, then restart the app.</text>
+                }
+                else if (!string.IsNullOrWhiteSpace(SyncStatus.LastError))
+                {
+                    <text> @SyncStatus.LastError</text>
+                }
+            </p>
         }
     </header>
 

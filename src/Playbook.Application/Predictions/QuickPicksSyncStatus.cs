@@ -9,6 +9,9 @@ public interface IQuickPicksSyncStatus
     /// <summary>Live | Mock | Fallback | Error | —</summary>
     string ProviderStatus { get; }
 
+    /// <summary>True when an Odds API key is present (value never exposed).</summary>
+    bool ApiKeyConfigured { get; }
+
     bool UsedFallback { get; }
 
     int GamesLoaded { get; }
@@ -44,6 +47,8 @@ public sealed class QuickPicksSyncStatus : IQuickPicksSyncStatus
 
     public string ProviderStatus { get; private set; } = "—";
 
+    public bool ApiKeyConfigured { get; private set; }
+
     public bool UsedFallback { get; private set; }
 
     public int GamesLoaded { get; private set; }
@@ -66,7 +71,11 @@ public sealed class QuickPicksSyncStatus : IQuickPicksSyncStatus
 
     public TimeSpan? ProviderResponseTime { get; private set; }
 
-    public void SetConfigured(string configured) => ConfiguredProvider = configured;
+    public void SetConfigured(string configured, bool apiKeyConfigured = false)
+    {
+        ConfiguredProvider = configured;
+        ApiKeyConfigured = apiKeyConfigured;
+    }
 
     public void RecordPropSync(
         string activeProvider,
@@ -75,7 +84,8 @@ public sealed class QuickPicksSyncStatus : IQuickPicksSyncStatus
         int markets,
         int props,
         TimeSpan elapsed,
-        string? error)
+        string? error,
+        bool? apiKeyConfigured = null)
     {
         lock (_gate)
         {
@@ -87,6 +97,10 @@ public sealed class QuickPicksSyncStatus : IQuickPicksSyncStatus
             LastPropSync = DateTimeOffset.Now;
             ProviderResponseTime = elapsed;
             LastError = string.IsNullOrWhiteSpace(error) ? null : error;
+            if (apiKeyConfigured is not null)
+            {
+                ApiKeyConfigured = apiKeyConfigured.Value;
+            }
 
             ProviderStatus = ResolveStatus(activeProvider, usedFallback, error);
         }

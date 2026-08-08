@@ -57,7 +57,10 @@ public sealed class QuickPicksService : IQuickPicksService
         _options = options.Value;
         _status = status;
         _logger = logger;
-        _status.SetConfigured(_options.Provider.ToString());
+        PropLineCredentialResolver.ApplyAliasEnvironmentVariables(_options);
+        _status.SetConfigured(
+            _options.Provider.ToString(),
+            PropLineCredentialResolver.HasApiKey(_options));
     }
 
     public IReadOnlyList<Prediction> GetAllPredictions()
@@ -129,8 +132,10 @@ public sealed class QuickPicksService : IQuickPicksService
     private void BuildLocked()
     {
         var watch = Stopwatch.StartNew();
+        PropLineCredentialResolver.ApplyAliasEnvironmentVariables(_options);
         var configured = _options.Provider.ToString();
-        _status.SetConfigured(configured);
+        var apiKeyConfigured = PropLineCredentialResolver.HasApiKey(_options);
+        _status.SetConfigured(configured, apiKeyConfigured);
 
         IReadOnlyList<PropLine> lines;
         var usedFallback = false;
@@ -159,7 +164,15 @@ public sealed class QuickPicksService : IQuickPicksService
         var games = lines.Select(l => l.Event.EventId).Distinct().Count();
         var markets = lines.Select(l => l.Market).Distinct().Count();
         watch.Stop();
-        _status.RecordPropSync(activeName, usedFallback, games, markets, lines.Count, watch.Elapsed, error);
+        _status.RecordPropSync(
+            activeName,
+            usedFallback,
+            games,
+            markets,
+            lines.Count,
+            watch.Elapsed,
+            error,
+            apiKeyConfigured);
 
         var predictions = new List<Prediction>();
         foreach (var line in lines)
@@ -241,13 +254,14 @@ public sealed class QuickPicksService : IQuickPicksService
         // Primary path: Live (The Odds API)
         try
         {
-            if (string.IsNullOrWhiteSpace(_options.OddsApi.ApiKey))
+            if (!PropLineCredentialResolver.HasApiKey(_options))
             {
                 usedFallback = true;
-                error = "PropLines__OddsApi__ApiKey is empty — falling back to Mock. " +
-                        "Set PropLines:OddsApi:ApiKey or environment variable PropLines__OddsApi__ApiKey.";
+                error = $"{PropLineCredentialResolver.PrimaryEnvVar} is empty — falling back to Mock. " +
+                        PropLineCredentialResolver.DescribeMissingKeyGuidance();
                 activeName = "Mock";
-                _logger.LogWarning("{Error}", error);
+                _logger.LogWarning(
+                    "Live prop provider selected but API key is not configured (ApiKeyConfigured=false). Falling back to Mock.");
                 return GetProvider("Mock").GetPropLinesAsync().GetAwaiter().GetResult();
             }
 

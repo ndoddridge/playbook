@@ -9,6 +9,8 @@
     <TargetFramework>net9.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Local secrets: dotnet user-secrets set "PropLines:OddsApi:ApiKey" "<key>" -->
+    <UserSecretsId>playbook-web-ndoddridge</UserSecretsId>
   </PropertyGroup>
 
 </Project>

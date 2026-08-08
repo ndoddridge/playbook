@@ -2,6 +2,15 @@
 
 All notable project changes are recorded here.
 
+## [Unreleased] — Odds API key configuration diagnostics
+
+### Fixed / Clarified
+
+- Diagnosed Mock fallback: Live provider activates, but `PropLines__OddsApi__ApiKey` was empty in the process environment
+- Accept alias env vars `ODDS_API_KEY` / `THE_ODDS_API_KEY` when nested key is empty
+- Developer Monitor: **Api Key Configured** (Yes/No, never exposes the key)
+- User secrets support on Web project; clearer Quick Picks fallback note + `docs/PROP_LINES.md` config trace
+
 ## [Unreleased] — Live prop lines for Quick Picks
 
 ### Added / Changed

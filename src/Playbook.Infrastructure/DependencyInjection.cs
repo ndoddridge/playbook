@@ -49,6 +49,7 @@ public static class DependencyInjection
             services.Configure<CollegeStatsOptions>(configuration.GetSection(CollegeStatsOptions.SectionName));
             services.Configure<InjuryOptions>(configuration.GetSection(InjuryOptions.SectionName));
             services.Configure<PropLineOptions>(configuration.GetSection(PropLineOptions.SectionName));
+            services.PostConfigure<PropLineOptions>(PropLineCredentialResolver.ApplyAliasEnvironmentVariables);
         }
         else
         {
@@ -61,6 +62,7 @@ public static class DependencyInjection
             services.Configure<CollegeStatsOptions>(_ => { });
             services.Configure<InjuryOptions>(_ => { });
             services.Configure<PropLineOptions>(_ => { });
+            services.PostConfigure<PropLineOptions>(PropLineCredentialResolver.ApplyAliasEnvironmentVariables);
         }
 
         RegisterPlayerData(services);
