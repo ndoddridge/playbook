@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Playbook.Application.Injuries.Interfaces;
 using Playbook.Application.Intelligence.Interfaces;
 using Playbook.Application.News;
 using Playbook.Application.Players;
@@ -10,13 +11,14 @@ using Playbook.Application.Stats.Interfaces;
 namespace Playbook.Infrastructure.Hosting;
 
 /// <summary>
-/// Periodically refreshes players, stats, news, intelligence, and projections.
+/// Periodically refreshes players, stats, news, injuries, intelligence, and projections.
 /// </summary>
 public sealed class DataRefreshBackgroundService : BackgroundService
 {
     private readonly IPlayerService _players;
     private readonly IPlayerStatsService _stats;
     private readonly INewsProvider _news;
+    private readonly IPlayerInjuryService _injuries;
     private readonly IIntelligenceService _intelligence;
     private readonly IProjectionService _projections;
     private readonly BackgroundRefreshOptions _options;
@@ -26,6 +28,7 @@ public sealed class DataRefreshBackgroundService : BackgroundService
         IPlayerService players,
         IPlayerStatsService stats,
         INewsProvider news,
+        IPlayerInjuryService injuries,
         IIntelligenceService intelligence,
         IProjectionService projections,
         IOptions<BackgroundRefreshOptions> options,
@@ -34,6 +37,7 @@ public sealed class DataRefreshBackgroundService : BackgroundService
         _players = players;
         _stats = stats;
         _news = news;
+        _injuries = injuries;
         _intelligence = intelligence;
         _projections = projections;
         _options = options.Value;
@@ -66,6 +70,7 @@ public sealed class DataRefreshBackgroundService : BackgroundService
             RefreshPlayers();
             await RefreshStatsAsync(stoppingToken).ConfigureAwait(false);
             await RefreshNewsAsync(stoppingToken).ConfigureAwait(false);
+            await RefreshInjuriesAsync(stoppingToken).ConfigureAwait(false);
             RefreshIntelligence();
             RefreshProjections();
 
@@ -119,6 +124,19 @@ public sealed class DataRefreshBackgroundService : BackgroundService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Background refresh: news data update failed");
+        }
+    }
+
+    private async Task RefreshInjuriesAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _injuries.RefreshAsync(cancellationToken).ConfigureAwait(false);
+            _logger.LogInformation("Background refresh: injury data updated successfully");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Background refresh: injury data update failed");
         }
     }
 

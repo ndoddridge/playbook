@@ -1,3 +1,4 @@
+using Playbook.Core.Injuries.Models;
 using Playbook.Core.Intelligence.Models;
 using Playbook.Core.Players;
 using Playbook.Core.Projections.Models;
@@ -15,11 +16,13 @@ public interface IProjectionEngine
         Player player,
         PlayerProductionSnapshot production,
         PlayerIntelligenceProfile? intelligence,
-        ProjectionLeagueContext leagueContext);
+        ProjectionLeagueContext leagueContext,
+        PlayerInjuryRecord? currentInjury = null);
 
     IReadOnlyList<PlayerProjection> ProjectMany(
         IReadOnlyList<Player> players,
         IReadOnlyDictionary<Guid, PlayerProductionSnapshot> productionByPlayer,
         IReadOnlyDictionary<Guid, PlayerIntelligenceProfile> intelligenceByPlayer,
-        ProjectionLeagueContext leagueContext);
+        ProjectionLeagueContext leagueContext,
+        IReadOnlyDictionary<Guid, PlayerInjuryRecord>? currentInjuriesByPlayer = null);
 }

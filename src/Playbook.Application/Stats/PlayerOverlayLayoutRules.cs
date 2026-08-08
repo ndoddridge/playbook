@@ -19,11 +19,25 @@ public static class PlayerOverlayLayoutRules
     /// <summary>Narrow phone-width viewport used for responsive checks.</summary>
     public const int NarrowViewportWidthPx = 390;
 
+    /// <summary>Shared shell CSS variable for the fixed/grid top navigation height.</summary>
+    public const string TopBarHeightCssVariable = "--pb-topbar-height";
+
     /// <summary>
     /// Tabs must not rely on wrapping into multiple rows that break the header;
     /// horizontal scroll within the tab strip is the supported overflow strategy.
     /// </summary>
     public const string TabsOverflowStrategy = "scroll-x";
+
+    public static bool ModalClearsFixedTopBar(string overlayCss)
+    {
+        if (string.IsNullOrWhiteSpace(overlayCss))
+        {
+            return false;
+        }
+
+        return overlayCss.Contains("top: var(--pb-topbar-height)", StringComparison.Ordinal)
+               && overlayCss.Contains("calc(100dvh - var(--pb-topbar-height))", StringComparison.Ordinal);
+    }
 
     public static bool TabStripFitsWithoutHorizontalPageOverflow(
         int viewportWidthPx,

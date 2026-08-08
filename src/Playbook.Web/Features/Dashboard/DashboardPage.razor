@@ -8,6 +8,8 @@
 @using Playbook.Application.Projections
 @using Playbook.Application.Projections.Interfaces
 @using Playbook.Application.Recommendations
+@using Playbook.Application.Injuries
+@using Playbook.Application.Injuries.Interfaces
 @using Playbook.Application.Stats
 @using Playbook.Application.Stats.Interfaces
 @using Playbook.Core.Intelligence.Models
@@ -25,6 +27,8 @@
 @inject IPlayerStatsService PlayerStatsService
 @inject IPlayerStatsSyncStatus PlayerStatsSyncStatus
 @inject ICollegeStatsSyncStatus CollegeStatsSyncStatus
+@inject IPlayerInjuryService PlayerInjuryService
+@inject IInjurySyncStatus InjurySyncStatus
 @inject INewsProvider NewsProvider
 @inject INewsSyncStatus NewsSyncStatus
 @implements IDisposable
@@ -259,6 +263,38 @@
                     <span class="pb-meta-label">College Sync Error</span>
                     <span class="pb-meta-value">@collegeLastError</span>
                 </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Injury Provider</span>
+                    <span class="pb-meta-value pb-meta-value--live">@injuryProvider</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Players With Injury Data</span>
+                    <span class="pb-meta-value">@injuryPlayers</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Injury Records Loaded</span>
+                    <span class="pb-meta-value">@injuryRecords</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Current Injury Records</span>
+                    <span class="pb-meta-value">@injuryCurrent</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Historical Injury Records</span>
+                    <span class="pb-meta-value">@injuryHistorical</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Last Injury Sync</span>
+                    <span class="pb-meta-value">@injuryLastSync</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Injury Sync Runtime</span>
+                    <span class="pb-meta-value">@injuryRuntime</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Last Injury Error</span>
+                    <span class="pb-meta-value">@injuryLastError</span>
+                </div>
             </div>
         </article>
 
@@ -395,6 +431,14 @@
     private string collegeSeasons = "—";
     private string collegeLastSync = "—";
     private string collegeLastError = "None";
+    private string injuryProvider = "—";
+    private string injuryPlayers = "—";
+    private string injuryRecords = "—";
+    private string injuryCurrent = "—";
+    private string injuryHistorical = "—";
+    private string injuryLastSync = "—";
+    private string injuryRuntime = "—";
+    private string injuryLastError = "None";
 
     protected override void OnInitialized()
     {
@@ -521,6 +565,24 @@
         collegeLastError = string.IsNullOrWhiteSpace(CollegeStatsSyncStatus.CollegeSyncError)
             ? "None"
             : CollegeStatsSyncStatus.CollegeSyncError;
+
+        _ = PlayerInjuryService.GetAllInjuries();
+        injuryProvider = InjurySyncStatus.UsedFallback
+            ? $"{InjurySyncStatus.ActiveProvider} (fallback)"
+            : InjurySyncStatus.UsedCache
+                ? $"{InjurySyncStatus.ActiveProvider} (cache)"
+                : InjurySyncStatus.ActiveProvider;
+        injuryPlayers = InjurySyncStatus.PlayersWithInjuryData.ToString();
+        injuryRecords = InjurySyncStatus.InjuryRecordsLoaded.ToString();
+        injuryCurrent = InjurySyncStatus.CurrentInjuryRecords.ToString();
+        injuryHistorical = InjurySyncStatus.HistoricalInjuryRecords.ToString();
+        injuryLastSync = InjurySyncStatus.LastInjurySync?.ToLocalTime().ToString("h:mm:ss tt") ?? "—";
+        injuryRuntime = InjurySyncStatus.InjurySyncRuntime is { } injuryElapsed
+            ? $"{injuryElapsed.TotalMilliseconds:0} ms"
+            : "—";
+        injuryLastError = string.IsNullOrWhiteSpace(InjurySyncStatus.LastInjuryError)
+            ? "None"
+            : InjurySyncStatus.LastInjuryError;
 
         recommendations = RecommendationService.GetTopRecommendations();
     }

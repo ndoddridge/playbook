@@ -36,6 +36,9 @@ internal static class TestServiceFactory
             ["CollegeStats:CacheTtlMinutes"] = "360",
             ["CollegeStats:CacheFileName"] = $"college-stats-cache-tests-{Guid.NewGuid():N}.json",
             ["CollegeStats:MaxAthletesPerSync"] = "50",
+            ["Injuries:Provider"] = "Mock",
+            ["Injuries:CacheTtlMinutes"] = "360",
+            ["Injuries:CacheFileName"] = $"player-injuries-cache-tests-{Guid.NewGuid():N}.json",
             ["BackgroundRefresh:Enabled"] = backgroundRefreshEnabled ? "true" : "false",
             ["BackgroundRefresh:IntervalMinutes"] = "15"
         };

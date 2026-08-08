@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
+using Playbook.Application.Injuries.Interfaces;
 using Playbook.Application.Intelligence.Interfaces;
 using Playbook.Application.Leagues;
 using Playbook.Application.Players;
@@ -18,6 +19,7 @@ public sealed class ProjectionService : IProjectionService
     private readonly IProjectionEngine _engine;
     private readonly IPlayerProductionProvider _production;
     private readonly IIntelligenceService _intelligence;
+    private readonly IPlayerInjuryService _injuries;
     private readonly IPlayerService _players;
     private readonly ILeagueState _leagueState;
     private readonly ProjectionSyncStatus _status;
@@ -34,6 +36,7 @@ public sealed class ProjectionService : IProjectionService
         IProjectionEngine engine,
         IPlayerProductionProvider production,
         IIntelligenceService intelligence,
+        IPlayerInjuryService injuries,
         IPlayerService players,
         ILeagueState leagueState,
         ProjectionSyncStatus status,
@@ -42,6 +45,7 @@ public sealed class ProjectionService : IProjectionService
         _engine = engine;
         _production = production;
         _intelligence = intelligence;
+        _injuries = injuries;
         _players = players;
         _leagueState = leagueState;
         _status = status;
@@ -125,7 +129,12 @@ public sealed class ProjectionService : IProjectionService
                 p => p.Id,
                 p => _production.GetProduction(p));
 
-            var projections = _engine.ProjectMany(players, production, profiles, context);
+            var currentInjuries = players
+                .Select(p => _injuries.GetCurrentInjury(p.Id))
+                .Where(r => r is not null)
+                .ToDictionary(r => r!.PlayerId, r => r!);
+
+            var projections = _engine.ProjectMany(players, production, profiles, context, currentInjuries);
             watch.Stop();
 
             _projections = projections;

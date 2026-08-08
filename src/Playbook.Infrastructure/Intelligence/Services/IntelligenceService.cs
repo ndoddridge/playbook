@@ -1,11 +1,13 @@
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
+using Playbook.Application.Injuries.Interfaces;
 using Playbook.Application.Intelligence;
 using Playbook.Application.Intelligence.Interfaces;
 using Playbook.Application.News;
 using Playbook.Application.Players;
 using Playbook.Core.Intelligence.Models;
 using Playbook.Core.Players;
+using Playbook.Infrastructure.Injuries;
 
 namespace Playbook.Infrastructure.Intelligence.Services;
 
@@ -16,6 +18,7 @@ public sealed class IntelligenceService : IIntelligenceService
 {
     private readonly INewsProvider _news;
     private readonly IPlayerService _players;
+    private readonly IPlayerInjuryService _injuries;
     private readonly IIntelligenceAnalyzer _analyzer;
     private readonly IIntelligenceAggregator _aggregator;
     private readonly IntelligenceSyncStatus _status;
@@ -29,6 +32,7 @@ public sealed class IntelligenceService : IIntelligenceService
     public IntelligenceService(
         INewsProvider news,
         IPlayerService players,
+        IPlayerInjuryService injuries,
         IIntelligenceAnalyzer analyzer,
         IIntelligenceAggregator aggregator,
         IntelligenceSyncStatus status,
@@ -36,6 +40,7 @@ public sealed class IntelligenceService : IIntelligenceService
     {
         _news = news;
         _players = players;
+        _injuries = injuries;
         _analyzer = analyzer;
         _aggregator = aggregator;
         _status = status;
@@ -149,7 +154,10 @@ public sealed class IntelligenceService : IIntelligenceService
         {
             var articles = _news.GetLatest(50);
             var players = _players.GetAllPlayers();
-            var facts = _analyzer.Analyze(articles, players);
+            var newsFacts = _analyzer.Analyze(articles, players);
+            var injuryFacts = InjuryFactBuilder.BuildFacts(
+                _injuries.GetAllInjuries().Where(r => r.IsCurrent));
+            var facts = newsFacts.Concat(injuryFacts).ToList();
             analysisWatch.Stop();
             _facts = facts;
             _status.RecordAnalysisSuccess(articles.Count, facts.Count, analysisWatch.Elapsed);
@@ -163,9 +171,10 @@ public sealed class IntelligenceService : IIntelligenceService
             _status.RecordAggregationSuccess(profiles.Count, factsAggregated, aggregationWatch.Elapsed);
 
             _logger.LogInformation(
-                "Intelligence pipeline: {Articles} articles → {Facts} facts ({AnalysisMs} ms) → {Profiles} profiles ({AggMs} ms)",
+                "Intelligence pipeline: {Articles} articles → {Facts} facts ({InjuryFacts} injury) ({AnalysisMs} ms) → {Profiles} profiles ({AggMs} ms)",
                 articles.Count,
                 facts.Count,
+                injuryFacts.Count,
                 analysisWatch.ElapsedMilliseconds,
                 profiles.Count,
                 aggregationWatch.ElapsedMilliseconds);

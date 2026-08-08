@@ -222,6 +222,11 @@
 
 @media (max-width: 640px) {
     .player-overlay {
+        /* Sit below the fixed/grid top bar — uses shared shell variable, not arbitrary padding. */
+        top: var(--pb-topbar-height);
+        right: 0;
+        bottom: 0;
+        left: 0;
         padding: 0;
         place-items: end stretch;
     }
@@ -229,8 +234,8 @@
     .player-overlay__panel {
         width: 100%;
         max-width: 100%;
-        height: 100dvh;
-        max-height: 100dvh;
+        height: calc(100dvh - var(--pb-topbar-height));
+        max-height: calc(100dvh - var(--pb-topbar-height));
         border-radius: var(--pb-radius-xl) var(--pb-radius-xl) 0 0;
         border-left: 0;
         border-right: 0;
@@ -270,8 +275,8 @@
 
     @media (max-width: 640px) {
         .player-overlay__panel {
-            height: 100vh;
-            max-height: 100vh;
+            height: calc(100vh - var(--pb-topbar-height));
+            max-height: calc(100vh - var(--pb-topbar-height));
         }
     }
 }

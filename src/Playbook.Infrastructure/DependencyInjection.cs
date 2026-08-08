@@ -1,3 +1,5 @@
+using Playbook.Application.Injuries;
+using Playbook.Application.Injuries.Interfaces;
 using Playbook.Application.Intelligence;
 using Playbook.Application.Intelligence.Interfaces;
 using Playbook.Application.Leagues;
@@ -10,6 +12,7 @@ using Playbook.Application.Recommendations;
 using Playbook.Application.Stats;
 using Playbook.Application.Stats.Interfaces;
 using Playbook.Infrastructure.Hosting;
+using Playbook.Infrastructure.Injuries;
 using Playbook.Infrastructure.Intelligence.Services;
 using Playbook.Infrastructure.Leagues;
 using Playbook.Infrastructure.News;
@@ -40,6 +43,7 @@ public static class DependencyInjection
             services.Configure<ProjectionRuleOptions>(configuration.GetSection(ProjectionRuleOptions.SectionName));
             services.Configure<PlayerStatsOptions>(configuration.GetSection(PlayerStatsOptions.SectionName));
             services.Configure<CollegeStatsOptions>(configuration.GetSection(CollegeStatsOptions.SectionName));
+            services.Configure<InjuryOptions>(configuration.GetSection(InjuryOptions.SectionName));
         }
         else
         {
@@ -50,11 +54,13 @@ public static class DependencyInjection
             services.Configure<ProjectionRuleOptions>(_ => { });
             services.Configure<PlayerStatsOptions>(_ => { });
             services.Configure<CollegeStatsOptions>(_ => { });
+            services.Configure<InjuryOptions>(_ => { });
         }
 
         RegisterPlayerData(services);
         RegisterPlayerStats(services);
         RegisterCollegeStats(services);
+        RegisterInjuries(services);
         RegisterNews(services);
         RegisterIntelligence(services);
         RegisterProjections(services);
@@ -164,6 +170,31 @@ public static class DependencyInjection
         services.AddSingleton<LiveCollegeStatsProvider>();
         services.AddSingleton<ICollegeStatsProvider>(sp => sp.GetRequiredService<LiveCollegeStatsProvider>());
         services.AddSingleton<CollegeStatsService>();
+    }
+
+    private static void RegisterInjuries(IServiceCollection services)
+    {
+        services.AddSingleton<InjurySyncStatus>();
+        services.AddSingleton<IInjurySyncStatus>(sp => sp.GetRequiredService<InjurySyncStatus>());
+        services.AddSingleton<InjuryCacheStore>();
+
+        services.AddSingleton<MockPlayerInjuryProvider>();
+        services.AddSingleton<IPlayerInjuryProvider>(sp => sp.GetRequiredService<MockPlayerInjuryProvider>());
+
+        services.AddHttpClient(LivePlayerInjuryProvider.HttpClientName, (sp, client) =>
+        {
+            var options = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<InjuryOptions>>().Value;
+            client.BaseAddress = new Uri("https://site.web.api.espn.com/apis/");
+            client.Timeout = TimeSpan.FromSeconds(Math.Clamp(options.TimeoutSeconds, 15, 180));
+            client.DefaultRequestHeaders.TryAddWithoutValidation(
+                "User-Agent",
+                "Mozilla/5.0 (compatible; Playbook/0.1; +https://github.com/ndoddridge/playbook)");
+            client.DefaultRequestHeaders.TryAddWithoutValidation("Accept", "application/json");
+        });
+
+        services.AddSingleton<LivePlayerInjuryProvider>();
+        services.AddSingleton<IPlayerInjuryProvider>(sp => sp.GetRequiredService<LivePlayerInjuryProvider>());
+        services.AddSingleton<IPlayerInjuryService, PlayerInjuryService>();
     }
 
     private static void RegisterNews(IServiceCollection services)

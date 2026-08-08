@@ -2,6 +2,26 @@
 
 All notable project changes are recorded here.
 
+## [Unreleased] — Injury Data + Modal Top Bar Fix
+
+### Added
+
+- Dedicated `IPlayerInjuryProvider` / `IPlayerInjuryService` with Mock + Live (ESPN injuries + Sleeper practice/status enrichment)
+- Normalized `PlayerInjuryRecord` with current + historical preservation via JSON cache
+- Injuries tab: current status/injury/practice/game status, recent + historical history, source/last updated
+- Intelligence consumes structured injury facts (`InjuryReport` source) via existing rule ids
+- Projection Engine applies conservative availability multipliers for Out / IR / Doubtful / Questionable / Limited
+- Developer Monitor injury sync metrics; background refresh includes injuries (isolated failure)
+
+### Fixed
+
+- Player Detail modal on mobile now starts below `--pb-topbar-height` so content is not hidden under the top bar
+
+### Limitations
+
+- ESPN feed is a current snapshot; history accumulates across syncs rather than providing lifelong medical records
+- Practice designations are sparse on Sleeper outside active report weeks
+
 ## [Unreleased] — College Statistics + Player Modal Polish
 
 ### Added

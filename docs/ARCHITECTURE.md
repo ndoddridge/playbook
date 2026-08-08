@@ -218,7 +218,7 @@ Add new providers the same way: define an application interface (e.g. `INewsData
 | **Odds** | Market lines for projection/decision confidence |
 | **Weather** | Game-environment signals |
 | **Schedules** | Matchups and bye weeks |
-| **Injuries** | Structured injury status beyond player roster flags |
+| **Injuries** | ✅ Implemented — `IPlayerInjuryProvider` / `IPlayerInjuryService` (ESPN + Sleeper) |
 
 The Data Engine will eventually orchestrate these providers and refresh `Player` / `PlayerProfile` without changing Player Explorer or overlay UI.
 
@@ -313,7 +313,24 @@ Projection, Prediction, and Decision engines should take `PlayerIntelligenceProf
 
 ### Background refresh
 
-`DataRefreshBackgroundService` refreshes players, then news, then intelligence, then projections — each step logged separately.
+`DataRefreshBackgroundService` refreshes players → stats → news → injuries → intelligence → projections. Each step is independently logged; a failure in one provider does not stop the others.
+
+## Player Injury Layer
+
+Structured injury designations for the Injuries tab, Intelligence health signals, and conservative Projection availability clamps.
+
+### Provider pattern
+
+- `IPlayerInjuryProvider` — `MockPlayerInjuryProvider` | `LivePlayerInjuryProvider`
+- `IPlayerInjuryService` — facade with mock fallback + historical merge cache
+- Live sources: ESPN `site/v2/sports/football/nfl/injuries` (primary) + Sleeper injury/practice fields (enrichment / gap-fill)
+- `PlayerInjuryRecord` — PlayerId, Date, Status, BodyPart, Description, PracticeStatus, GameStatus, Source, SourceUrl, Season, LastUpdated, IsCurrent
+- History: prior cache rows are preserved across syncs; only the latest designation per player is marked current. Missing data is never fabricated and does not imply healthy clearance.
+
+### Engine integration
+
+- Intelligence: `InjuryFactBuilder` emits `IntelligenceSource.InjuryReport` facts using existing rule ids (`injury-out`, `injury-ir`, `injury-questionable`, `injury-limited`, `injury-positive`)
+- Projection: `InjuryIntelligenceMapping.ProjectionHealthMultiplier` applies conservative × factors (e.g. Out 0.15, IR 0.10, Questionable 0.85) on top of intelligence health/risk adjustments
 
 ## Player Statistics Layer
 

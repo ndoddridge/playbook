@@ -133,6 +133,7 @@ public class CollegeStatsAndOverlayTests
         Assert.Contains("100dvh", css);
         Assert.Contains("min-width: 0", css);
         Assert.Contains("player-overlay__season-select", css);
+        Assert.True(PlayerOverlayLayoutRules.ModalClearsFixedTopBar(css));
     }
 
     [Fact]

@@ -98,6 +98,24 @@ Football news is normalized into `NewsArticle` objects behind `INewsProvider`.
 
 Background refresh (`BackgroundRefresh`) periodically reloads players, news, intelligence analysis, and projections (each step logged separately).
 
+## Player injuries
+
+Injury designations are loaded behind `IPlayerInjuryService` (Mock or Live).
+
+```json
+"Injuries": {
+  "Provider": "Live",
+  "CacheFileName": "player-injuries-cache.json",
+  "CacheTtlMinutes": 180
+}
+```
+
+- Live source: ESPN NFL injuries feed, enriched with Sleeper `injury_status` / practice fields
+- Historical records are preserved in the local cache across syncs (never fabricated)
+- Intelligence maps Out / IR / Questionable / Limited / Returned into health signals
+- Projection applies a conservative availability factor for major current designations
+- Empty injury data means “no history available,” not an implied healthy clearance
+
 ## Player statistics
 
 Historical and current-season NFL stats are loaded behind `IPlayerStatsService` (Mock or Live Sleeper).

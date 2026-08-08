@@ -1,6 +1,8 @@
 using Microsoft.Extensions.Options;
+using Playbook.Application.Injuries;
 using Playbook.Application.Projections;
 using Playbook.Application.Projections.Interfaces;
+using Playbook.Core.Injuries.Models;
 using Playbook.Core.Intelligence.Models;
 using Playbook.Core.Leagues;
 using Playbook.Core.Players;
@@ -26,7 +28,8 @@ public sealed class ProjectionEngine : IProjectionEngine
         Player player,
         PlayerProductionSnapshot production,
         PlayerIntelligenceProfile? intelligence,
-        ProjectionLeagueContext leagueContext)
+        ProjectionLeagueContext leagueContext,
+        PlayerInjuryRecord? currentInjury = null)
     {
         var reasoning = new List<string>();
         var supporting = new List<string>();
@@ -110,6 +113,19 @@ public sealed class ProjectionEngine : IProjectionEngine
         }
 
         var medianRaw = volumeAdjusted * healthFactor * riskFactor * trendFactor;
+
+        // Conservative availability clamp from structured current injury (Out/IR/etc.).
+        // Keeps major health designations from projecting as if fully healthy.
+        var injuryMultiplier = InjuryIntelligenceMapping.ProjectionHealthMultiplier(currentInjury);
+        if (injuryMultiplier is decimal injuryFactor)
+        {
+            medianRaw *= injuryFactor;
+            reasoning.Add(
+                $"Current injury status '{currentInjury!.Status}' applies conservative availability factor " +
+                $"(×{injuryFactor:0.00})" +
+                (string.IsNullOrWhiteSpace(currentInjury.BodyPart) ? "." : $" for {currentInjury.BodyPart}."));
+        }
+
         var median = Clamp(Round1(medianRaw));
         var projected = median;
 
@@ -200,7 +216,8 @@ public sealed class ProjectionEngine : IProjectionEngine
         IReadOnlyList<Player> players,
         IReadOnlyDictionary<Guid, PlayerProductionSnapshot> productionByPlayer,
         IReadOnlyDictionary<Guid, PlayerIntelligenceProfile> intelligenceByPlayer,
-        ProjectionLeagueContext leagueContext)
+        ProjectionLeagueContext leagueContext,
+        IReadOnlyDictionary<Guid, PlayerInjuryRecord>? currentInjuriesByPlayer = null)
     {
         var results = new List<PlayerProjection>(players.Count);
         foreach (var player in players.OrderBy(p => p.Id))
@@ -211,7 +228,9 @@ public sealed class ProjectionEngine : IProjectionEngine
             }
 
             intelligenceByPlayer.TryGetValue(player.Id, out var profile);
-            results.Add(Project(player, production, profile, leagueContext));
+            PlayerInjuryRecord? injury = null;
+            currentInjuriesByPlayer?.TryGetValue(player.Id, out injury);
+            results.Add(Project(player, production, profile, leagueContext, injury));
         }
 
         return results;
