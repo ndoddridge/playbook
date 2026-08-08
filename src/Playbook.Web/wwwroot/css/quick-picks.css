@@ -1,13 +1,52 @@
 /* Quick Picks — football prediction board (not fantasy dashboard) */
 
+.qp-page {
+    /* Keep title clear of the shell top bar on mobile / safe-area devices. */
+    padding-top: var(--pb-space-2);
+}
+
 .qp-page__header {
     margin-bottom: var(--pb-space-6);
 }
 
 .qp-page__meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.45rem 0.65rem;
     margin: var(--pb-space-3) 0 0;
     color: var(--pb-color-text-secondary);
     font-size: var(--pb-text-sm);
+}
+
+.qp-page__note {
+    margin: var(--pb-space-2) 0 0;
+    color: var(--pb-color-text-muted);
+    font-size: var(--pb-text-xs);
+    line-height: 1.4;
+}
+
+.qp-data-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.12rem 0.45rem;
+    border-radius: var(--pb-radius-sm);
+    font-size: 0.65rem;
+    font-weight: var(--pb-weight-semibold);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.qp-data-badge--live {
+    color: #0b3d2e;
+    background: var(--pb-color-accent-soft);
+    border: 1px solid var(--pb-color-accent);
+}
+
+.qp-data-badge--mock {
+    color: var(--pb-color-text-secondary);
+    background: var(--pb-color-surface-hover);
+    border: 1px solid var(--pb-color-border);
 }
 
 .qp-section {
@@ -197,7 +236,22 @@
     font-size: var(--pb-text-sm);
 }
 
+@media (max-width: 960px) {
+    .qp-page {
+        padding-top: var(--pb-space-4);
+    }
+
+    .qp-page__header {
+        margin-top: 0;
+        padding-top: 0;
+    }
+}
+
 @media (max-width: 640px) {
+    .qp-page {
+        padding-top: max(var(--pb-space-5), env(safe-area-inset-top, 0px));
+    }
+
     .qp-card__stats {
         grid-template-columns: repeat(3, minmax(0, 1fr));
     }

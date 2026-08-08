@@ -294,8 +294,8 @@
                     <span class="pb-meta-value pb-meta-value--live">@qpProvider</span>
                 </div>
                 <div class="pb-meta-row">
-                    <span class="pb-meta-label">Games Loaded</span>
-                    <span class="pb-meta-value">@qpGames</span>
+                    <span class="pb-meta-label">Provider Status</span>
+                    <span class="pb-meta-value">@qpProviderStatus</span>
                 </div>
                 <div class="pb-meta-row">
                     <span class="pb-meta-label">Markets Loaded</span>
@@ -306,12 +306,20 @@
                     <span class="pb-meta-value">@qpProps</span>
                 </div>
                 <div class="pb-meta-row">
+                    <span class="pb-meta-label">Games Loaded</span>
+                    <span class="pb-meta-value">@qpGames</span>
+                </div>
+                <div class="pb-meta-row">
                     <span class="pb-meta-label">Predictions Generated</span>
                     <span class="pb-meta-value">@qpPredictions</span>
                 </div>
                 <div class="pb-meta-row">
                     <span class="pb-meta-label">Last Prop Sync</span>
                     <span class="pb-meta-value">@qpLastPropSync</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Provider Response Time</span>
+                    <span class="pb-meta-value">@qpProviderResponseTime</span>
                 </div>
                 <div class="pb-meta-row">
                     <span class="pb-meta-label">Last Prediction Run</span>
@@ -322,8 +330,8 @@
                     <span class="pb-meta-value">@qpAvgConfidence</span>
                 </div>
                 <div class="pb-meta-row">
-                    <span class="pb-meta-label">Provider Errors</span>
-                    <span class="pb-meta-value">@qpProviderErrors</span>
+                    <span class="pb-meta-label">Last Error</span>
+                    <span class="pb-meta-value">@qpLastError</span>
                 </div>
                 <div class="pb-meta-row">
                     <span class="pb-meta-label">Statistics Providers</span>
@@ -618,14 +626,16 @@
     private string projectionLastRun = "—";
     private string projectionErrors = "None";
     private string qpProvider = "—";
+    private string qpProviderStatus = "—";
     private string qpGames = "—";
     private string qpMarkets = "—";
     private string qpProps = "—";
     private string qpPredictions = "—";
     private string qpLastPropSync = "—";
+    private string qpProviderResponseTime = "—";
     private string qpLastPredictionRun = "—";
     private string qpAvgConfidence = "—";
-    private string qpProviderErrors = "None";
+    private string qpLastError = "None";
     private string statsProviders = "—";
     private string statsProvider = "—";
     private string statsPlayers = "—";
@@ -779,20 +789,24 @@
 
         _ = QuickPicksService.GetAllPredictions();
         qpProvider = QuickPicksSyncStatus.UsedFallback
-            ? $"{QuickPicksSyncStatus.PropProvider} (fallback)"
+            ? $"{QuickPicksSyncStatus.PropProvider} (fallback from {QuickPicksSyncStatus.ConfiguredProvider})"
             : QuickPicksSyncStatus.PropProvider;
+        qpProviderStatus = QuickPicksSyncStatus.ProviderStatus;
         qpGames = QuickPicksSyncStatus.GamesLoaded.ToString();
         qpMarkets = QuickPicksSyncStatus.MarketsLoaded.ToString();
         qpProps = QuickPicksSyncStatus.PropsLoaded.ToString();
         qpPredictions = QuickPicksSyncStatus.PredictionsGenerated.ToString();
         qpLastPropSync = QuickPicksSyncStatus.LastPropSync?.ToLocalTime().ToString("h:mm:ss tt") ?? "—";
+        qpProviderResponseTime = QuickPicksSyncStatus.ProviderResponseTime is { } qpElapsed
+            ? $"{qpElapsed.TotalMilliseconds:0} ms"
+            : "—";
         qpLastPredictionRun = QuickPicksSyncStatus.LastPredictionRun?.ToLocalTime().ToString("h:mm:ss tt") ?? "—";
         qpAvgConfidence = QuickPicksSyncStatus.PredictionsGenerated > 0
             ? QuickPicksSyncStatus.AveragePredictionConfidence.ToString("0.0")
             : "—";
-        qpProviderErrors = string.IsNullOrWhiteSpace(QuickPicksSyncStatus.ProviderErrors)
+        qpLastError = string.IsNullOrWhiteSpace(QuickPicksSyncStatus.LastError)
             ? "None"
-            : QuickPicksSyncStatus.ProviderErrors;
+            : QuickPicksSyncStatus.LastError;
 
         _ = PlayerStatsService.GetAllStats();
         statsProviders = PlayerStatsSyncStatus.StatisticsProviders;

@@ -14,10 +14,15 @@
         <h1 class="pb-page__title">Quick Picks</h1>
         <p class="pb-page__subtitle">Playbook's strongest football predictions.</p>
         <p class="qp-page__meta">
+            <span class="qp-data-badge qp-data-badge--@(dataModeCss)">@dataModeLabel</span>
             Independent of fantasy leagues ·
-            Provider @(SyncStatus.UsedFallback ? $"{SyncStatus.PropProvider} (fallback)" : SyncStatus.PropProvider) ·
+            @SyncStatus.PropProvider ·
             Last updated @(SyncStatus.LastPredictionRun?.ToLocalTime().ToString("h:mm:ss tt") ?? "—")
         </p>
+        @if (!string.IsNullOrWhiteSpace(SyncStatus.LastError) && SyncStatus.UsedFallback)
+        {
+            <p class="qp-page__note">Using mock market lines — live provider unavailable. @SyncStatus.LastError</p>
+        }
     </header>
 
     <section class="qp-section" aria-labelledby="qp-top-heading">
@@ -82,11 +87,18 @@
     private IReadOnlyList<Prediction> topPicks = [];
     private IReadOnlyList<Prediction> watchPicks = [];
     private IReadOnlyList<FootballEvent> events = [];
+    private string dataModeLabel = "MOCK DATA";
+    private string dataModeCss = "mock";
 
     protected override void OnInitialized()
     {
         topPicks = Board.TopPicks;
         watchPicks = Board.WatchPicks;
         events = Board.Upcoming;
+
+        var isLive = string.Equals(SyncStatus.ProviderStatus, "Live", StringComparison.OrdinalIgnoreCase)
+                     && !SyncStatus.UsedFallback;
+        dataModeLabel = isLive ? "LIVE DATA" : SyncStatus.UsedFallback ? "MOCK FALLBACK" : "MOCK DATA";
+        dataModeCss = isLive ? "live" : "mock";
     }
 }

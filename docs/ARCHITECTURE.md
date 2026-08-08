@@ -453,7 +453,9 @@ Quick Picks board
 
 Fantasy remains a separate consumer: Projection + Intelligence + League Context → Decision Engine → Recommendations.
 
-Provider: The Odds API (`IPropLineProvider` / `LivePropLineProvider`) with `MockPropLineProvider` for local/dev. Config: `PropLines` (see `docs/PROP_LINES.md`).
+Provider: The Odds API (`IPropLineProvider` / `LivePropLineProvider`) is primary.
+`MockPropLineProvider` remains the automatic fallback when the API key is missing, the request fails, or markets are empty.
+Config: `PropLines` / `PropLines__OddsApi__ApiKey` (see `docs/PROP_LINES.md`).
 
 ### Position-specific baselines
 

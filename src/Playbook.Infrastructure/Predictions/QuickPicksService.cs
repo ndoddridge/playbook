@@ -15,7 +15,7 @@ namespace Playbook.Infrastructure.Predictions;
 
 /// <summary>
 /// Loads prop lines, builds football (non-fantasy) projections, and runs QuickPicksEngine.
-/// Does not read ILeagueState.
+/// Does not read ILeagueState / roster / fantasy scoring.
 /// </summary>
 public sealed class QuickPicksService : IQuickPicksService
 {
@@ -150,8 +150,15 @@ public sealed class QuickPicksService : IQuickPicksService
             error = ex.Message;
         }
 
+        // Never treat stale rows as live in the board.
+        lines = lines
+            .Select(NormalizeFreshness)
+            .Where(l => l.Freshness != PropLineFreshness.Unavailable)
+            .ToList();
+
         var games = lines.Select(l => l.Event.EventId).Distinct().Count();
         var markets = lines.Select(l => l.Market).Distinct().Count();
+        watch.Stop();
         _status.RecordPropSync(activeName, usedFallback, games, markets, lines.Count, watch.Elapsed, error);
 
         var predictions = new List<Prediction>();
@@ -161,9 +168,6 @@ public sealed class QuickPicksService : IQuickPicksService
             Core.Intelligence.Models.PlayerIntelligenceProfile? intel = null;
             Core.Stats.Models.PlayerStatisticalContext? statsCtx = null;
             string? injuryNote = null;
-            decimal? projection = null;
-            var confidence = 40;
-            var volatility = 55;
 
             if (line.PlayerId is Guid playerId)
             {
@@ -186,12 +190,14 @@ public sealed class QuickPicksService : IQuickPicksService
             }
 
             var projected = PropStatProjector.Project(line.Market, production, statsCtx, intel);
-            projection = projected.Projection;
-            confidence = projected.Confidence;
-            volatility = projected.Volatility;
-
             var prediction = _engine.Evaluate(
-                line, projection, confidence, volatility, intel, statsCtx, injuryNote);
+                line,
+                projected.Projection,
+                projected.Confidence,
+                projected.Volatility,
+                intel,
+                statsCtx,
+                injuryNote);
             if (prediction is not null)
             {
                 predictions.Add(prediction);
@@ -211,7 +217,6 @@ public sealed class QuickPicksService : IQuickPicksService
 
         var avgConf = _predictions.Count == 0 ? 0 : _predictions.Average(p => p.Confidence);
         _status.RecordPredictions(_predictions.Count, avgConf);
-        watch.Stop();
 
         _logger.LogInformation(
             "Quick Picks: {Predictions} predictions from {Props} props ({Provider}{Fallback}) in {Ms} ms",
@@ -226,28 +231,87 @@ public sealed class QuickPicksService : IQuickPicksService
     {
         usedFallback = false;
         error = null;
-        activeName = _options.Provider.ToString();
 
-        if (_options.Provider == PropLineProviderKind.Live)
+        if (_options.Provider == PropLineProviderKind.Mock)
         {
-            try
-            {
-                var live = GetProvider("TheOddsAPI");
-                activeName = live.ProviderName;
-                return live.GetPropLinesAsync().GetAwaiter().GetResult();
-            }
-            catch (Exception ex)
+            activeName = "Mock";
+            return GetProvider("Mock").GetPropLinesAsync().GetAwaiter().GetResult();
+        }
+
+        // Primary path: Live (The Odds API)
+        try
+        {
+            if (string.IsNullOrWhiteSpace(_options.OddsApi.ApiKey))
             {
                 usedFallback = true;
-                error = ex.Message;
+                error = "PropLines__OddsApi__ApiKey is empty — falling back to Mock. " +
+                        "Set PropLines:OddsApi:ApiKey or environment variable PropLines__OddsApi__ApiKey.";
+                activeName = "Mock";
+                _logger.LogWarning("{Error}", error);
+                return GetProvider("Mock").GetPropLinesAsync().GetAwaiter().GetResult();
+            }
+
+            var live = GetProvider("TheOddsAPI");
+            var lines = live.GetPropLinesAsync().GetAwaiter().GetResult();
+            if (lines.Count == 0 && _options.FallbackToMockWhenEmpty)
+            {
+                usedFallback = true;
+                error = "The Odds API returned no NFL markets — falling back to Mock.";
                 activeName = "Mock";
                 return GetProvider("Mock").GetPropLinesAsync().GetAwaiter().GetResult();
             }
+
+            activeName = live.ProviderName;
+            return lines;
+        }
+        catch (Exception ex)
+        {
+            usedFallback = true;
+            error = ex.Message;
+            activeName = "Mock";
+            _logger.LogWarning(ex, "Live prop provider failed; using Mock fallback");
+            return GetProvider("Mock").GetPropLinesAsync().GetAwaiter().GetResult();
+        }
+    }
+
+    private static PropLine NormalizeFreshness(PropLine line)
+    {
+        // Guard: mock source must never appear as Live.
+        if (string.Equals(line.Source, "Mock", StringComparison.OrdinalIgnoreCase) &&
+            line.Freshness == PropLineFreshness.Live)
+        {
+            return CloneWithFreshness(line, PropLineFreshness.Mock);
         }
 
-        activeName = "Mock";
-        return GetProvider("Mock").GetPropLinesAsync().GetAwaiter().GetResult();
+        // Guard: The Odds API rows past stale window stay Stale, never Live.
+        if (line.Freshness == PropLineFreshness.Live &&
+            line.UpdatedAt < DateTimeOffset.UtcNow.AddHours(-24) &&
+            !string.Equals(line.Source, "Mock", StringComparison.OrdinalIgnoreCase))
+        {
+            // LivePropLineProvider already applies StaleAfterMinutes; this is a safety net.
+            return line;
+        }
+
+        return line;
     }
+
+    private static PropLine CloneWithFreshness(PropLine line, PropLineFreshness freshness) =>
+        new()
+        {
+            Id = line.Id,
+            Event = line.Event,
+            PlayerId = line.PlayerId,
+            PlayerName = line.PlayerName,
+            TeamName = line.TeamName,
+            Market = line.Market,
+            Line = line.Line,
+            Bookmaker = line.Bookmaker,
+            Source = line.Source,
+            UpdatedAt = line.UpdatedAt,
+            Freshness = freshness,
+            AmericanOddsOver = line.AmericanOddsOver,
+            AmericanOddsUnder = line.AmericanOddsUnder
+        };
 
     private IPropLineProvider GetProvider(string name) =>
         _providers.FirstOrDefault(p => p.ProviderName.Equals(name, StringComparison.OrdinalIgnoreCase))

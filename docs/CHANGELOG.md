@@ -2,6 +2,17 @@
 
 All notable project changes are recorded here.
 
+## [Unreleased] — Live prop lines for Quick Picks
+
+### Added / Changed
+
+- The Odds API is the primary `PropLines` provider (`Provider: Live`) with automatic Mock fallback
+- Env/config: `PropLines__OddsApi__ApiKey` (required for live); missing key / failure / empty markets → Mock
+- Developer Monitor: Provider Status, Provider Response Time, Last Error
+- Quick Picks UI badge distinguishes LIVE vs MOCK / MOCK FALLBACK data
+- Mobile spacing: Quick Picks content clears the top bar; shell uses auto top-bar row height on narrow viewports
+- Hardened live HTTP error handling + preferred bookmaker ordering
+
 ## [Unreleased] — Quick Picks (Prediction Engine v0.1)
 
 ### Added

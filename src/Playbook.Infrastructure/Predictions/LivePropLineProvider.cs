@@ -12,7 +12,9 @@ using Playbook.Core.Predictions;
 namespace Playbook.Infrastructure.Predictions;
 
 /// <summary>
-/// The Odds API live prop/game lines. Requires PropLines:OddsApi:ApiKey.
+/// The Odds API — primary live NFL game/player prop lines.
+/// Requires PropLines:OddsApi:ApiKey (or PropLines__OddsApi__ApiKey).
+/// Quick Picks depends on <see cref="IPropLineProvider"/>, not this type directly.
 /// </summary>
 public sealed class LivePropLineProvider : IPropLineProvider
 {
@@ -47,7 +49,8 @@ public sealed class LivePropLineProvider : IPropLineProvider
         if (string.IsNullOrWhiteSpace(_options.OddsApi.ApiKey))
         {
             throw new InvalidOperationException(
-                "PropLines:OddsApi:ApiKey is empty. Add a key from https://the-odds-api.com/ or use Provider=Mock.");
+                "PropLines__OddsApi__ApiKey is empty. Get a key at https://the-odds-api.com/ " +
+                "or set PropLines:Provider=Mock for local development.");
         }
 
         var client = _httpClientFactory.CreateClient(HttpClientName);
@@ -59,13 +62,14 @@ public sealed class LivePropLineProvider : IPropLineProvider
             $"&markets={Uri.EscapeDataString(_options.OddsApi.GameMarkets)}" +
             "&oddsFormat=american";
 
-        var events = await client.GetFromJsonAsync<List<OddsEventDto>>(url, JsonOptions, cancellationToken)
+        var events = await GetJsonAsync<List<OddsEventDto>>(client, url, cancellationToken)
             .ConfigureAwait(false) ?? [];
 
         var players = _players.GetAllPlayers();
         var lines = new List<PropLine>();
         var staleAfter = TimeSpan.FromMinutes(Math.Clamp(_options.StaleAfterMinutes, 15, 24 * 60));
         var maxEvents = Math.Clamp(_options.MaxEvents, 1, 16);
+        var preferred = ParsePreferredBookmakers(_options.OddsApi.PreferredBookmakers);
 
         foreach (var ev in events.OrderBy(e => e.CommenceTime).Take(maxEvents))
         {
@@ -77,12 +81,12 @@ public sealed class LivePropLineProvider : IPropLineProvider
             var footballEvent = new FootballEvent
             {
                 EventId = ev.Id!,
-                HomeTeam = ev.HomeTeam ?? "Home",
-                AwayTeam = ev.AwayTeam ?? "Away",
+                HomeTeam = AbbreviateTeam(ev.HomeTeam) ?? ev.HomeTeam ?? "Home",
+                AwayTeam = AbbreviateTeam(ev.AwayTeam) ?? ev.AwayTeam ?? "Away",
                 CommenceTime = ev.CommenceTime
             };
 
-            foreach (var book in ev.Bookmakers ?? [])
+            foreach (var book in OrderBookmakers(ev.Bookmakers, preferred))
             {
                 foreach (var market in book.Markets ?? [])
                 {
@@ -100,13 +104,12 @@ public sealed class LivePropLineProvider : IPropLineProvider
                         $"&regions={Uri.EscapeDataString(_options.OddsApi.Regions)}" +
                         $"&markets={Uri.EscapeDataString(_options.OddsApi.PlayerPropMarkets)}" +
                         "&oddsFormat=american";
-                    var detail = await client
-                        .GetFromJsonAsync<OddsEventDto>(propUrl, JsonOptions, cancellationToken)
+                    var detail = await GetJsonAsync<OddsEventDto>(client, propUrl, cancellationToken)
                         .ConfigureAwait(false);
                     if (detail?.Bookmakers is { Count: > 0 })
                     {
                         var propCount = 0;
-                        foreach (var book in detail.Bookmakers)
+                        foreach (var book in OrderBookmakers(detail.Bookmakers, preferred))
                         {
                             foreach (var market in book.Markets ?? [])
                             {
@@ -150,6 +153,48 @@ public sealed class LivePropLineProvider : IPropLineProvider
         return Deduplicate(lines);
     }
 
+    private static async Task<T?> GetJsonAsync<T>(
+        HttpClient client,
+        string url,
+        CancellationToken cancellationToken)
+    {
+        using var response = await client.GetAsync(url, cancellationToken).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            var snippet = body.Length > 180 ? body[..180] + "…" : body;
+            throw new HttpRequestException(
+                $"The Odds API returned {(int)response.StatusCode} {response.ReasonPhrase}. {snippet}".Trim());
+        }
+
+        return await response.Content.ReadFromJsonAsync<T>(JsonOptions, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static IEnumerable<OddsBookmakerDto> OrderBookmakers(
+        List<OddsBookmakerDto>? books,
+        HashSet<string> preferred)
+    {
+        if (books is null || books.Count == 0)
+        {
+            return [];
+        }
+
+        return books
+            .OrderBy(b =>
+            {
+                var key = b.Key ?? string.Empty;
+                return preferred.Contains(key) ? 0 : 1;
+            })
+            .ThenBy(b => b.Title ?? b.Key ?? string.Empty);
+    }
+
+    private static HashSet<string> ParsePreferredBookmakers(string? csv) =>
+        (csv ?? string.Empty)
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(s => s.ToLowerInvariant())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
     private static IEnumerable<PropLine> MapGameMarket(
         FootballEvent ev,
         OddsBookmakerDto book,
@@ -158,9 +203,7 @@ public sealed class LivePropLineProvider : IPropLineProvider
     {
         var key = market.Key ?? string.Empty;
         var updated = market.LastUpdate ?? book.LastUpdate ?? DateTimeOffset.UtcNow;
-        var freshness = DateTimeOffset.UtcNow - updated > staleAfter
-            ? PropLineFreshness.Stale
-            : PropLineFreshness.Live;
+        var freshness = ResolveFreshness(updated, staleAfter);
 
         if (key is "totals")
         {
@@ -190,7 +233,16 @@ public sealed class LivePropLineProvider : IPropLineProvider
         else if (key is "spreads")
         {
             var home = market.Outcomes?.FirstOrDefault(o =>
-                string.Equals(o.Name, ev.HomeTeam, StringComparison.OrdinalIgnoreCase));
+                NamesMatchTeam(o.Name, ev.HomeTeam));
+            // Odds API uses full team names; also match against abbreviated event labels.
+            home ??= market.Outcomes?.FirstOrDefault(o =>
+                AbbreviateTeam(o.Name) == ev.HomeTeam);
+            if (home?.Point is null && market.Outcomes is { Count: > 0 })
+            {
+                // Fall back to first outcome with a point when name matching fails.
+                home = market.Outcomes.FirstOrDefault(o => o.Point is not null);
+            }
+
             if (home?.Point is null)
             {
                 yield break;
@@ -212,8 +264,11 @@ public sealed class LivePropLineProvider : IPropLineProvider
         }
         else if (key is "h2h")
         {
-            var home = market.Outcomes?.FirstOrDefault(o =>
-                string.Equals(o.Name, ev.HomeTeam, StringComparison.OrdinalIgnoreCase));
+            var home = market.Outcomes?.FirstOrDefault(o => NamesMatchTeam(o.Name, ev.HomeTeam))
+                       ?? market.Outcomes?.FirstOrDefault(o => AbbreviateTeam(o.Name) == ev.HomeTeam);
+            var away = market.Outcomes?.FirstOrDefault(o => NamesMatchTeam(o.Name, ev.AwayTeam))
+                       ?? market.Outcomes?.FirstOrDefault(o => AbbreviateTeam(o.Name) == ev.AwayTeam);
+
             yield return new PropLine
             {
                 Id = $"{ev.EventId}:h2h:{book.Key}",
@@ -226,8 +281,34 @@ public sealed class LivePropLineProvider : IPropLineProvider
                 UpdatedAt = updated,
                 Freshness = freshness,
                 AmericanOddsOver = home?.Price,
+                AmericanOddsUnder = away?.Price
+            };
+        }
+        else if (key is "team_totals")
+        {
+            var over = market.Outcomes?.FirstOrDefault(o =>
+                string.Equals(o.Name, "Over", StringComparison.OrdinalIgnoreCase));
+            if (over?.Point is null)
+            {
+                yield break;
+            }
+
+            yield return new PropLine
+            {
+                Id = $"{ev.EventId}:team_totals:{book.Key}:{over.Description}",
+                Event = ev,
+                TeamName = AbbreviateTeam(over.Description) ?? over.Description,
+                Market = PredictionMarketType.TeamTotal,
+                Line = (decimal)over.Point.Value,
+                Bookmaker = book.Title ?? book.Key ?? "book",
+                Source = "TheOddsAPI",
+                UpdatedAt = updated,
+                Freshness = freshness,
+                AmericanOddsOver = over.Price,
                 AmericanOddsUnder = market.Outcomes?
-                    .FirstOrDefault(o => string.Equals(o.Name, ev.AwayTeam, StringComparison.OrdinalIgnoreCase))
+                    .FirstOrDefault(o =>
+                        string.Equals(o.Name, "Under", StringComparison.OrdinalIgnoreCase) &&
+                        string.Equals(o.Description, over.Description, StringComparison.OrdinalIgnoreCase))
                     ?.Price
             };
         }
@@ -247,35 +328,41 @@ public sealed class LivePropLineProvider : IPropLineProvider
         }
 
         var updated = market.LastUpdate ?? book.LastUpdate ?? DateTimeOffset.UtcNow;
-        var freshness = DateTimeOffset.UtcNow - updated > staleAfter
-            ? PropLineFreshness.Stale
-            : PropLineFreshness.Live;
+        var freshness = ResolveFreshness(updated, staleAfter);
 
         var overs = (market.Outcomes ?? [])
-            .Where(o => string.Equals(o.Name, "Over", StringComparison.OrdinalIgnoreCase) ||
-                        string.Equals(o.Name, "Yes", StringComparison.OrdinalIgnoreCase) ||
-                        (marketType == PredictionMarketType.AnytimeTouchdown && !string.IsNullOrWhiteSpace(o.Description)))
+            .Where(o =>
+                string.Equals(o.Name, "Over", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(o.Name, "Yes", StringComparison.OrdinalIgnoreCase) ||
+                (marketType == PredictionMarketType.AnytimeTouchdown &&
+                 !string.IsNullOrWhiteSpace(o.Description)))
+            .GroupBy(o => o.Description ?? o.Name ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+            .Select(g => g.First())
             .ToList();
 
         foreach (var outcome in overs)
         {
-            var playerName = outcome.Description ?? outcome.Name;
+            var playerName = outcome.Description;
             if (string.IsNullOrWhiteSpace(playerName) ||
                 string.Equals(playerName, "Over", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(playerName, "Yes", StringComparison.OrdinalIgnoreCase))
             {
-                // For anytime TD, description holds player; name may be Yes.
                 playerName = outcome.Description;
             }
 
-            if (string.IsNullOrWhiteSpace(playerName))
+            if (string.IsNullOrWhiteSpace(playerName) ||
+                string.Equals(playerName, "Over", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(playerName, "Under", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(playerName, "Yes", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(playerName, "No", StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
 
             var player = players.FirstOrDefault(p =>
                 string.Equals(p.FullName, playerName, StringComparison.OrdinalIgnoreCase) ||
-                p.FullName.EndsWith(playerName, StringComparison.OrdinalIgnoreCase));
+                p.FullName.EndsWith(playerName, StringComparison.OrdinalIgnoreCase) ||
+                playerName.EndsWith(p.FullName, StringComparison.OrdinalIgnoreCase));
 
             decimal? line = outcome.Point is double pt ? (decimal)pt : null;
             if (marketType == PredictionMarketType.AnytimeTouchdown)
@@ -287,6 +374,11 @@ public sealed class LivePropLineProvider : IPropLineProvider
             {
                 continue;
             }
+
+            var under = (market.Outcomes ?? []).FirstOrDefault(o =>
+                string.Equals(o.Description, playerName, StringComparison.OrdinalIgnoreCase) &&
+                (string.Equals(o.Name, "Under", StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(o.Name, "No", StringComparison.OrdinalIgnoreCase)));
 
             yield return new PropLine
             {
@@ -301,9 +393,18 @@ public sealed class LivePropLineProvider : IPropLineProvider
                 Source = "TheOddsAPI",
                 UpdatedAt = updated,
                 Freshness = freshness,
-                AmericanOddsOver = outcome.Price
+                AmericanOddsOver = outcome.Price,
+                AmericanOddsUnder = under?.Price
             };
         }
+    }
+
+    private static PropLineFreshness ResolveFreshness(DateTimeOffset updated, TimeSpan staleAfter)
+    {
+        // Never label outdated book timestamps as Live.
+        return DateTimeOffset.UtcNow - updated > staleAfter
+            ? PropLineFreshness.Stale
+            : PropLineFreshness.Live;
     }
 
     private static PredictionMarketType? MapPlayerMarketKey(string? key) => key switch
@@ -316,6 +417,62 @@ public sealed class LivePropLineProvider : IPropLineProvider
         "player_pass_tds" => PredictionMarketType.PassingTouchdowns,
         _ => null
     };
+
+    private static bool NamesMatchTeam(string? outcomeName, string teamLabel) =>
+        !string.IsNullOrWhiteSpace(outcomeName) &&
+        (string.Equals(outcomeName, teamLabel, StringComparison.OrdinalIgnoreCase) ||
+         outcomeName.Contains(teamLabel, StringComparison.OrdinalIgnoreCase) ||
+         teamLabel.Contains(outcomeName, StringComparison.OrdinalIgnoreCase));
+
+    private static string? AbbreviateTeam(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return null;
+        }
+
+        if (name.Length <= 3 && name.All(char.IsLetter))
+        {
+            return name.ToUpperInvariant();
+        }
+
+        return name.Trim().ToLowerInvariant() switch
+        {
+            "arizona cardinals" => "ARI",
+            "atlanta falcons" => "ATL",
+            "baltimore ravens" => "BAL",
+            "buffalo bills" => "BUF",
+            "carolina panthers" => "CAR",
+            "chicago bears" => "CHI",
+            "cincinnati bengals" => "CIN",
+            "cleveland browns" => "CLE",
+            "dallas cowboys" => "DAL",
+            "denver broncos" => "DEN",
+            "detroit lions" => "DET",
+            "green bay packers" => "GB",
+            "houston texans" => "HOU",
+            "indianapolis colts" => "IND",
+            "jacksonville jaguars" => "JAX",
+            "kansas city chiefs" => "KC",
+            "las vegas raiders" => "LV",
+            "los angeles chargers" => "LAC",
+            "los angeles rams" => "LAR",
+            "miami dolphins" => "MIA",
+            "minnesota vikings" => "MIN",
+            "new england patriots" => "NE",
+            "new orleans saints" => "NO",
+            "new york giants" => "NYG",
+            "new york jets" => "NYJ",
+            "philadelphia eagles" => "PHI",
+            "pittsburgh steelers" => "PIT",
+            "san francisco 49ers" => "SF",
+            "seattle seahawks" => "SEA",
+            "tampa bay buccaneers" => "TB",
+            "tennessee titans" => "TEN",
+            "washington commanders" => "WAS",
+            _ => null
+        };
+    }
 
     private static IReadOnlyList<PropLine> Deduplicate(List<PropLine> lines) =>
         lines

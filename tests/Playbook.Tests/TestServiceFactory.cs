@@ -17,7 +17,10 @@ internal static class TestServiceFactory
         PlayerStatsProviderKind statsProvider = PlayerStatsProviderKind.Mock,
         string? sleeperBaseUrl = null,
         string? espnBaseUrl = null,
-        bool backgroundRefreshEnabled = false)
+        bool backgroundRefreshEnabled = false,
+        string propLinesProvider = "Mock",
+        string? oddsApiKey = "",
+        string? oddsApiBaseUrl = null)
     {
         var values = new Dictionary<string, string?>
         {
@@ -44,9 +47,12 @@ internal static class TestServiceFactory
             ["Injuries:CacheFileName"] = $"player-injuries-cache-tests-{Guid.NewGuid():N}.json",
             ["BackgroundRefresh:Enabled"] = backgroundRefreshEnabled ? "true" : "false",
             ["BackgroundRefresh:IntervalMinutes"] = "15",
-            ["PropLines:Provider"] = "Mock",
+            ["PropLines:Provider"] = propLinesProvider,
             ["PropLines:StaleAfterMinutes"] = "180",
-            ["PropLines:OddsApi:ApiKey"] = ""
+            ["PropLines:FallbackToMockWhenEmpty"] = "true",
+            ["PropLines:OddsApi:ApiKey"] = oddsApiKey ?? "",
+            ["PropLines:OddsApi:BaseUrl"] = oddsApiBaseUrl ?? "https://api.the-odds-api.com/v4/",
+            ["PropLines:OddsApi:TimeoutSeconds"] = "10"
         };
 
         var configuration = new ConfigurationBuilder()
