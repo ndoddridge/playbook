@@ -64,8 +64,11 @@ public sealed class PlayerProductionProvider : IPlayerProductionProvider
         var seasonList = string.Join(", ", recent.Select(r =>
             $"{r.Season}{(r.Period == StatsPeriod.CurrentSeason ? "*" : "")}"));
 
+        var baselineLabel = primary.Period == StatsPeriod.CurrentSeason
+            ? "Real current data"
+            : "Real historical data";
         var description =
-            $"Stats service {primary.Period} {primary.Season} production for {player.FullName} " +
+            $"{baselineLabel}: {primary.Period} {primary.Season} production for {player.FullName} " +
             $"(recent NFL seasons: {seasonList}). Source={primary.SourceProvider ?? "unknown"}.";
 
         decimal? specialist = null;

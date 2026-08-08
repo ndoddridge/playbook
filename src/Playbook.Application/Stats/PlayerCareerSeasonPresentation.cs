@@ -15,7 +15,9 @@ public static class PlayerCareerSeasonPresentation
         int promotionThreshold = DefaultCollegePromotionYearsProThreshold)
     {
         var rows = all
-            .OrderByDescending(r => r.Season)
+            .Where(r => r.Period != StatsPeriod.Weekly)
+            .OrderBy(r => r.Period == StatsPeriod.Career ? 0 : 1)
+            .ThenByDescending(r => r.Season)
             .ThenBy(r => r.Period)
             .ToList();
 
@@ -25,12 +27,12 @@ public static class PlayerCareerSeasonPresentation
             return rows;
         }
 
-        return rows.Where(r => r.Period != StatsPeriod.College).ToList();
+        return rows.Where(r => r.Period != StatsPeriod.College && r.Level != FootballLevel.College).ToList();
     }
 
     public static IReadOnlyList<PlayerSeasonStats> ForCollegeTab(IEnumerable<PlayerSeasonStats> all) =>
         all
-            .Where(r => r.Period == StatsPeriod.College)
+            .Where(r => r.Period == StatsPeriod.College || r.Level == FootballLevel.College)
             .OrderByDescending(r => r.Season)
             .ToList();
 
@@ -39,6 +41,8 @@ public static class PlayerCareerSeasonPresentation
         StatsPeriod.CurrentSeason => "Current Season (NFL)",
         StatsPeriod.CompletedSeason => "Completed Season (NFL)",
         StatsPeriod.College => "College Season",
+        StatsPeriod.Career => "NFL Career Totals",
+        StatsPeriod.Weekly => "Weekly",
         _ => period.ToString()
     };
 

@@ -142,6 +142,7 @@ public sealed class LivePlayerStatsProvider : IPlayerStatsProvider
             Season = season,
             SeasonType = string.IsNullOrWhiteSpace(seasonType) ? "regular" : seasonType,
             Period = period,
+            Level = FootballLevel.Nfl,
             Games = games,
             Starts = AsInt(dto.Gs),
             PassAttempts = AsInt(dto.PassAtt),
@@ -156,10 +157,13 @@ public sealed class LivePlayerStatsProvider : IPlayerStatsProvider
             Receptions = AsInt(dto.Rec),
             ReceivingYards = AsInt(dto.RecYd),
             ReceivingTouchdowns = AsInt(dto.RecTd),
+            Fumbles = AsInt(dto.Fum),
             FantasyPointsStandard = AsDecimal(dto.PtsStd),
             FantasyPointsHalfPpr = AsDecimal(dto.PtsHalfPpr),
             FantasyPointsPpr = AsDecimal(dto.PtsPpr),
             SourceProvider = "Sleeper",
+            Source = $"stats/nfl/regular/{season}",
+            IdentityMatch = StatsIdentityMatch.Matched,
             LastUpdated = now
         };
 
@@ -227,5 +231,8 @@ public sealed class LivePlayerStatsProvider : IPlayerStatsProvider
 
         [JsonPropertyName("pts_ppr")]
         public double? PtsPpr { get; set; }
+
+        [JsonPropertyName("fum")]
+        public double? Fum { get; set; }
     }
 }

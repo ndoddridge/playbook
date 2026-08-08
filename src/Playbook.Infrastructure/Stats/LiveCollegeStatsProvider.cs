@@ -457,6 +457,7 @@ public sealed class LiveCollegeStatsProvider : ICollegeStatsProvider
                 Season = Season,
                 SeasonType = "college",
                 Period = StatsPeriod.College,
+                Level = FootballLevel.College,
                 Games = null,
                 Starts = null,
                 PassAttempts = PassAttempts,
@@ -476,6 +477,8 @@ public sealed class LiveCollegeStatsProvider : ICollegeStatsProvider
                 FantasyPointsPpr = Round(ppr),
                 CollegeSchool = School,
                 SourceProvider = "ESPN",
+                Source = "espn-college-athlete",
+                IdentityMatch = StatsIdentityMatch.Matched,
                 LastUpdated = now
             };
         }

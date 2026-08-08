@@ -125,6 +125,7 @@ public static class DependencyInjection
         services.AddSingleton<PlayerStatsSyncStatus>();
         services.AddSingleton<IPlayerStatsSyncStatus>(sp => sp.GetRequiredService<PlayerStatsSyncStatus>());
         services.AddSingleton<PlayerStatsCacheStore>();
+        services.AddSingleton<PlayerGameLogCacheStore>();
 
         services.AddSingleton<MockPlayerStatsProvider>();
         services.AddSingleton<IPlayerStatsProvider>(sp => sp.GetRequiredService<MockPlayerStatsProvider>());
@@ -146,7 +147,34 @@ public static class DependencyInjection
 
         services.AddSingleton<LivePlayerStatsProvider>();
         services.AddSingleton<IPlayerStatsProvider>(sp => sp.GetRequiredService<LivePlayerStatsProvider>());
+
+        services.AddSingleton<NullHistoricalPlayerStatsProvider>();
+        services.AddSingleton<MockHistoricalPlayerStatsProvider>();
+        services.AddHttpClient(NflversePlayerStatsProvider.HttpClientName, (sp, client) =>
+        {
+            var stats = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<PlayerStatsOptions>>().Value;
+            client.Timeout = TimeSpan.FromSeconds(Math.Clamp(stats.TimeoutSeconds, 30, 300));
+            client.DefaultRequestHeaders.TryAddWithoutValidation(
+                "User-Agent",
+                "Mozilla/5.0 (compatible; Playbook/0.1; +https://github.com/ndoddridge/playbook)");
+            client.DefaultRequestHeaders.TryAddWithoutValidation("Accept", "application/gzip,application/octet-stream,*/*");
+        });
+        services.AddSingleton<NflversePlayerStatsProvider>();
+        services.AddSingleton<IHistoricalPlayerStatsProvider>(sp =>
+        {
+            var kind = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<PlayerStatsOptions>>()
+                .Value.HistoricalProvider;
+            return kind switch
+            {
+                HistoricalPlayerStatsProviderKind.Mock => sp.GetRequiredService<MockHistoricalPlayerStatsProvider>(),
+                HistoricalPlayerStatsProviderKind.Nflverse => sp.GetRequiredService<NflversePlayerStatsProvider>(),
+                _ => sp.GetRequiredService<NullHistoricalPlayerStatsProvider>()
+            };
+        });
+
         services.AddSingleton<IPlayerStatsService, PlayerStatsService>();
+        services.AddSingleton<IPlayerGameLogStore>(sp => sp.GetRequiredService<IPlayerStatsService>());
+        services.AddSingleton<IPlayerStatisticalContextService, PlayerStatisticalContextService>();
     }
 
     private static void RegisterCollegeStats(IServiceCollection services)

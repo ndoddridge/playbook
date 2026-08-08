@@ -119,22 +119,26 @@ Injury designations are loaded behind `IPlayerInjuryService` (Mock or Live), exp
 
 ## Player statistics
 
-Historical and current-season NFL stats are loaded behind `IPlayerStatsService` (Mock or Live Sleeper).
+Normalized football statistics power Career, Projection, and the Intelligence statistical interface.
 
 ```json
 "PlayerStats": {
   "Provider": "Live",
-  "HistoricalSeasonCount": 3,
+  "HistoricalProvider": "Nflverse",
+  "HistoricalSeasonCount": 5,
+  "GameLogSeasonCount": 3,
   "CacheFileName": "player-stats-cache.json",
+  "GameLogCacheFileName": "player-game-logs-cache.json",
   "CacheTtlMinutes": 360
 }
 ```
 
-- Live NFL source: Sleeper bulk season stats (`/stats/nfl/regular/{season}`) for completed + current seasons
-- Live college source: dedicated `ICollegeStatsProvider` via ESPN college-football athlete stats (Sleeper has no college box scores)
-- Local JSON caches avoid re-hitting APIs on every player open (`PlayerStats` + `CollegeStats` sections)
-- Career promotes College for players with &lt; 3 NFL seasons; College tab always shows college rows when present
-- Developer Monitor exposes NFL + college provider/sync metrics
+- Historical NFL: nflverse weekly `player_stats_{season}.csv.gz` (per-season disk cache, GSIS + name/team identity)
+- Current / gap-fill NFL: Sleeper bulk season stats (`/stats/nfl/regular/{season}`)
+- College: `ICollegeStatsProvider` via ESPN CFB athlete stats (kept separate from NFL samples)
+- Fantasy points calculated from canonical counting stats + league scoring (`LeagueFantasyScoring` — PPR / Half / Standard)
+- Game logs retained for trends; null ≠ zero
+- Developer Monitor: providers, NFL players/seasons, game logs, identity matches, sync errors
 
 ## Projection Engine
 

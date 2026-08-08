@@ -1,27 +1,25 @@
 namespace Playbook.Core.Stats.Models;
 
 /// <summary>
-/// Normalized season statistics for one player.
-/// Null means unknown/missing. Zero means the player recorded zero. Never silently substitute.
-/// Fantasy points are derived from league scoring — stored provider/computed values are optional convenience only.
+/// Normalized weekly / game-level statistics. Retained for trend, usage, consistency, and volatility.
 /// </summary>
-public sealed class PlayerSeasonStats
+public sealed class PlayerGameStats
 {
     public required Guid PlayerId { get; init; }
 
     public required int Season { get; init; }
 
-    /// <summary>regular / post / pre / college when known.</summary>
+    public required int Week { get; init; }
+
     public required string SeasonType { get; init; }
 
-    public required StatsPeriod Period { get; init; }
-
-    /// <summary>NFL vs College vs Career aggregate. College is never rolled into NFL career samples.</summary>
     public FootballLevel Level { get; init; } = FootballLevel.Nfl;
 
-    public int? Games { get; init; }
+    public string? OpponentTeam { get; init; }
 
-    public int? Starts { get; init; }
+    public string? Team { get; init; }
+
+    public string? Position { get; init; }
 
     public int? PassAttempts { get; init; }
     public int? PassCompletions { get; init; }
@@ -40,25 +38,12 @@ public sealed class PlayerSeasonStats
 
     public int? Fumbles { get; init; }
 
-    /// <summary>
-    /// Optional convenience fantasy totals. Prefer <c>LeagueFantasyScoring</c> from canonical counting stats.
-    /// </summary>
-    public decimal? FantasyPointsStandard { get; init; }
-    public decimal? FantasyPointsHalfPpr { get; init; }
-    public decimal? FantasyPointsPpr { get; init; }
-
-    /// <summary>College school name when <see cref="Period"/> is College.</summary>
-    public string? CollegeSchool { get; init; }
-
     public string? SourceProvider { get; init; }
 
     public string? Source { get; init; }
 
-    public StatsCompleteness Completeness { get; init; } = StatsCompleteness.Partial;
+    public StatsIdentityMatch IdentityMatch { get; init; } = StatsIdentityMatch.Matched;
 
-    public StatsIdentityMatch IdentityMatch { get; init; } = StatsIdentityMatch.NotApplicable;
-
-    /// <summary>Field names that are missing (null), not zero.</summary>
     public IReadOnlyList<string> MissingFields { get; init; } = [];
 
     public DateTimeOffset LastUpdated { get; init; }
@@ -73,10 +58,7 @@ public sealed class PlayerSeasonStats
         ReceivingYards is > 0 ||
         PassTouchdowns is > 0 ||
         RushTouchdowns is > 0 ||
-        ReceivingTouchdowns is > 0 ||
-        FantasyPointsPpr is > 0 ||
-        FantasyPointsHalfPpr is > 0 ||
-        FantasyPointsStandard is > 0;
+        ReceivingTouchdowns is > 0;
 
     public CanonicalCountingStats ToCountingStats() => new()
     {
@@ -94,14 +76,4 @@ public sealed class PlayerSeasonStats
         ReceivingTouchdowns = ReceivingTouchdowns,
         Fumbles = Fumbles
     };
-}
-
-public enum StatsPeriod
-{
-    CompletedSeason = 0,
-    CurrentSeason = 1,
-    College = 2,
-    /// <summary>NFL-only career aggregate — never includes college production.</summary>
-    Career = 3,
-    Weekly = 4
 }

@@ -52,6 +52,7 @@ public sealed class MockPlayerStatsProvider : IPlayerStatsProvider
             Season = source.Season,
             SeasonType = seasonType,
             Period = period,
+            Level = FootballLevel.Nfl,
             Games = source.Games,
             Starts = source.Starts,
             PassAttempts = source.PassAttempts,
@@ -66,10 +67,15 @@ public sealed class MockPlayerStatsProvider : IPlayerStatsProvider
             Receptions = source.Receptions,
             ReceivingYards = source.ReceivingYards,
             ReceivingTouchdowns = source.ReceivingTouchdowns,
+            Fumbles = source.Fumbles ?? 0,
             FantasyPointsStandard = source.FantasyPointsStandard,
             FantasyPointsHalfPpr = source.FantasyPointsHalfPpr,
             FantasyPointsPpr = source.FantasyPointsPpr,
             SourceProvider = "Mock",
+            Source = "mock-season-stats",
+            IdentityMatch = StatsIdentityMatch.Matched,
+            Completeness = StatsCompleteness.Complete,
+            MissingFields = [],
             LastUpdated = now
         };
 

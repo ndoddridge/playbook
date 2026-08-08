@@ -94,7 +94,7 @@ public class PlayerStatsServiceTests
         var snapshot = production.GetProduction(mahomes);
 
         Assert.Equal(ProductionDataSource.StatsService, snapshot.Source);
-        Assert.Contains("Stats service", snapshot.SourceDescription, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Real", snapshot.SourceDescription, StringComparison.OrdinalIgnoreCase);
         Assert.True(snapshot.PassingYards > 0);
         Assert.True(status.PlayersWithStats > 0);
         Assert.True(status.HistoricalRecords > 0);

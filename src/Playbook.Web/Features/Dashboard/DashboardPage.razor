@@ -212,16 +212,36 @@
                     <span class="pb-meta-value">@projectionRuntime</span>
                 </div>
                 <div class="pb-meta-row">
+                    <span class="pb-meta-label">Statistics Providers</span>
+                    <span class="pb-meta-value pb-meta-value--live">@statsProviders</span>
+                </div>
+                <div class="pb-meta-row">
                     <span class="pb-meta-label">Stats Provider</span>
                     <span class="pb-meta-value pb-meta-value--live">@statsProvider</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">NFL Players Loaded</span>
+                    <span class="pb-meta-value">@statsNflPlayers</span>
                 </div>
                 <div class="pb-meta-row">
                     <span class="pb-meta-label">Players With Stats</span>
                     <span class="pb-meta-value">@statsPlayers</span>
                 </div>
                 <div class="pb-meta-row">
+                    <span class="pb-meta-label">NFL Seasons Loaded</span>
+                    <span class="pb-meta-value">@statsNflSeasons</span>
+                </div>
+                <div class="pb-meta-row">
                     <span class="pb-meta-label">Seasons Loaded</span>
                     <span class="pb-meta-value">@statsSeasons</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Game Logs Loaded</span>
+                    <span class="pb-meta-value">@statsGameLogs</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">College Records Loaded</span>
+                    <span class="pb-meta-value">@statsCollegeRecords</span>
                 </div>
                 <div class="pb-meta-row">
                     <span class="pb-meta-label">Current Season Records</span>
@@ -232,12 +252,28 @@
                     <span class="pb-meta-value">@statsHistorical</span>
                 </div>
                 <div class="pb-meta-row">
-                    <span class="pb-meta-label">Last Stats Sync</span>
+                    <span class="pb-meta-label">Identity Matches</span>
+                    <span class="pb-meta-value">@statsIdentityMatches</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Unresolved Players</span>
+                    <span class="pb-meta-value">@statsUnresolved</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Last Statistics Sync</span>
                     <span class="pb-meta-value">@statsLastSync</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Last Successful Update</span>
+                    <span class="pb-meta-value">@statsLastSuccess</span>
                 </div>
                 <div class="pb-meta-row">
                     <span class="pb-meta-label">Stats Sync Runtime</span>
                     <span class="pb-meta-value">@statsRuntime</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Provider Errors</span>
+                    <span class="pb-meta-value">@statsProviderErrors</span>
                 </div>
                 <div class="pb-meta-row">
                     <span class="pb-meta-label">Last Stats Error</span>
@@ -434,13 +470,22 @@
     private string projectionAverage = "—";
     private string projectionRuntime = "—";
     private string projectionAvgConfidence = "—";
+    private string statsProviders = "—";
     private string statsProvider = "—";
     private string statsPlayers = "—";
+    private string statsNflPlayers = "—";
     private string statsSeasons = "—";
+    private string statsNflSeasons = "—";
+    private string statsGameLogs = "—";
+    private string statsCollegeRecords = "—";
     private string statsCurrent = "—";
     private string statsHistorical = "—";
+    private string statsIdentityMatches = "—";
+    private string statsUnresolved = "—";
     private string statsLastSync = "—";
+    private string statsLastSuccess = "—";
     private string statsRuntime = "—";
+    private string statsProviderErrors = "None";
     private string statsLastError = "None";
     private string collegeProvider = "—";
     private string collegePlayers = "—";
@@ -557,19 +602,30 @@
             : "—";
 
         _ = PlayerStatsService.GetAllStats();
+        statsProviders = PlayerStatsSyncStatus.StatisticsProviders;
         statsProvider = PlayerStatsSyncStatus.UsedFallback
             ? $"{PlayerStatsSyncStatus.ActiveProvider} (fallback)"
             : PlayerStatsSyncStatus.UsedCache
                 ? $"{PlayerStatsSyncStatus.ActiveProvider} (cache)"
                 : PlayerStatsSyncStatus.ActiveProvider;
         statsPlayers = PlayerStatsSyncStatus.PlayersWithStats.ToString();
+        statsNflPlayers = PlayerStatsSyncStatus.NflPlayersLoaded.ToString();
         statsSeasons = PlayerStatsSyncStatus.SeasonsLoaded.ToString();
+        statsNflSeasons = PlayerStatsSyncStatus.NflSeasonsLoaded.ToString();
+        statsGameLogs = PlayerStatsSyncStatus.GameLogsLoaded.ToString();
+        statsCollegeRecords = PlayerStatsSyncStatus.CollegeRecordsLoaded.ToString();
         statsCurrent = PlayerStatsSyncStatus.CurrentSeasonRecords.ToString();
         statsHistorical = PlayerStatsSyncStatus.HistoricalRecords.ToString();
+        statsIdentityMatches = PlayerStatsSyncStatus.IdentityMatches.ToString();
+        statsUnresolved = PlayerStatsSyncStatus.UnresolvedPlayers.ToString();
         statsLastSync = PlayerStatsSyncStatus.LastStatsSync?.ToLocalTime().ToString("h:mm:ss tt") ?? "—";
+        statsLastSuccess = PlayerStatsSyncStatus.LastSuccessfulUpdate?.ToLocalTime().ToString("h:mm:ss tt") ?? "—";
         statsRuntime = PlayerStatsSyncStatus.StatsSyncRuntime is { } statsElapsed
             ? $"{statsElapsed.TotalMilliseconds:0} ms"
             : "—";
+        statsProviderErrors = string.IsNullOrWhiteSpace(PlayerStatsSyncStatus.ProviderErrors)
+            ? "None"
+            : PlayerStatsSyncStatus.ProviderErrors;
         statsLastError = string.IsNullOrWhiteSpace(PlayerStatsSyncStatus.LastStatsError)
             ? "None"
             : PlayerStatsSyncStatus.LastStatsError;

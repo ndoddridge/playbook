@@ -1,6 +1,7 @@
 @using Playbook.Application.Intelligence.Interfaces
 @using Playbook.Application.News
 @using Playbook.Application.Players
+@using Playbook.Application.Projections
 @using Playbook.Application.Projections.Interfaces
 @using Playbook.Application.Injuries
 @using Playbook.Application.Injuries.Interfaces
@@ -19,7 +20,9 @@
 @inject IPlayerOverlayState Overlay
 @inject IIntelligenceService IntelligenceService
 @inject IProjectionService ProjectionService
+@inject IPlayerProductionProvider ProductionProvider
 @inject IPlayerStatsService PlayerStatsService
+@inject IPlayerStatisticalContextService StatisticalContextService
 @inject IPlayerInjuryService PlayerInjuryService
 @inject INewsProvider NewsProvider
 @implements IDisposable
@@ -207,6 +210,15 @@
                                 Updated @ProjectionPresentation.RelativeTime(playerProjection.LastUpdated)
                             </p>
 
+                            <div class="player-stat" style="margin-bottom:1rem;">
+                                <span class="player-stat__label">Statistical Baseline</span>
+                                <span class="player-stat__value">@projectionBaselineLabel</span>
+                            </div>
+                            @if (!string.IsNullOrWhiteSpace(projectionBaselineDetail))
+                            {
+                                <p class="player-section__muted" style="margin-bottom:1rem;">@projectionBaselineDetail</p>
+                            }
+
                             <h3 class="player-section__title">Reasoning</h3>
                             <ul class="projection-reason-list">
                                 @foreach (var reason in playerProjection.ProjectionReasoning)
@@ -354,6 +366,42 @@
                             @if (selectedSeasonStats is { } season)
                             {
                                 @RenderSeasonDetail(season)
+                            }
+
+                            @if (statisticalContext is not null)
+                            {
+                                <p class="player-section__muted" style="margin-top:1rem;">
+                                    Intelligence signals: trend @statisticalContext.Trend
+                                    · game logs @statisticalContext.GameLogsAvailable
+                                    · NFL seasons @statisticalContext.NflSeasonsAvailable
+                                    @if (statisticalContext.HasCollegeStatistics)
+                                    {
+                                        <text> · college available (kept separate)</text>
+                                    }
+                                </p>
+                            }
+
+                            @if (recentGameLogs.Count > 0)
+                            {
+                                <h3 class="player-section__title" style="margin-top:1.25rem;">Recent Game Logs</h3>
+                                <p class="player-section__muted" style="margin-bottom:0.75rem;">
+                                    Granular weekly NFL production retained for trends (not discarded after season totals).
+                                </p>
+                                <ul class="projection-reason-list">
+                                    @foreach (var game in recentGameLogs.Take(6))
+                                    {
+                                        <li>
+                                            @game.Season W@game.Week
+                                            @if (!string.IsNullOrWhiteSpace(game.OpponentTeam))
+                                            {
+                                                <text> vs @game.OpponentTeam</text>
+                                            }
+                                            · Rush @(game.RushAttempts?.ToString() ?? "—")/@(game.RushYards?.ToString() ?? "—")/@(game.RushTouchdowns?.ToString() ?? "—")
+                                            · Rec @(game.Receptions?.ToString() ?? "—")/@(game.ReceivingYards?.ToString() ?? "—")/@(game.ReceivingTouchdowns?.ToString() ?? "—")
+                                            · Pass @(game.PassCompletions?.ToString() ?? "—")/@(game.PassAttempts?.ToString() ?? "—")/@(game.PassYards?.ToString() ?? "—")
+                                        </li>
+                                    }
+                                </ul>
                             }
                         }
                     </section>
@@ -589,10 +637,14 @@
     private string activeTab = "Overview";
     private PlayerIntelligenceProfile? playerProfile;
     private PlayerProjection? playerProjection;
+    private string projectionBaselineLabel = "—";
+    private string projectionBaselineDetail = string.Empty;
     private IReadOnlyList<NewsArticle> playerNews = [];
     private IReadOnlyList<PlayerSeasonStats> allPlayerSeasonStats = [];
     private IReadOnlyList<PlayerSeasonStats> careerSeasonStats = [];
     private IReadOnlyList<PlayerSeasonStats> collegeSeasonStats = [];
+    private IReadOnlyList<PlayerGameStats> recentGameLogs = [];
+    private PlayerStatisticalContext? statisticalContext;
     private PlayerInjuryProfile? injuryProfile;
     private PlayerSeasonStats? selectedSeasonStats;
     private PlayerSeasonStats? selectedCollegeStats;
@@ -624,10 +676,14 @@
                 activeTab = "Overview";
                 playerProfile = null;
                 playerProjection = null;
+                projectionBaselineLabel = "—";
+                projectionBaselineDetail = string.Empty;
                 playerNews = [];
                 allPlayerSeasonStats = [];
                 careerSeasonStats = [];
                 collegeSeasonStats = [];
+                recentGameLogs = [];
+                statisticalContext = null;
                 injuryProfile = null;
                 selectedSeasonStats = null;
                 selectedCollegeStats = null;
@@ -707,6 +763,9 @@
         }
 
         playerProjection = ProjectionService.GetProjection(context.Player.Id);
+        var production = ProductionProvider.GetProduction(context.Player);
+        projectionBaselineLabel = ProductionBaselineLabels.Describe(production);
+        projectionBaselineDetail = production.SourceDescription;
         loadedProjectionPlayerId = context.Player.Id;
     }
 
@@ -743,6 +802,8 @@
             allPlayerSeasonStats,
             context.Player.YearsPro);
         collegeSeasonStats = PlayerCareerSeasonPresentation.ForCollegeTab(allPlayerSeasonStats);
+        recentGameLogs = PlayerStatsService.GetRecentGameLogs(context.Player.Id, 8);
+        statisticalContext = StatisticalContextService.GetContext(context.Player.Id);
 
         selectedSeasonStats = careerSeasonStats.FirstOrDefault();
         selectedStatsKey = selectedSeasonStats is null
@@ -831,8 +892,16 @@
 
     private RenderFragment RenderSeasonDetail(PlayerSeasonStats season) => __builder =>
     {
+        var counting = season.ToCountingStats();
+        var ppr = LeagueFantasyScoring.Calculate(counting, ScoringType.Ppr);
+        var half = LeagueFantasyScoring.Calculate(counting, ScoringType.HalfPpr);
+        var std = LeagueFantasyScoring.Calculate(counting, ScoringType.Standard);
+        var leagueScoring = Overlay.Context?.League?.ScoringType ?? ScoringType.Ppr;
+        var leaguePts = LeagueFantasyScoring.Calculate(counting, leagueScoring);
+
         <p class="player-section__muted" style="margin-bottom:1rem;">
             @PlayerCareerSeasonPresentation.FormatPeriodLabel(season.Period)
+            · @season.Level
             @if (!string.IsNullOrWhiteSpace(season.CollegeSchool))
             {
                 <text> · @season.CollegeSchool</text>
@@ -840,6 +909,10 @@
             @if (!string.IsNullOrWhiteSpace(season.SourceProvider))
             {
                 <text> · Source @season.SourceProvider</text>
+            }
+            @if (season.MissingFields.Count > 0)
+            {
+                <text> · Missing @season.MissingFields.Count field(s)</text>
             }
         </p>
         <div class="player-profile__grid">
@@ -856,16 +929,24 @@
                 <span class="player-stat__value">@(season.Starts?.ToString() ?? "—")</span>
             </div>
             <div class="player-stat">
+                <span class="player-stat__label">League (@FormatScoring(leagueScoring))</span>
+                <span class="player-stat__value">@leaguePts.ToString("0.0")</span>
+            </div>
+            <div class="player-stat">
                 <span class="player-stat__label">Fantasy (PPR)</span>
-                <span class="player-stat__value">@(season.FantasyPointsPpr?.ToString("0.0") ?? "—")</span>
+                <span class="player-stat__value">@ppr.ToString("0.0")</span>
             </div>
             <div class="player-stat">
                 <span class="player-stat__label">Fantasy (Half)</span>
-                <span class="player-stat__value">@(season.FantasyPointsHalfPpr?.ToString("0.0") ?? "—")</span>
+                <span class="player-stat__value">@half.ToString("0.0")</span>
             </div>
             <div class="player-stat">
                 <span class="player-stat__label">Fantasy (Std)</span>
-                <span class="player-stat__value">@(season.FantasyPointsStandard?.ToString("0.0") ?? "—")</span>
+                <span class="player-stat__value">@std.ToString("0.0")</span>
+            </div>
+            <div class="player-stat">
+                <span class="player-stat__label">Fumbles</span>
+                <span class="player-stat__value">@(season.Fumbles?.ToString() ?? "—")</span>
             </div>
         </div>
 

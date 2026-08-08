@@ -2,6 +2,24 @@
 
 All notable project changes are recorded here.
 
+## [Unreleased] — Player Statistics Data Engine
+
+### Added
+
+- Canonical counting stats + game-log models (`PlayerGameStats`, `FootballLevel`, quality metadata)
+- `LeagueFantasyScoring` — PPR / Half PPR / Standard from league scoring over one football sample
+- `NflversePlayerStatsProvider` — incremental per-season CSV cache, GSIS identity join, season + weekly rows
+- Statistics sync pipeline: historical import, current-season updates, college merge, career NFL totals, intelligence invalidation
+- `IPlayerStatisticalContextService` — recent/historical/career/usage/efficiency/consistency/volatility/trend for Intelligence
+- Developer Monitor statistics diagnostics (providers, NFL players/seasons, game logs, identity, sync errors)
+- Career tab: league-calculated fantasy points, fumbles, recent game logs, statistical signals
+- Projection tab: statistical baseline origin (real current / real historical / curated / fallback)
+
+### Changed
+
+- Live stats path composes Sleeper (current) + nflverse (historical game logs) + ESPN college
+- Missing statistics remain null; zeros mean recorded zero
+
 ## [Unreleased] — Real Historical NFL Injuries (nflverse) + Identity Crosswalk
 
 ### Added

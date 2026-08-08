@@ -113,4 +113,8 @@ public sealed class PlayerStatsCacheDocument
     public List<int> Seasons { get; set; } = [];
 
     public List<PlayerSeasonStats> Records { get; set; } = [];
+
+    public int IdentityMatches { get; set; }
+
+    public int UnresolvedPlayers { get; set; }
 }

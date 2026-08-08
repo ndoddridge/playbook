@@ -76,6 +76,7 @@ public sealed class MockCollegeStatsProvider : ICollegeStatsProvider
             Season = season,
             SeasonType = "college",
             Period = StatsPeriod.College,
+            Level = FootballLevel.College,
             Games = gp,
             Starts = gs,
             PassAttempts = att,
@@ -91,6 +92,8 @@ public sealed class MockCollegeStatsProvider : ICollegeStatsProvider
             FantasyPointsPpr = pts,
             CollegeSchool = school,
             SourceProvider = "Mock",
+            Source = "mock-college",
+            IdentityMatch = StatsIdentityMatch.Matched,
             LastUpdated = DateTimeOffset.UtcNow
         };
     }
@@ -105,6 +108,7 @@ public sealed class MockCollegeStatsProvider : ICollegeStatsProvider
             Season = season,
             SeasonType = "college",
             Period = StatsPeriod.College,
+            Level = FootballLevel.College,
             Games = gp,
             Starts = gs,
             Targets = tgt,
@@ -116,6 +120,8 @@ public sealed class MockCollegeStatsProvider : ICollegeStatsProvider
             FantasyPointsPpr = Round(std + rec),
             CollegeSchool = school,
             SourceProvider = "Mock",
+            Source = "mock-college",
+            IdentityMatch = StatsIdentityMatch.Matched,
             LastUpdated = DateTimeOffset.UtcNow
         };
     }

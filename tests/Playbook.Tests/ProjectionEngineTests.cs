@@ -405,13 +405,19 @@ public class ProjectionEngineTests
 
     private sealed class StubPlayerStatsService : IPlayerStatsService
     {
+        public int GameLogCount => 0;
         public IReadOnlyList<PlayerSeasonStats> GetAllStats() => [];
+        public IReadOnlyList<PlayerGameStats> GetAllGameLogs() => [];
         public IReadOnlyList<PlayerSeasonStats> GetStatsForPlayer(Guid playerId) => [];
+        public IReadOnlyList<PlayerGameStats> GetGameLogsForPlayer(Guid playerId) => [];
+        public IReadOnlyList<PlayerGameStats> GetRecentGameLogs(Guid playerId, int maxGames = 8) => [];
         public IReadOnlyList<int> GetAvailableSeasons(Guid playerId) => [];
         public PlayerSeasonStats? GetStats(Guid playerId, int season, StatsPeriod? period = null) => null;
+        public PlayerSeasonStats? GetCareerTotals(Guid playerId) => null;
         public PlayerSeasonStats? GetPrimaryProductionSeason(Guid playerId) => null;
         public IReadOnlyList<PlayerSeasonStats> GetRecentNflSeasons(Guid playerId, int maxSeasons = 3) => [];
         public void Refresh() { }
         public Task RefreshAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task RefreshCurrentSeasonAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 }

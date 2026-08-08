@@ -349,23 +349,24 @@ Pipeline: Providers → normalization → identity resolution → profile/releva
 
 ## Player Statistics Layer
 
-Normalized historical + current-season statistics feed Projection and the Career/Stats overlay.
+```
+REAL DATA PROVIDERS → NORMALIZATION → CANONICAL PLAYER ID
+→ PLAYER STATISTICS STORE → INTELLIGENCE / PROJECTION / DECISION
+```
 
 ### Provider pattern
 
-Mirrors players/news:
-
-- `IPlayerStatsProvider` — `MockPlayerStatsProvider` | `LivePlayerStatsProvider` (Sleeper)
-- `IPlayerStatsService` — facade with config switch, mock fallback, telemetry
-- `PlayerStatsCacheStore` — JSON file cache (`data/player-stats-cache.json`) for initial sync / reuse / refresh
-
-Live endpoint: `GET /stats/nfl/regular/{season}` on `api.sleeper.app/v1`, joined to Playbook player ids via the same deterministic Sleeper id hash used by the player catalog. NFL state (`/state/nfl`) selects current vs previous seasons.
+- `IPlayerStatsProvider` — `MockPlayerStatsProvider` | `LivePlayerStatsProvider` (Sleeper current/gap-fill)
+- `IHistoricalPlayerStatsProvider` — `NflversePlayerStatsProvider` | Mock | Null (weekly NFL game logs + season aggregates)
+- `ICollegeStatsProvider` — ESPN CFB / Mock (never mixed into NFL career samples)
+- `IPlayerStatsService` — sync pipeline (historical import, incremental current updates, college merge, career totals, intelligence invalidation)
+- `IPlayerStatisticalContextService` — recent/historical/career/usage/efficiency/consistency/volatility/trend for Intelligence
+- `LeagueFantasyScoring` — PPR / Half-PPR / Standard from canonical counting stats + league scoring type
+- Caches: season JSON + game-log JSON + per-season nflverse `.csv.gz` on disk
 
 ### Data model
 
-`PlayerSeasonStats` includes PlayerId, Season, SeasonType, Period (`CompletedSeason` | `CurrentSeason` | `College`), games/starts, passing/rushing/receiving counting stats, and fantasy points (Standard / Half-PPR / PPR). Missing values stay null — never fabricated.
-
-College statistics are first-class for players with fewer than 3 NFL seasons. Sleeper does not provide college box scores. A dedicated `ICollegeStatsProvider` supplies college rows (Mock seeds or Live ESPN college-football athlete stats), merged by `PlayerStatsService`. Games/targets may be null when the source omits them — never fabricated.
+`PlayerSeasonStats` / `PlayerGameStats` / `CanonicalCountingStats` with `FootballLevel` (NFL | College | Career). Null means missing; zero means recorded zero. Optional fantasy convenience fields may be stored, but league points are calculated from football stats + `ScoringType`.
 
 ### Projection Engine (V1)
 
