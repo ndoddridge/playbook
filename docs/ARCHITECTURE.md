@@ -152,6 +152,16 @@ The selected fantasy league is global application context. Projection, Intellige
 
 UI (`LeagueSwitcher`, Dashboard, My Teams, Player Overlay) shows **My team** and distinguishes the user's roster. Connect remains league-ID only (no Sleeper OAuth).
 
+### Personalized analysis source of truth
+
+`ILeagueState.Changed` is the invalidation signal for league/team-scoped surfaces:
+
+- `ProjectionService.Invalidate()` clears scoring-sensitive projection caches
+- `MockRecommendationService` rebuilds stamped recommendations (`LeagueId` + `SelectedRosterId`)
+- Dashboard / Player Explorer / My Teams clear stale cards, show a short loading state, then reload
+- Player Overlay drops league-scoped projection cache when the same player is open across a league switch
+- Player-level Intelligence profiles remain global (football signal, not fantasy-league-specific)
+
 ### Dependency Injection
 
 Registered as singletons so selection survives navigation for the lifetime of the running app:

@@ -1,11 +1,15 @@
 @page "/my-teams"
 @using Playbook.Application.Leagues
 @using Playbook.Application.Players
+@using Playbook.Application.Projections.Interfaces
 @using Playbook.Core.Leagues
 @using Playbook.Core.Players
+@using Playbook.Core.Projections.Models
 @using Playbook.Web.Features.League.Models
+@using Playbook.Web.Features.Projections.Models
 @inject ILeagueState LeagueState
 @inject IPlayerService PlayerService
+@inject IProjectionService ProjectionService
 @implements IDisposable
 
 <PageTitle>My Teams — Playbook</PageTitle>
@@ -89,6 +93,32 @@
             </p>
         }
 
+        @if (isRefreshing)
+        {
+            <p class="pb-empty">Refreshing roster analysis for the selected team…</p>
+        }
+        else if (userTeam is { } mine && rosterProjections.Count > 0)
+        {
+            <article class="pb-card my-team-analysis">
+                <h2 class="pb-card__title">Roster outlook · @LeagueDisplay.TeamLabel(mine)</h2>
+                <div class="pb-card__body">
+                    <p class="my-teams-note" style="margin-bottom:0.75rem;">
+                        Projections for your selected team in @current.Name (@LeagueDisplay.ScoringDetailed(current)).
+                    </p>
+                    <ul class="my-team-card__players">
+                        @foreach (var proj in rosterProjections.Take(8))
+                        {
+                            var player = PlayerService.GetPlayer(proj.PlayerId);
+                            <li>
+                                @(player?.FullName ?? "Unknown player")
+                                <span class="my-team-card__starter">@ProjectionPresentation.Points(proj.ProjectedFantasyPoints) pts</span>
+                            </li>
+                        }
+                    </ul>
+                </div>
+            </article>
+        }
+
         <div class="my-teams-grid">
             @foreach (var team in OrderedTeams)
             {
@@ -143,6 +173,8 @@
     private League? current;
     private FantasyTeam? userTeam;
     private IReadOnlyList<FantasyTeam> teams = [];
+    private IReadOnlyList<PlayerProjection> rosterProjections = [];
+    private bool isRefreshing;
 
     private IEnumerable<FantasyTeam> OrderedTeams =>
         teams.OrderByDescending(t => LeagueDisplay.IsUserTeam(current, t))
@@ -159,11 +191,20 @@
         current = LeagueState.CurrentLeague;
         userTeam = LeagueState.GetCurrentUserTeam();
         teams = LeagueState.GetCurrentTeams();
+        rosterProjections = userTeam is { PlayerIds.Count: > 0 }
+            ? ProjectionService.ProjectRoster(userTeam.PlayerIds)
+            : [];
     }
 
     private void OnLeagueChanged() => InvokeAsync(() =>
     {
+        isRefreshing = true;
+        rosterProjections = [];
+        StateHasChanged();
+
+        ProjectionService.Invalidate();
         Refresh();
+        isRefreshing = false;
         StateHasChanged();
     });
 

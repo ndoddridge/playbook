@@ -128,6 +128,18 @@
     letter-spacing: var(--pb-tracking-tight);
 }
 
+.decision-card__context {
+    margin: 0.35rem 0 0;
+    font-size: var(--pb-text-xs);
+    color: var(--pb-color-text-muted);
+}
+
+.dashboard-decisions__context {
+    margin: 0 0 var(--pb-space-3);
+    font-size: var(--pb-text-sm);
+    color: var(--pb-color-text-secondary);
+}
+
 .decision-card__summary {
     margin: 0;
     color: var(--pb-color-text-secondary);

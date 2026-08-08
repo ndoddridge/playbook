@@ -686,10 +686,12 @@
     private string selectedCollegeKey = string.Empty;
     private Guid? loadedPlayerId;
     private Guid? loadedProjectionPlayerId;
+    private Guid? loadedProjectionLeagueId;
     private Guid? loadedNewsPlayerId;
     private Guid? loadedStatsPlayerId;
     private Guid? loadedInjuriesPlayerId;
     private Guid? openPlayerId;
+    private Guid? openLeagueId;
 
     protected override void OnInitialized()
     {
@@ -699,14 +701,16 @@
     private void OnOverlayChanged() => InvokeAsync(() =>
     {
         var openedPlayerId = Overlay.IsOpen ? Overlay.Context?.Player.Id : null;
+        var openedLeagueId = Overlay.IsOpen ? Overlay.Context?.League?.Id : null;
 
         if (Overlay.IsOpen)
         {
-            // Reset section state only when opening or switching players.
-            // League refresh calls Changed for the same player — keep the active tab.
+            // Reset section state when opening/switching players.
+            // On league/team context change for the same player, drop league-scoped caches only.
             if (openedPlayerId != openPlayerId)
             {
                 openPlayerId = openedPlayerId;
+                openLeagueId = openedLeagueId;
                 activeTab = "Overview";
                 playerProfile = null;
                 playerProjection = null;
@@ -725,15 +729,30 @@
                 selectedCollegeKey = string.Empty;
                 loadedPlayerId = null;
                 loadedProjectionPlayerId = null;
+                loadedProjectionLeagueId = null;
                 loadedNewsPlayerId = null;
                 loadedStatsPlayerId = null;
                 loadedInjuriesPlayerId = null;
                 EnsurePlayerNews();
             }
+            else if (openedLeagueId != openLeagueId)
+            {
+                openLeagueId = openedLeagueId;
+                playerProjection = null;
+                projectionBaselineLabel = "—";
+                projectionBaselineDetail = string.Empty;
+                loadedProjectionPlayerId = null;
+                loadedProjectionLeagueId = null;
+                if (activeTab == "Projection")
+                {
+                    EnsurePlayerProjection();
+                }
+            }
         }
         else
         {
             openPlayerId = null;
+            openLeagueId = null;
         }
 
         StateHasChanged();
@@ -791,7 +810,11 @@
             return;
         }
 
-        if (loadedProjectionPlayerId == context.Player.Id && playerProjection is not null)
+        var leagueId = context.League?.Id;
+        if (loadedProjectionPlayerId == context.Player.Id &&
+            loadedProjectionLeagueId == leagueId &&
+            playerProjection is not null &&
+            playerProjection.LeagueId == leagueId)
         {
             return;
         }
@@ -801,6 +824,7 @@
         projectionBaselineLabel = ProductionBaselineLabels.Describe(production);
         projectionBaselineDetail = production.SourceDescription;
         loadedProjectionPlayerId = context.Player.Id;
+        loadedProjectionLeagueId = leagueId;
     }
 
     private void EnsurePlayerNews()

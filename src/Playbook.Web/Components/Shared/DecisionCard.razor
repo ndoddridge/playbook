@@ -39,6 +39,21 @@
                 }
             </h3>
             <p class="decision-card__summary">@Recommendation.Summary</p>
+            @if (!string.IsNullOrWhiteSpace(Recommendation.LeagueName) || !string.IsNullOrWhiteSpace(Recommendation.TeamName))
+            {
+                <p class="decision-card__context">
+                    For
+                    @if (!string.IsNullOrWhiteSpace(Recommendation.TeamName))
+                    {
+                        <text>@Recommendation.TeamName</text>
+                        @if (!string.IsNullOrWhiteSpace(Recommendation.LeagueName))
+                        {
+                            <text> · </text>
+                        }
+                    }
+                    @Recommendation.LeagueName
+                </p>
+            }
 
             <div class="decision-card__meta">
                 <span class="decision-meta">

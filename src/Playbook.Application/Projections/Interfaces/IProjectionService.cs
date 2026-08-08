@@ -22,5 +22,12 @@ public interface IProjectionService
 
     IReadOnlyList<PlayerProjection> ProjectRoster(IEnumerable<Guid> playerIds);
 
+    /// <summary>Rebuild projections for the current league scoring context immediately.</summary>
     void Refresh();
+
+    /// <summary>
+    /// Marks the projection cache stale so the next read rebuilds for the active league.
+    /// Called automatically when league/team context changes.
+    /// </summary>
+    void Invalidate();
 }

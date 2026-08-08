@@ -43,6 +43,20 @@ public sealed class Recommendation
     public Guid? RelatedPlayerId { get; init; }
 
     /// <summary>
+    /// League this recommendation was generated for. Used to detect stale UI after league switch.
+    /// </summary>
+    public Guid? LeagueId { get; init; }
+
+    /// <summary>
+    /// Owned roster id this recommendation was generated for (when roster-scoped).
+    /// </summary>
+    public int? SelectedRosterId { get; init; }
+
+    public string? LeagueName { get; init; }
+
+    public string? TeamName { get; init; }
+
+    /// <summary>
     /// Optional UI hint for initial expand state. Components may still manage expand locally.
     /// </summary>
     public bool IsExpanded { get; init; }
@@ -51,4 +65,7 @@ public sealed class Recommendation
     /// Optional bag for engine-specific metadata without changing the core contract.
     /// </summary>
     public IReadOnlyDictionary<string, string>? Metadata { get; init; }
+
+    public bool MatchesContext(Guid? leagueId, int? selectedRosterId) =>
+        LeagueId == leagueId && SelectedRosterId == selectedRosterId;
 }

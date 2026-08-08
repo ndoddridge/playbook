@@ -2,6 +2,21 @@
 
 All notable project changes are recorded here.
 
+## [Unreleased] — League/Team as Personalized Source of Truth
+
+### Added
+
+- `PersonalizedAnalysisContext` stamps + invalidates personalized outputs when league or owned team changes
+- Recommendations are rebuilt for the active league/roster (no stale prior-league cards)
+- `IProjectionService.Invalidate()` clears projection cache on `ILeagueState.Changed`
+- Dashboard / Player Explorer / My Teams clear then refresh personalized surfaces with loading/empty states
+- Decision cards show “For {team} · {league}” context labels
+
+### Changed
+
+- Player Overlay projection tab reloads when league context changes for the same player
+- Mock demo recommendations vary by league/team seed; live rosters drive Start/Hold/Bench from `ProjectRoster`
+
 ## [Unreleased] — Sleeper User Team Selection
 
 ### Added

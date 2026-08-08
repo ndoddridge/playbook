@@ -288,7 +288,7 @@ public class ProjectionEngineTests
 
         var halfPprLeague = leagueState.GetAllLeagues().First(l => l.ScoringType == ScoringType.HalfPpr);
         leagueState.SelectLeague(halfPprLeague.Id);
-        projections.Refresh();
+        // League Changed invalidates the projection cache; next read rebuilds for Half PPR.
 
         var halfPoints = projections.GetProjection(chase.Id)!.ProjectedFantasyPoints;
         Assert.True(pprPoints > halfPoints);

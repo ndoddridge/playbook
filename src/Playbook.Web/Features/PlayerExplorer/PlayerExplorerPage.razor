@@ -1,19 +1,30 @@
 @page "/player-explorer"
+@using Playbook.Application.Leagues
 @using Playbook.Application.Players
 @using Playbook.Application.Projections.Interfaces
 @using Playbook.Core.Players
 @using Playbook.Core.Projections.Models
+@using Playbook.Web.Features.League.Models
 @using Playbook.Web.Features.Projections.Models
 @inject IPlayerService PlayerService
 @inject IProjectionService ProjectionService
 @inject IPlayerOverlayState PlayerOverlay
+@inject ILeagueState LeagueState
+@implements IDisposable
 
 <PageTitle>Player Explorer — Playbook</PageTitle>
 
 <section class="pb-page player-explorer">
     <header class="pb-page__header">
         <h1 class="pb-page__title">Player Explorer</h1>
-        <p class="pb-page__subtitle">Search the catalog, sort by projected points, and open any player in the shared Player Overlay.</p>
+        <p class="pb-page__subtitle">
+            Search the catalog, sort by projected points
+            @if (LeagueState.CurrentLeague is { } league)
+            {
+                <text> for @league.Name (@LeagueDisplay.Scoring(league.ScoringType))</text>
+            }
+            , and open any player in the shared Player Overlay.
+        </p>
     </header>
 
     <div class="player-explorer__list-panel player-explorer__list-panel--table">
@@ -23,8 +34,14 @@
                    type="search"
                    placeholder="Name, team, position, college…"
                    value="@searchText"
-                   @oninput="OnSearchChanged" />
+                   @oninput="OnSearchChanged"
+                   disabled="@isRefreshing" />
         </label>
+
+        @if (isRefreshing)
+        {
+            <p class="pb-empty">Updating projections for the selected league…</p>
+        }
 
         <div class="player-table-wrap" role="region" aria-label="Players">
             <table class="player-table">
@@ -65,7 +82,7 @@
                 </tbody>
             </table>
 
-            @if (visibleRows.Count == 0)
+            @if (!isRefreshing && visibleRows.Count == 0)
             {
                 <p class="player-list__empty">No players match that search.</p>
             }
@@ -76,10 +93,12 @@
 @code {
     private string searchText = string.Empty;
     private bool sortDescending = true;
+    private bool isRefreshing;
     private IReadOnlyList<PlayerRow> visibleRows = [];
 
     protected override void OnInitialized()
     {
+        LeagueState.Changed += OnLeagueChanged;
         RebuildRows();
     }
 
@@ -94,6 +113,18 @@
         sortDescending = !sortDescending;
         RebuildRows();
     }
+
+    private void OnLeagueChanged() => InvokeAsync(() =>
+    {
+        isRefreshing = true;
+        visibleRows = [];
+        StateHasChanged();
+
+        ProjectionService.Invalidate();
+        RebuildRows();
+        isRefreshing = false;
+        StateHasChanged();
+    });
 
     private void RebuildRows()
     {
@@ -118,6 +149,8 @@
 
         visibleRows = rows.ToList();
     }
+
+    public void Dispose() => LeagueState.Changed -= OnLeagueChanged;
 
     private sealed record PlayerRow(Player Player, PlayerProjection? Projection);
 }

@@ -42,7 +42,14 @@
         <p class="pb-page__subtitle">
             @if (LeagueState.CurrentLeague is { } league)
             {
-                <text>Personalized to @league.Name · @league.Season season</text>
+                <text>
+                    Personalized to @league.Name
+                    @if (LeagueState.CurrentUserTeam is { } team)
+                    {
+                        <text> · @LeagueDisplay.TeamLabel(team)</text>
+                    }
+                    <text> · @league.Season season</text>
+                </text>
             }
             else
             {
@@ -464,12 +471,33 @@
 
     <section class="dashboard-decisions" aria-labelledby="top-decisions-heading">
         <h2 id="top-decisions-heading" class="pb-card__title">Top Decisions</h2>
-        <div class="decision-stack">
-            @foreach (var recommendation in recommendations)
-            {
-                <DecisionCard Recommendation="recommendation" />
-            }
-        </div>
+        @if (isRefreshingPersonalized)
+        {
+            <p class="pb-empty">Refreshing recommendations for the selected league and team…</p>
+        }
+        else if (recommendations.Count == 0)
+        {
+            <p class="pb-empty">No personalized decisions for this league/team yet.</p>
+        }
+        else
+        {
+            <p class="dashboard-decisions__context">
+                @if (LeagueState.CurrentUserTeam is { } decisionTeam && LeagueState.CurrentLeague is { } decisionLeague)
+                {
+                    <text>Generated for @LeagueDisplay.TeamLabel(decisionTeam) in @decisionLeague.Name</text>
+                }
+                else if (LeagueState.CurrentLeague is { } onlyLeague)
+                {
+                    <text>Generated for @onlyLeague.Name</text>
+                }
+            </p>
+            <div class="decision-stack">
+                @foreach (var recommendation in recommendations)
+                {
+                    <DecisionCard Recommendation="recommendation" />
+                }
+            </div>
+        }
     </section>
 
     <div class="dashboard-grid dashboard-grid--stack">
@@ -491,6 +519,7 @@
 @code {
     private IReadOnlyList<Recommendation> recommendations = [];
     private IReadOnlyList<PlayerIntelligenceProfile> topProfiles = [];
+    private bool isRefreshingPersonalized;
 
     private string buildStatus = "Succeeded";
     private string backgroundServiceStatus = "Running";
@@ -773,8 +802,19 @@
 
     private void OnLeagueChanged()
     {
-        currentLeagueName = LeagueState.CurrentLeague?.Name ?? "None selected";
-        _ = InvokeAsync(StateHasChanged);
+        _ = InvokeAsync(() =>
+        {
+            // Clear personalized surfaces immediately so previous league/team cards never linger.
+            isRefreshingPersonalized = true;
+            recommendations = [];
+            currentLeagueName = LeagueState.CurrentLeague?.Name ?? "None selected";
+            StateHasChanged();
+
+            ProjectionService.Invalidate();
+            RefreshDashboard();
+            isRefreshingPersonalized = false;
+            StateHasChanged();
+        });
     }
 
     private static string EngineStateClass(string state) => state switch

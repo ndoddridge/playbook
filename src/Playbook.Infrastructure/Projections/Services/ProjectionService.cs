@@ -15,8 +15,9 @@ namespace Playbook.Infrastructure.Projections.Services;
 /// <summary>
 /// Builds and caches <see cref="PlayerProjection"/> values from
 /// statistics + intelligence + optional matchup/environment + league context.
+/// Invalidates automatically when the active league/team context changes.
 /// </summary>
-public sealed class ProjectionService : IProjectionService
+public sealed class ProjectionService : IProjectionService, IDisposable
 {
     private readonly IProjectionEngine _engine;
     private readonly IPlayerProductionProvider _production;
@@ -61,7 +62,12 @@ public sealed class ProjectionService : IProjectionService
         _leagueState = leagueState;
         _status = status;
         _logger = logger;
+        _leagueState.Changed += OnLeagueContextChanged;
     }
+
+    private void OnLeagueContextChanged() => Invalidate();
+
+    public void Dispose() => _leagueState.Changed -= OnLeagueContextChanged;
 
     public string EngineVersion => _engine.Version;
 
@@ -145,6 +151,18 @@ public sealed class ProjectionService : IProjectionService
         {
             ProjectLocked();
             _loaded = true;
+        }
+    }
+
+    public void Invalidate()
+    {
+        lock (_gate)
+        {
+            _loaded = false;
+            _projections = [];
+            _byPlayer = new Dictionary<Guid, PlayerProjection>();
+            _projectedLeagueId = null;
+            _scoringSnapshot = default;
         }
     }
 
