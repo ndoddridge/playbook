@@ -2,6 +2,23 @@
 
 All notable project changes are recorded here.
 
+## [Unreleased] — Career Injury Profile + Unconfirmed Signals
+
+### Added
+
+- Extended `PlayerInjuryRecord` (Level, Team, InjuryType, GamesMissed, Severity, Verified)
+- `InjuryHistoryEntry` + transparent `InjuryRelevanceCalculator` (recency/severity/repeats)
+- `UnconfirmedInjurySignal` extracted from news (never promoted to verified records)
+- `ICollegeInjuryProvider` abstraction (`Null` for Live, `Mock` seeds when Mock)
+- Injuries tab: Injury Status, Unconfirmed Reports, Recent / NFL Career / College history with muted older emphasis
+- Intelligence facts distinguish Current Injury, Historical Risk, Unconfirmed Injury Concern
+- Developer Monitor: NFL/College historical counts, unconfirmed signals, provider coverage
+
+### Limitations
+
+- Live ESPN + Sleeper remain current-report only (no NFL career or college history)
+- College/NFL history available only via Mock historical/college providers until a live source is wired
+
 ## [Unreleased] — Injury Profile Architecture (Current vs Historical)
 
 ### Added

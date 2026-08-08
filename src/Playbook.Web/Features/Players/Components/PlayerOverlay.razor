@@ -411,7 +411,7 @@
                 else
                 {
                     <section class="player-section">
-                        <h3 class="player-section__title">Injuries</h3>
+                        <h3 class="player-section__title">Injury Status</h3>
                         @if (injuryProfile is null)
                         {
                             <p class="player-section__muted">Injury data has not been synced yet.</p>
@@ -440,8 +440,8 @@
                                     <span class="player-stat__value">@(injuryProfile.LastUpdated?.ToLocalTime().ToString("MMM d, h:mm tt") ?? "—")</span>
                                 </div>
                                 <div class="player-stat">
-                                    <span class="player-stat__label">Data Source</span>
-                                    <span class="player-stat__value">@(injuryProfile.SupportingSources.Count > 0 ? string.Join(", ", injuryProfile.SupportingSources) : "—")</span>
+                                    <span class="player-stat__label">Verification</span>
+                                    <span class="player-stat__value">@(injuryProfile.CurrentInjury?.VerificationLabel ?? "No confirmed injury")</span>
                                 </div>
                             </div>
 
@@ -453,8 +453,8 @@
                             @if (injuryProfile.CurrentDataStatus == CurrentInjuryDataStatus.Available &&
                                  injuryProfile.CurrentInjury is { } current)
                             {
-                                <h3 class="player-section__title">Current Injury</h3>
-                                <p class="player-section__text" style="margin-bottom:1rem;">
+                                <p class="player-section__text player-injury-verified" style="margin-bottom:1rem;">
+                                    <span class="player-injury-badge player-injury-badge--verified">Verified</span>
                                     <strong>@current.Status</strong>
                                     @if (!string.IsNullOrWhiteSpace(current.BodyPart))
                                     {
@@ -469,13 +469,7 @@
                             else if (injuryProfile.CurrentDataStatus == CurrentInjuryDataStatus.NoCurrentInjury)
                             {
                                 <p class="player-section__muted" style="margin-bottom:1rem;">
-                                    No current injury designation from the provider.
-                                </p>
-                            }
-                            else if (injuryProfile.CurrentDataStatus == CurrentInjuryDataStatus.MappingFailed)
-                            {
-                                <p class="player-section__muted" style="margin-bottom:1rem;">
-                                    A provider designation could not be mapped to this player.
+                                    No confirmed injury.
                                 </p>
                             }
                             else if (injuryProfile.CurrentDataStatus == CurrentInjuryDataStatus.Unavailable)
@@ -485,54 +479,102 @@
                                 </p>
                             }
 
-                            <h3 class="player-section__title">Historical Injury Data</h3>
-                            @if (injuryProfile.HistoricalDataStatus == HistoricalDataStatus.Available &&
-                                 injuryProfile.HistoricalRecords.Count > 0)
+                            <h3 class="player-section__title">Unconfirmed Reports</h3>
+                            @if (injuryProfile.UnconfirmedSignals.Count == 0)
                             {
-                                <h4 class="player-section__muted" style="margin:0.75rem 0 0.35rem;">Recent History</h4>
-                                <ul class="player-injury-list">
-                                    @foreach (var injury in injuryProfile.HistoricalRecords.Take(3))
-                                    {
-                                        <li>
-                                            <strong>@injury.Date.ToLocalTime().ToString("MMM d, yyyy")</strong>
-                                            — @injury.Status
-                                            @if (!string.IsNullOrWhiteSpace(injury.BodyPart))
-                                            {
-                                                <text> (@injury.BodyPart)</text>
-                                            }
-                                            @if (!string.IsNullOrWhiteSpace(injury.Description))
-                                            {
-                                                <text> · @injury.Description</text>
-                                            }
-                                        </li>
-                                    }
-                                </ul>
-
-                                @if (injuryProfile.HistoricalRecords.Count > 3)
-                                {
-                                    <h4 class="player-section__muted" style="margin:1rem 0 0.35rem;">Historical History</h4>
-                                    <ul class="player-injury-list">
-                                        @foreach (var injury in injuryProfile.HistoricalRecords.Skip(3))
-                                        {
-                                            <li>
-                                                <strong>@injury.Date.ToLocalTime().ToString("MMM d, yyyy")</strong>
-                                                — @injury.Status
-                                                @if (!string.IsNullOrWhiteSpace(injury.BodyPart))
-                                                {
-                                                    <text> (@injury.BodyPart)</text>
-                                                }
-                                            </li>
-                                        }
-                                    </ul>
-                                }
+                                <p class="player-section__muted" style="margin-bottom:1rem;">
+                                    No unconfirmed injury reports for this player.
+                                </p>
                             }
                             else
                             {
-                                <p class="player-section__muted">
+                                <ul class="player-injury-list player-injury-list--unconfirmed" style="margin-bottom:1rem;">
+                                    @foreach (var signal in injuryProfile.UnconfirmedSignals)
+                                    {
+                                        <li class="player-injury-entry player-injury-entry--unconfirmed">
+                                            <div>
+                                                <span class="player-injury-badge player-injury-badge--unconfirmed">Unconfirmed</span>
+                                                <strong>@signal.Headline</strong>
+                                            </div>
+                                            @if (!string.IsNullOrWhiteSpace(signal.Detail))
+                                            {
+                                                <div>@signal.Detail</div>
+                                            }
+                                            <div class="player-section__muted">
+                                                Source: @signal.Source
+                                                · Confidence: @signal.ConfidenceLabel
+                                                @if (signal.SourceCount > 1)
+                                                {
+                                                    <text> · @signal.SourceCount sources</text>
+                                                }
+                                                · Updated @signal.LastUpdated.ToLocalTime().ToString("MMM d, h:mm tt")
+                                            </div>
+                                        </li>
+                                    }
+                                </ul>
+                            }
+
+                            <h3 class="player-section__title">Recent Injury History</h3>
+                            @if (injuryProfile.RecentHistory.Count > 0)
+                            {
+                                <ul class="player-injury-list" style="margin-bottom:1rem;">
+                                    @foreach (var entry in injuryProfile.RecentHistory)
+                                    {
+                                        @RenderHistoryEntry(entry)
+                                    }
+                                </ul>
+                            }
+                            else
+                            {
+                                <p class="player-section__muted" style="margin-bottom:1rem;">
                                     @(injuryProfile.HistoricalAvailabilityMessage
-                                        ?? InjuryAvailabilityPresentation.HistoricalMessage(injuryProfile.HistoricalDataStatus))
+                                        ?? "No recent injury history with elevated relevance.")
                                 </p>
                             }
+
+                            <h3 class="player-section__title">NFL Career History</h3>
+                            @if (injuryProfile.NflCareerHistory.Count > 0)
+                            {
+                                <ul class="player-injury-list" style="margin-bottom:1rem;">
+                                    @foreach (var entry in injuryProfile.NflCareerHistory)
+                                    {
+                                        @RenderHistoryEntry(entry)
+                                    }
+                                </ul>
+                            }
+                            else
+                            {
+                                <p class="player-section__muted" style="margin-bottom:1rem;">
+                                    @(injuryProfile.HistoricalAvailabilityMessage
+                                        ?? InjuryAvailabilityPresentation.HistoricalMessage(injuryProfile.NflHistoricalDataStatus))
+                                </p>
+                            }
+
+                            <h3 class="player-section__title">College History</h3>
+                            @if (injuryProfile.CollegeHistory.Count > 0)
+                            {
+                                <ul class="player-injury-list" style="margin-bottom:1rem;">
+                                    @foreach (var entry in injuryProfile.CollegeHistory)
+                                    {
+                                        @RenderHistoryEntry(entry)
+                                    }
+                                </ul>
+                            }
+                            else
+                            {
+                                <p class="player-section__muted" style="margin-bottom:1rem;">
+                                    @(injuryProfile.CollegeAvailabilityMessage
+                                        ?? InjuryAvailabilityPresentation.CollegeMessage(injuryProfile.CollegeHistoricalDataStatus))
+                                </p>
+                            }
+
+                            <p class="player-section__muted" style="margin-top:0.5rem;">
+                                Data source: @(injuryProfile.SupportingSources.Count > 0 ? string.Join(", ", injuryProfile.SupportingSources) : "—")
+                                @if (!string.IsNullOrWhiteSpace(injuryProfile.ProviderCoverage))
+                                {
+                                    <text> · @injuryProfile.ProviderCoverage</text>
+                                }
+                            </p>
                         }
                     </section>
                 }
@@ -750,6 +792,42 @@
         var list = values.Where(v => v is not null).Select(v => v!.Value).ToList();
         return list.Count == 0 ? null : list.Sum();
     }
+
+    private RenderFragment RenderHistoryEntry(InjuryHistoryEntry entry) => __builder =>
+    {
+        var injury = entry.Record;
+        <li class="player-injury-entry @entry.EmphasisCssClass">
+            <div>
+                <span class="player-injury-badge player-injury-badge--historical">@(injury.Level == InjuryCompetitionLevel.College ? "College" : "NFL")</span>
+                <span class="player-injury-badge player-injury-badge--verified">@injury.VerificationLabel</span>
+                <strong>@injury.Date.ToLocalTime().ToString("MMM d, yyyy")</strong>
+                — @injury.Status
+                @if (!string.IsNullOrWhiteSpace(injury.BodyPart))
+                {
+                    <text> (@injury.BodyPart)</text>
+                }
+            </div>
+            @if (!string.IsNullOrWhiteSpace(injury.Description))
+            {
+                <div>@injury.Description</div>
+            }
+            <div class="player-section__muted">
+                Relevance @entry.RelevanceScore/100
+                @if (!string.IsNullOrWhiteSpace(entry.RelevanceReason))
+                {
+                    <text> · @entry.RelevanceReason</text>
+                }
+                @if (injury.GamesMissed is int missed)
+                {
+                    <text> · Games missed @missed</text>
+                }
+                @if (!string.IsNullOrWhiteSpace(injury.Source))
+                {
+                    <text> · @injury.Source</text>
+                }
+            </div>
+        </li>
+    };
 
     private RenderFragment RenderSeasonDetail(PlayerSeasonStats season) => __builder =>
     {

@@ -318,6 +318,68 @@
     font-size: var(--pb-text-sm);
 }
 
+.player-injury-entry {
+    padding: 0.45rem 0;
+    border-bottom: 1px solid color-mix(in srgb, var(--pb-color-border) 70%, transparent);
+}
+
+.player-injury-entry--high {
+    color: var(--pb-color-text-primary);
+    opacity: 1;
+}
+
+.player-injury-entry--moderate {
+    color: var(--pb-color-text-primary);
+    opacity: 0.92;
+}
+
+.player-injury-entry--low {
+    color: var(--pb-color-text-secondary);
+    opacity: 0.72;
+}
+
+.player-injury-entry--minimal {
+    color: var(--pb-color-text-secondary);
+    opacity: 0.55;
+}
+
+.player-injury-entry--unconfirmed {
+    border-left: 3px solid color-mix(in srgb, var(--pb-color-warning, #c9852a) 80%, transparent);
+    padding-left: 0.65rem;
+    background: color-mix(in srgb, var(--pb-color-warning, #c9852a) 8%, transparent);
+}
+
+.player-injury-badge {
+    display: inline-block;
+    margin-right: 0.35rem;
+    padding: 0.1rem 0.35rem;
+    border-radius: 0.25rem;
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+}
+
+.player-injury-badge--verified {
+    color: var(--pb-color-text-primary);
+    background: color-mix(in srgb, var(--pb-color-success, #2f7d4b) 18%, transparent);
+}
+
+.player-injury-badge--unconfirmed {
+    color: var(--pb-color-text-primary);
+    background: color-mix(in srgb, var(--pb-color-warning, #c9852a) 22%, transparent);
+}
+
+.player-injury-badge--historical {
+    color: var(--pb-color-text-secondary);
+    background: color-mix(in srgb, var(--pb-color-border) 55%, transparent);
+}
+
+.player-injury-verified {
+    border-left: 3px solid color-mix(in srgb, var(--pb-color-success, #2f7d4b) 70%, transparent);
+    padding-left: 0.65rem;
+}
+
 @media (max-width: 960px) {
     .player-explorer__layout {
         grid-template-columns: 1fr;

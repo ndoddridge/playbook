@@ -3,19 +3,22 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Playbook.Application.Injuries;
 using Playbook.Application.Injuries.Interfaces;
+using Playbook.Application.News;
 using Playbook.Core.Injuries.Models;
 
 namespace Playbook.Infrastructure.Injuries;
 
 /// <summary>
-/// Injury facade: current provider + optional historical provider, with honest availability status.
-/// Does not fabricate history when the active provider cannot supply it.
+/// Injury facade: current + optional NFL historical + college providers, plus unconfirmed news signals.
+/// Never fabricates history when providers cannot supply it.
 /// </summary>
 public sealed class PlayerInjuryService : IPlayerInjuryService
 {
     private readonly IPlayerInjuryProvider _primary;
     private readonly MockPlayerInjuryProvider _fallback;
     private readonly IHistoricalInjuryProvider _historical;
+    private readonly ICollegeInjuryProvider _college;
+    private readonly INewsProvider _news;
     private readonly InjuryCacheStore _cache;
     private readonly InjurySyncStatus _status;
     private readonly InjuryOptions _options;
@@ -23,11 +26,14 @@ public sealed class PlayerInjuryService : IPlayerInjuryService
     private readonly object _gate = new();
 
     private IReadOnlyList<PlayerInjuryRecord> _currentRecords = [];
-    private IReadOnlyList<PlayerInjuryRecord> _historicalRecords = [];
-    private Dictionary<Guid, List<PlayerInjuryRecord>> _currentByPlayer = new();
-    private Dictionary<Guid, List<PlayerInjuryRecord>> _historicalByPlayer = new();
+    private IReadOnlyList<PlayerInjuryRecord> _nflHistorical = [];
+    private IReadOnlyList<PlayerInjuryRecord> _collegeHistorical = [];
     private InjuryProviderCapabilities _capabilities = InjuryProviderCapabilities.CurrentOnlyEspnSleeper;
+    private HistoricalDataStatus _nflHistoricalStatus = HistoricalDataStatus.NotSynced;
+    private HistoricalDataStatus _collegeHistoricalStatus = HistoricalDataStatus.NotSynced;
     private HistoricalDataStatus _globalHistoricalStatus = HistoricalDataStatus.NotSynced;
+    private string _providerCoverage = "Not synced";
+    private string _injuryProviders = "—";
     private bool _loaded;
     private bool _syncFailed;
     private DateTimeOffset? _lastUpdated;
@@ -36,6 +42,8 @@ public sealed class PlayerInjuryService : IPlayerInjuryService
         IEnumerable<IPlayerInjuryProvider> providers,
         MockPlayerInjuryProvider fallback,
         IHistoricalInjuryProvider historical,
+        ICollegeInjuryProvider college,
+        INewsProvider news,
         InjuryCacheStore cache,
         InjurySyncStatus status,
         IOptions<InjuryOptions> options,
@@ -43,6 +51,8 @@ public sealed class PlayerInjuryService : IPlayerInjuryService
     {
         _fallback = fallback;
         _historical = historical;
+        _college = college;
+        _news = news;
         _cache = cache;
         _status = status;
         _options = options.Value;
@@ -83,7 +93,7 @@ public sealed class PlayerInjuryService : IPlayerInjuryService
         EnsureLoaded();
         lock (_gate)
         {
-            return _currentRecords.Concat(_historicalRecords).ToList();
+            return _currentRecords.Concat(_nflHistorical).Concat(_collegeHistorical).ToList();
         }
     }
 
@@ -145,61 +155,91 @@ public sealed class PlayerInjuryService : IPlayerInjuryService
                 usedFallback = true;
             }
 
-            IReadOnlyList<PlayerInjuryRecord> historical = [];
-            HistoricalDataStatus historicalStatus;
+            current = current.Select(NormalizeCurrent).ToList();
 
-            if (!capabilities.SupportsHistoricalInjuries && !_historical.IsConfigured)
-            {
-                historicalStatus = HistoricalDataStatus.NotSupportedByProvider;
-            }
-            else if (_historical.IsConfigured)
+            IReadOnlyList<PlayerInjuryRecord> nflHistorical = [];
+            HistoricalDataStatus nflStatus;
+            if (_historical.IsConfigured)
             {
                 try
                 {
-                    historical = await _historical.GetHistoricalInjuriesAsync(cancellationToken)
-                        .ConfigureAwait(false);
-                    historicalStatus = historical.Count > 0
+                    nflHistorical = (await _historical.GetHistoricalInjuriesAsync(cancellationToken)
+                            .ConfigureAwait(false))
+                        .Select(r => NormalizeHistorical(r, InjuryCompetitionLevel.Nfl))
+                        .ToList();
+                    nflStatus = nflHistorical.Count > 0
                         ? HistoricalDataStatus.Available
                         : HistoricalDataStatus.NoRecordsFound;
                 }
                 catch (Exception ex)
                 {
-                    priorError = string.IsNullOrWhiteSpace(priorError)
-                        ? $"Historical: {ex.Message}"
-                        : $"{priorError}; Historical: {ex.Message}";
-                    historicalStatus = HistoricalDataStatus.Unavailable;
-                    _logger.LogWarning(ex, "Historical injury provider failed");
+                    priorError = AppendError(priorError, $"NFL historical: {ex.Message}");
+                    nflStatus = HistoricalDataStatus.Unavailable;
+                    _logger.LogWarning(ex, "NFL historical injury provider failed");
                 }
             }
             else if (capabilities.SupportsHistoricalInjuries)
             {
-                // Current provider claims history but none separated — treat non-current rows if any.
-                historical = current.Where(r => !r.IsCurrent).ToList();
+                nflHistorical = current.Where(r => !r.IsCurrent).Select(r =>
+                    NormalizeHistorical(r, InjuryCompetitionLevel.Nfl)).ToList();
                 current = current.Where(r => r.IsCurrent).ToList();
-                historicalStatus = historical.Count > 0
+                nflStatus = nflHistorical.Count > 0
                     ? HistoricalDataStatus.Available
                     : HistoricalDataStatus.NoRecordsFound;
             }
             else
             {
-                historicalStatus = HistoricalDataStatus.NotSupportedByProvider;
+                nflStatus = HistoricalDataStatus.NotSupportedByProvider;
             }
 
-            // Current rows are always treated as current designations from the live/mock feed.
-            current = current.Select(r => r with { IsCurrent = true }).ToList();
-            historical = historical.Select(r => r with { IsCurrent = false }).ToList();
+            IReadOnlyList<PlayerInjuryRecord> collegeHistorical = [];
+            HistoricalDataStatus collegeStatus;
+            if (_college.IsConfigured)
+            {
+                try
+                {
+                    collegeHistorical = (await _college.GetCollegeInjuriesAsync(cancellationToken)
+                            .ConfigureAwait(false))
+                        .Select(r => NormalizeHistorical(r, InjuryCompetitionLevel.College))
+                        .ToList();
+                    collegeStatus = collegeHistorical.Count > 0
+                        ? HistoricalDataStatus.Available
+                        : HistoricalDataStatus.NoRecordsFound;
+                }
+                catch (Exception ex)
+                {
+                    priorError = AppendError(priorError, $"College historical: {ex.Message}");
+                    collegeStatus = HistoricalDataStatus.Unavailable;
+                    _logger.LogWarning(ex, "College injury provider failed");
+                }
+            }
+            else
+            {
+                collegeStatus = HistoricalDataStatus.NotSupportedByProvider;
+            }
+
+            var globalStatus = CombineHistoricalStatus(nflStatus, collegeStatus);
+            var coverage = BuildCoverage(capabilities, nflStatus, collegeStatus);
+            var providers = string.Join(" + ", new[]
+            {
+                active.ToString(),
+                _historical.IsConfigured ? _historical.DisplayName : null,
+                _college.IsConfigured ? _college.DisplayName : null
+            }.Where(s => !string.IsNullOrWhiteSpace(s)));
 
             watch.Stop();
-            Apply(current, historical, capabilities, historicalStatus, syncFailed: false);
+            Apply(current, nflHistorical, collegeHistorical, capabilities, nflStatus, collegeStatus,
+                globalStatus, coverage, providers, syncFailed: false);
             _cache.Save(new InjuryCacheDocument
             {
                 LastUpdatedUtc = DateTimeOffset.UtcNow,
                 Provider = active.ToString(),
-                Records = current.Concat(historical).ToList(),
-                HistoricalDataStatus = historicalStatus.ToString(),
-                SupportsHistorical = capabilities.SupportsHistoricalInjuries || _historical.IsConfigured
+                Records = current.Concat(nflHistorical).Concat(collegeHistorical).ToList(),
+                HistoricalDataStatus = globalStatus.ToString(),
+                SupportsHistorical = _historical.IsConfigured || _college.IsConfigured ||
+                                     capabilities.SupportsHistoricalInjuries
             });
-            RecordTelemetry(active, capabilities, historicalStatus, watch.Elapsed, usedFallback, usedCache: false, priorError);
+            RecordTelemetry(active, watch.Elapsed, usedFallback, usedCache: false, priorError);
         }
         catch (Exception ex)
         {
@@ -235,34 +275,55 @@ public sealed class PlayerInjuryService : IPlayerInjuryService
                         : HistoricalDataStatus.NotSupportedByProvider;
 
                 List<PlayerInjuryRecord> current;
-                List<PlayerInjuryRecord> historical;
+                List<PlayerInjuryRecord> nfl;
+                List<PlayerInjuryRecord> college;
+                HistoricalDataStatus nflStatus;
+                HistoricalDataStatus collegeStatus;
+
                 if (!supportsHistorical)
                 {
-                    // Current-only providers: never treat cached rows as career history.
-                    historical = [];
+                    nfl = [];
+                    college = [];
+                    nflStatus = HistoricalDataStatus.NotSupportedByProvider;
+                    collegeStatus = HistoricalDataStatus.NotSupportedByProvider;
                     historicalStatus = HistoricalDataStatus.NotSupportedByProvider;
                     current = fresh.Records
-                        .Select(r => r with { IsCurrent = true })
+                        .Select(NormalizeCurrent)
                         .GroupBy(r => r.PlayerId)
                         .Select(g => g.OrderByDescending(r => r.Date).First())
                         .ToList();
                 }
                 else
                 {
-                    current = fresh.Records.Where(r => r.IsCurrent).ToList();
-                    historical = fresh.Records.Where(r => !r.IsCurrent).ToList();
+                    current = fresh.Records.Where(r => r.IsCurrent).Select(NormalizeCurrent).ToList();
+                    nfl = fresh.Records
+                        .Where(r => !r.IsCurrent && r.Level != InjuryCompetitionLevel.College)
+                        .Select(r => NormalizeHistorical(r, InjuryCompetitionLevel.Nfl))
+                        .ToList();
+                    college = fresh.Records
+                        .Where(r => !r.IsCurrent && r.Level == InjuryCompetitionLevel.College)
+                        .Select(r => NormalizeHistorical(r, InjuryCompetitionLevel.College))
+                        .ToList();
+                    nflStatus = nfl.Count > 0 ? HistoricalDataStatus.Available :
+                        _historical.IsConfigured ? HistoricalDataStatus.NoRecordsFound :
+                        HistoricalDataStatus.NotSupportedByProvider;
+                    collegeStatus = college.Count > 0 ? HistoricalDataStatus.Available :
+                        _college.IsConfigured ? HistoricalDataStatus.NoRecordsFound :
+                        HistoricalDataStatus.NotSupportedByProvider;
+                    historicalStatus = CombineHistoricalStatus(nflStatus, collegeStatus);
                 }
 
                 var capabilities = supportsHistorical
                     ? InjuryProviderCapabilities.MockWithHistory
                     : InjuryProviderCapabilities.CurrentOnlyEspnSleeper;
+                var coverage = BuildCoverage(capabilities, nflStatus, collegeStatus);
+                var providers = fresh.Provider;
 
-                ApplyUnlocked(current, historical, capabilities, historicalStatus, syncFailed: false);
+                ApplyUnlocked(current, nfl, college, capabilities, nflStatus, collegeStatus,
+                    historicalStatus, coverage, providers, syncFailed: false);
                 _loaded = true;
                 RecordTelemetry(
                     Enum.TryParse<InjuryProviderKind>(fresh.Provider, out var kind) ? kind : _primary.Kind,
-                    capabilities,
-                    historicalStatus,
                     TimeSpan.Zero,
                     usedFallback: false,
                     usedCache: true,
@@ -280,39 +341,52 @@ public sealed class PlayerInjuryService : IPlayerInjuryService
 
     private void Apply(
         IReadOnlyList<PlayerInjuryRecord> current,
-        IReadOnlyList<PlayerInjuryRecord> historical,
+        IReadOnlyList<PlayerInjuryRecord> nfl,
+        IReadOnlyList<PlayerInjuryRecord> college,
         InjuryProviderCapabilities capabilities,
-        HistoricalDataStatus historicalStatus,
+        HistoricalDataStatus nflStatus,
+        HistoricalDataStatus collegeStatus,
+        HistoricalDataStatus globalStatus,
+        string coverage,
+        string providers,
         bool syncFailed)
     {
         lock (_gate)
         {
-            ApplyUnlocked(current, historical, capabilities, historicalStatus, syncFailed);
+            ApplyUnlocked(current, nfl, college, capabilities, nflStatus, collegeStatus,
+                globalStatus, coverage, providers, syncFailed);
             _loaded = true;
         }
     }
 
     private void ApplyUnlocked(
         IReadOnlyList<PlayerInjuryRecord> current,
-        IReadOnlyList<PlayerInjuryRecord> historical,
+        IReadOnlyList<PlayerInjuryRecord> nfl,
+        IReadOnlyList<PlayerInjuryRecord> college,
         InjuryProviderCapabilities capabilities,
-        HistoricalDataStatus historicalStatus,
+        HistoricalDataStatus nflStatus,
+        HistoricalDataStatus collegeStatus,
+        HistoricalDataStatus globalStatus,
+        string coverage,
+        string providers,
         bool syncFailed)
     {
         _capabilities = capabilities;
-        _globalHistoricalStatus = historicalStatus;
+        _nflHistoricalStatus = nflStatus;
+        _collegeHistoricalStatus = collegeStatus;
+        _globalHistoricalStatus = globalStatus;
+        _providerCoverage = coverage;
+        _injuryProviders = providers;
         _syncFailed = syncFailed;
         _lastUpdated = DateTimeOffset.UtcNow;
         _currentRecords = current.OrderBy(r => r.PlayerId).ThenByDescending(r => r.Date).ToList();
-        _historicalRecords = historical.OrderBy(r => r.PlayerId).ThenByDescending(r => r.Date).ToList();
-        _currentByPlayer = _currentRecords.GroupBy(r => r.PlayerId).ToDictionary(g => g.Key, g => g.ToList());
-        _historicalByPlayer = _historicalRecords.GroupBy(r => r.PlayerId).ToDictionary(g => g.Key, g => g.ToList());
+        _nflHistorical = nfl.OrderBy(r => r.PlayerId).ThenByDescending(r => r.Date).ToList();
+        _collegeHistorical = college.OrderBy(r => r.PlayerId).ThenByDescending(r => r.Date).ToList();
     }
 
     private PlayerInjuryProfile BuildProfileUnlocked(Guid playerId)
     {
-        _currentByPlayer.TryGetValue(playerId, out var currentRows);
-        currentRows ??= [];
+        var currentRows = _currentRecords.Where(r => r.PlayerId == playerId).ToList();
         var current = currentRows
             .OrderByDescending(r => r.Date)
             .FirstOrDefault(r => !IsBenignClearance(r))
@@ -336,17 +410,21 @@ public sealed class PlayerInjuryService : IPlayerInjuryService
             currentStatus = CurrentInjuryDataStatus.Available;
         }
 
-        IReadOnlyList<PlayerInjuryRecord> historicalRows = [];
-        var historicalStatus = _globalHistoricalStatus;
-        if (_globalHistoricalStatus == HistoricalDataStatus.Available ||
-            _globalHistoricalStatus == HistoricalDataStatus.NoRecordsFound)
-        {
-            _historicalByPlayer.TryGetValue(playerId, out var hist);
-            historicalRows = hist ?? [];
-            historicalStatus = historicalRows.Count > 0
-                ? HistoricalDataStatus.Available
-                : HistoricalDataStatus.NoRecordsFound;
-        }
+        var nflRows = _nflHistorical.Where(r => r.PlayerId == playerId).ToList();
+        var collegeRows = _collegeHistorical.Where(r => r.PlayerId == playerId).ToList();
+        var allHistorical = nflRows.Concat(collegeRows).ToList();
+        var asOf = DateTimeOffset.UtcNow;
+        var scored = InjuryRelevanceCalculator.ScoreAll(allHistorical, asOf);
+
+        var nflStatus = ResolvePerPlayerStatus(_nflHistoricalStatus, nflRows.Count);
+        var collegeStatus = ResolvePerPlayerStatus(_collegeHistoricalStatus, collegeRows.Count);
+        var globalStatus = CombineHistoricalStatus(nflStatus, collegeStatus);
+
+        var news = _news.GetForPlayer(playerId, 12);
+        var unconfirmed = UnconfirmedInjurySignalExtractor.ExtractForPlayer(
+            playerId,
+            news,
+            hasConfirmedCurrentInjury: currentStatus == CurrentInjuryDataStatus.Available);
 
         var sources = new List<string>();
         if (current?.Source is not null)
@@ -354,12 +432,9 @@ public sealed class PlayerInjuryService : IPlayerInjuryService
             sources.Add(current.Source);
         }
 
-        foreach (var src in historicalRows.Select(r => r.Source).Where(s => !string.IsNullOrWhiteSpace(s)).Distinct())
-        {
-            sources.Add(src!);
-        }
-
-        if (sources.Count == 0 && _capabilities.Notes is not null)
+        sources.AddRange(allHistorical.Select(r => r.Source).Where(s => !string.IsNullOrWhiteSpace(s))!);
+        sources.AddRange(unconfirmed.Select(s => s.Source).Where(s => !string.IsNullOrWhiteSpace(s)));
+        if (sources.Count == 0)
         {
             sources.Add(_primary.DisplayName);
         }
@@ -372,27 +447,120 @@ public sealed class PlayerInjuryService : IPlayerInjuryService
             CurrentInjury = current,
             PracticeStatus = current?.PracticeStatus,
             GameStatus = current?.GameStatus,
-            HistoricalRecords = historicalRows.OrderByDescending(r => r.Date).ToList(),
-            HistoricalDataStatus = historicalStatus,
-            RiskSummary = BuildRiskSummary(currentStatus, current, historicalStatus, historicalRows),
+            RecentHistory = scored
+                .Where(e => e.Band is InjuryRelevanceBand.High or InjuryRelevanceBand.Moderate)
+                .ToList(),
+            NflCareerHistory = scored
+                .Where(e => e.Record.Level != InjuryCompetitionLevel.College)
+                .ToList(),
+            CollegeHistory = scored
+                .Where(e => e.Record.Level == InjuryCompetitionLevel.College)
+                .ToList(),
+            HistoricalEntries = scored,
+            HistoricalRecords = allHistorical.OrderByDescending(r => r.Date).ToList(),
+            HistoricalDataStatus = globalStatus,
+            NflHistoricalDataStatus = nflStatus,
+            CollegeHistoricalDataStatus = collegeStatus,
+            UnconfirmedSignals = unconfirmed,
+            RiskSummary = BuildRiskSummary(currentStatus, current, globalStatus, scored, unconfirmed),
             LastUpdated = current?.LastUpdated ?? _lastUpdated,
             SupportingSources = sources.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
-            HistoricalAvailabilityMessage = InjuryAvailabilityPresentation.HistoricalMessage(historicalStatus)
+            HistoricalAvailabilityMessage = InjuryAvailabilityPresentation.HistoricalMessage(nflStatus),
+            CollegeAvailabilityMessage = InjuryAvailabilityPresentation.CollegeMessage(collegeStatus),
+            ProviderCoverage = _providerCoverage
         };
     }
 
-    private static bool IsBenignClearance(PlayerInjuryRecord record)
+    private static HistoricalDataStatus ResolvePerPlayerStatus(HistoricalDataStatus global, int count)
     {
-        // Prefer meaningful designations over "Active" noise when both exist.
-        return record.Status.Equals("Active", StringComparison.OrdinalIgnoreCase) ||
-               record.Status.Equals("Healthy", StringComparison.OrdinalIgnoreCase);
+        if (global is HistoricalDataStatus.NotSupportedByProvider
+            or HistoricalDataStatus.Unavailable
+            or HistoricalDataStatus.NotSynced)
+        {
+            return global;
+        }
+
+        return count > 0 ? HistoricalDataStatus.Available : HistoricalDataStatus.NoRecordsFound;
     }
+
+    private static HistoricalDataStatus CombineHistoricalStatus(
+        HistoricalDataStatus nfl,
+        HistoricalDataStatus college)
+    {
+        if (nfl == HistoricalDataStatus.Available || college == HistoricalDataStatus.Available)
+        {
+            return HistoricalDataStatus.Available;
+        }
+
+        if (nfl == HistoricalDataStatus.Unavailable || college == HistoricalDataStatus.Unavailable)
+        {
+            return HistoricalDataStatus.Unavailable;
+        }
+
+        if (nfl == HistoricalDataStatus.NotSupportedByProvider &&
+            college == HistoricalDataStatus.NotSupportedByProvider)
+        {
+            return HistoricalDataStatus.NotSupportedByProvider;
+        }
+
+        if (nfl == HistoricalDataStatus.NoRecordsFound || college == HistoricalDataStatus.NoRecordsFound)
+        {
+            return HistoricalDataStatus.NoRecordsFound;
+        }
+
+        return nfl;
+    }
+
+    private static string BuildCoverage(
+        InjuryProviderCapabilities capabilities,
+        HistoricalDataStatus nfl,
+        HistoricalDataStatus college)
+    {
+        var parts = new List<string>
+        {
+            capabilities.SupportsCurrentInjuries ? "Current: yes" : "Current: no",
+            nfl == HistoricalDataStatus.NotSupportedByProvider ? "NFL history: not supported" :
+            nfl == HistoricalDataStatus.Available ? "NFL history: available" :
+            nfl == HistoricalDataStatus.NoRecordsFound ? "NFL history: synced (no rows)" :
+            $"NFL history: {nfl}",
+            college == HistoricalDataStatus.NotSupportedByProvider ? "College history: not supported" :
+            college == HistoricalDataStatus.Available ? "College history: available" :
+            college == HistoricalDataStatus.NoRecordsFound ? "College history: synced (no rows)" :
+            $"College history: {college}"
+        };
+        return string.Join(" · ", parts);
+    }
+
+    private static PlayerInjuryRecord NormalizeCurrent(PlayerInjuryRecord r) =>
+        r with
+        {
+            IsCurrent = true,
+            Verified = true,
+            Level = r.Level ?? InjuryCompetitionLevel.Nfl,
+            Severity = r.Severity ?? InjurySeverityInference.FromStatus(r.Status, r.GamesMissed)
+        };
+
+    private static PlayerInjuryRecord NormalizeHistorical(
+        PlayerInjuryRecord r,
+        InjuryCompetitionLevel level) =>
+        r with
+        {
+            IsCurrent = false,
+            Verified = true,
+            Level = r.Level ?? level,
+            Severity = r.Severity ?? InjurySeverityInference.FromStatus(r.Status, r.GamesMissed)
+        };
+
+    private static bool IsBenignClearance(PlayerInjuryRecord record) =>
+        record.Status.Equals("Active", StringComparison.OrdinalIgnoreCase) ||
+        record.Status.Equals("Healthy", StringComparison.OrdinalIgnoreCase);
 
     private static string BuildRiskSummary(
         CurrentInjuryDataStatus currentStatus,
         PlayerInjuryRecord? current,
         HistoricalDataStatus historicalStatus,
-        IReadOnlyList<PlayerInjuryRecord> historical)
+        IReadOnlyList<InjuryHistoryEntry> scored,
+        IReadOnlyList<UnconfirmedInjurySignal> unconfirmed)
     {
         if (currentStatus == CurrentInjuryDataStatus.Available && current is not null)
         {
@@ -407,9 +575,16 @@ public sealed class PlayerInjuryService : IPlayerInjuryService
             };
         }
 
-        if (historicalStatus == HistoricalDataStatus.Available && historical.Count > 0)
+        if (unconfirmed.Count > 0)
         {
-            return "No current designation; historical injury context is available from the historical provider.";
+            var top = unconfirmed[0];
+            return $"No confirmed current injury. Possible injury concern — unconfirmed ({top.ConfidenceLabel} confidence).";
+        }
+
+        var highHist = scored.FirstOrDefault(e => e.Band == InjuryRelevanceBand.High);
+        if (highHist is not null)
+        {
+            return "No current designation; recent/high-relevance historical injury context is available.";
         }
 
         if (historicalStatus == HistoricalDataStatus.NotSupportedByProvider)
@@ -432,15 +607,15 @@ public sealed class PlayerInjuryService : IPlayerInjuryService
 
     private void RecordTelemetry(
         InjuryProviderKind active,
-        InjuryProviderCapabilities capabilities,
-        HistoricalDataStatus historicalStatus,
         TimeSpan runtime,
         bool usedFallback,
         bool usedCache,
         string? priorError)
     {
         var current = _currentRecords;
-        var historical = _historicalRecords;
+        var nfl = _nflHistorical;
+        var college = _collegeHistorical;
+        var historical = nfl.Concat(college).ToList();
         var playersWithCurrent = current
             .Where(r => !IsBenignClearance(r))
             .Select(r => r.PlayerId)
@@ -452,19 +627,46 @@ public sealed class PlayerInjuryService : IPlayerInjuryService
             .Distinct()
             .Count();
 
+        // Count unconfirmed across a sample of players with news (cheap: latest news only).
+        var unconfirmedCount = 0;
+        try
+        {
+            var articles = _news.GetLatest(40);
+            var playerIds = articles.SelectMany(a => a.RelatedPlayerIds).Distinct().Take(80);
+            foreach (var id in playerIds)
+            {
+                var hasCurrent = current.Any(r => r.PlayerId == id && !IsBenignClearance(r));
+                unconfirmedCount += UnconfirmedInjurySignalExtractor
+                    .ExtractForPlayer(id, articles.Where(a => a.RelatedPlayerIds.Contains(id)), hasCurrent)
+                    .Count;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Unconfirmed injury telemetry skipped");
+        }
+
         _status.RecordSuccess(
             active,
+            _injuryProviders,
+            _providerCoverage,
             playersWithData,
             playersWithCurrent,
             playersWithHistorical,
             current.Count + historical.Count,
             current.Count,
             historical.Count,
-            historicalStatus,
-            capabilities.SupportsHistoricalInjuries || _historical.IsConfigured,
+            nfl.Count,
+            college.Count,
+            unconfirmedCount,
+            _globalHistoricalStatus,
+            _historical.IsConfigured || _college.IsConfigured || _capabilities.SupportsHistoricalInjuries,
             runtime,
             usedFallback,
             usedCache,
             priorError);
     }
+
+    private static string AppendError(string? prior, string next) =>
+        string.IsNullOrWhiteSpace(prior) ? next : $"{prior}; {next}";
 }

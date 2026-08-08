@@ -114,6 +114,8 @@ public sealed class IntelligenceAnalyzer : IIntelligenceAnalyzer
             var teamId = article.RelatedTeamIds.FirstOrDefault();
             var matchedAny = false;
 
+            var speculativeInjury = IsSpeculativeInjuryLanguage(text);
+
             foreach (var rule in Rules)
             {
                 var matchedPhrase = rule.Phrases.FirstOrDefault(p => text.Contains(Normalize(p)));
@@ -123,17 +125,31 @@ public sealed class IntelligenceAnalyzer : IIntelligenceAnalyzer
                 }
 
                 matchedAny = true;
+                var effectiveRule = rule;
+                // Speculative injury language must never become a strong "Injured" fact.
+                if (speculativeInjury && rule.Category == IntelligenceCategory.Injury &&
+                    rule.Id is not "injury-positive")
+                {
+                    effectiveRule = Rule(
+                        "injury-unconfirmed",
+                        rule.Phrases,
+                        IntelligenceCategory.Injury,
+                        IntelligenceImportance.Low,
+                        Math.Min(rule.Confidence, 58),
+                        "Possible injury concern — unconfirmed.",
+                        "Matched speculative injury language in news");
+                }
 
                 if (linkedPlayers.Count > 0)
                 {
                     foreach (var player in linkedPlayers.OrderBy(p => p.Id))
                     {
-                        facts.Add(BuildFact(rule, article, matchedPhrase, player, teamId ?? player.Team));
+                        facts.Add(BuildFact(effectiveRule, article, matchedPhrase, player, teamId ?? player.Team, speculativeInjury));
                     }
                 }
                 else
                 {
-                    facts.Add(BuildFact(rule, article, matchedPhrase, player: null, teamId));
+                    facts.Add(BuildFact(effectiveRule, article, matchedPhrase, player: null, teamId, speculativeInjury));
                 }
             }
 
@@ -175,7 +191,8 @@ public sealed class IntelligenceAnalyzer : IIntelligenceAnalyzer
         NewsArticle article,
         string matchedPhrase,
         Player? player,
-        string? teamId)
+        string? teamId,
+        bool speculativeInjury = false)
     {
         var subject = player?.FullName
                       ?? (!string.IsNullOrWhiteSpace(teamId) ? teamId : "League-wide");
@@ -184,6 +201,12 @@ public sealed class IntelligenceAnalyzer : IIntelligenceAnalyzer
             $"{rule.InsightBody} Source headline: \"{article.Title}\".";
 
         var idSeed = $"{rule.Id}|{article.Id}|{player?.Id}|{teamId}";
+        var tags = new List<string> { "rule-based", rule.Id, rule.Category.ToString().ToLowerInvariant() };
+        if (speculativeInjury && rule.Category == IntelligenceCategory.Injury)
+        {
+            tags.Add("unconfirmed");
+        }
+
         return new IntelligenceFact
         {
             Id = ToDeterministicGuid(idSeed),
@@ -204,11 +227,28 @@ public sealed class IntelligenceAnalyzer : IIntelligenceAnalyzer
                 $"Matched: {matchedPhrase}",
                 $"Reason: {rule.Reason}",
                 $"Article: {article.Title}",
-                $"Source: {article.Source}"
+                $"Source: {article.Source}",
+                speculativeInjury && rule.Category == IntelligenceCategory.Injury
+                    ? "Verification: Unconfirmed"
+                    : rule.Category == IntelligenceCategory.Injury
+                        ? "Verification: News report"
+                        : "Verification: N/A"
             ],
-            Tags = ["rule-based", rule.Id, rule.Category.ToString().ToLowerInvariant()]
+            Tags = tags
         };
     }
+
+    private static bool IsSpeculativeInjuryLanguage(string normalizedText) =>
+        normalizedText.Contains("reportedly") ||
+        normalizedText.Contains("dealing with") ||
+        normalizedText.Contains("appeared limited") ||
+        normalizedText.Contains("monitoring") ||
+        normalizedText.Contains("being monitored") ||
+        normalizedText.Contains("injury buzz") ||
+        normalizedText.Contains("could be dealing") ||
+        normalizedText.Contains("nursing a") ||
+        normalizedText.Contains("bothered by") ||
+        normalizedText.Contains("day-to-day");
 
     private static IReadOnlyList<Player> ResolvePlayers(NewsArticle article, IReadOnlyList<Player> players)
     {

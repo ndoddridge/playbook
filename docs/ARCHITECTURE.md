@@ -324,10 +324,12 @@ Structured injury designations for the Injuries tab, Intelligence health signals
 | Capability | Live ESPN + Sleeper | Mock |
 | --- | --- | --- |
 | Current injuries | Yes (report-window snapshot) | Yes |
-| Historical / career injuries | **No** | Via `MockHistoricalInjuryProvider` only |
+| NFL historical / career injuries | **No** | `MockHistoricalInjuryProvider` |
+| College injuries | **No** | `MockCollegeInjuryProvider` |
 | Practice participation | Sparse (Sleeper when set) | Seeded |
 | Game status | Derived from designation | Seeded |
 | Body part / notes / source URLs | Partial | Seeded (no URLs) |
+| Unconfirmed injury buzz | Via news extractor (not a designation) | Via news extractor |
 | Player ID mapping | Name + team (not stable ESPN ids) | Catalog GUIDs |
 
 ### Provider pattern

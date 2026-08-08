@@ -8,8 +8,7 @@ namespace Playbook.Infrastructure.Injuries;
 
 /// <summary>
 /// Builds explainable IntelligenceFact rows from injury profiles.
-/// Only CURRENT designations produce scored health signals.
-/// Missing historical data must never produce a false "healthy" (or false unhealthy) signal.
+/// Distinguishes current verified, historical relevance, and unconfirmed news signals.
 /// </summary>
 public static class InjuryFactBuilder
 {
@@ -28,54 +27,143 @@ public static class InjuryFactBuilder
     {
         var facts = new List<IntelligenceFact>();
 
-        // Current injury → meaningful Health signal via existing rule ids.
+        // Current verified injury → strong Health signal.
         if (profile.CurrentDataStatus == CurrentInjuryDataStatus.Available &&
             profile.CurrentInjury is { } current)
         {
             var ruleId = InjuryIntelligenceMapping.ResolveRuleId(current);
             if (ruleId is not null)
             {
-                var description = string.IsNullOrWhiteSpace(current.Description)
-                    ? $"{current.Status} ({current.BodyPart ?? "undisclosed"})."
-                    : current.Description!;
-
-                facts.Add(new IntelligenceFact
-                {
-                    Id = StableId(profile.PlayerId, ruleId, current.ExternalId ?? current.Date.ToString("O")),
-                    Title = InjuryIntelligenceMapping.HeadlineForRule(ruleId, current),
-                    Description = description,
-                    Category = IntelligenceCategory.Injury,
-                    Confidence = InjuryIntelligenceMapping.ConfidenceForRule(ruleId),
-                    Importance = InjuryIntelligenceMapping.ImportanceForRule(ruleId),
-                    Source = IntelligenceSource.InjuryReport,
-                    RelatedPlayerId = profile.PlayerId,
-                    RelatedNewsArticleIds = [],
-                    Created = current.Date,
-                    SupportingEvidence =
-                    [
-                        $"Rule: {ruleId}",
-                        "Scope: Current",
-                        $"Status: {current.Status}",
-                        $"Source: {current.Source ?? "Injury provider"}",
-                        string.IsNullOrWhiteSpace(current.PracticeStatus)
-                            ? "Practice: unavailable"
-                            : $"Practice: {current.PracticeStatus}",
-                        string.IsNullOrWhiteSpace(current.GameStatus)
-                            ? "Game status: unavailable"
-                            : $"Game status: {current.GameStatus}",
-                        $"HistoricalDataStatus: {profile.HistoricalDataStatus}"
-                    ],
-                    Tags = ["current"]
-                });
+                facts.Add(BuildCurrentFact(profile, current, ruleId));
             }
         }
 
-        // Intentionally emit nothing when:
-        // - NoCurrentInjury + historical NotSupported/Unavailable/NotSynced
-        // That state must not become a "healthy" or "unhealthy" scored fact.
-        // UI surfaces HistoricalAvailabilityMessage / RiskSummary instead.
+        // High-relevance historical → Historical Risk context (weaker than current).
+        foreach (var entry in profile.HistoricalEntries.Where(e => e.Band == InjuryRelevanceBand.High).Take(2))
+        {
+            facts.Add(BuildHistoricalFact(profile, entry));
+        }
+
+        // Unconfirmed news signals → weak "Possible injury concern — unconfirmed".
+        foreach (var signal in profile.UnconfirmedSignals.Take(3))
+        {
+            facts.Add(BuildUnconfirmedFact(profile, signal));
+        }
 
         return facts;
+    }
+
+    private static IntelligenceFact BuildCurrentFact(
+        PlayerInjuryProfile profile,
+        PlayerInjuryRecord current,
+        string ruleId)
+    {
+        var description = string.IsNullOrWhiteSpace(current.Description)
+            ? $"{current.Status} ({current.BodyPart ?? "undisclosed"})."
+            : current.Description!;
+
+        return new IntelligenceFact
+        {
+            Id = StableId(profile.PlayerId, ruleId, current.ExternalId ?? current.Date.ToString("O")),
+            Title = InjuryIntelligenceMapping.HeadlineForRule(ruleId, current),
+            Description = description,
+            Category = IntelligenceCategory.Injury,
+            Confidence = InjuryIntelligenceMapping.ConfidenceForRule(ruleId),
+            Importance = InjuryIntelligenceMapping.ImportanceForRule(ruleId),
+            Source = IntelligenceSource.InjuryReport,
+            RelatedPlayerId = profile.PlayerId,
+            RelatedNewsArticleIds = [],
+            Created = current.Date,
+            SupportingEvidence =
+            [
+                $"Rule: {ruleId}",
+                "Scope: Current Injury",
+                "Verification: Verified",
+                $"Status: {current.Status}",
+                $"Source: {current.Source ?? "Injury provider"}",
+                string.IsNullOrWhiteSpace(current.PracticeStatus)
+                    ? "Practice: unavailable"
+                    : $"Practice: {current.PracticeStatus}",
+                string.IsNullOrWhiteSpace(current.GameStatus)
+                    ? "Game status: unavailable"
+                    : $"Game status: {current.GameStatus}",
+                $"HistoricalDataStatus: {profile.HistoricalDataStatus}"
+            ],
+            Tags = ["current", "verified", "health-risk"]
+        };
+    }
+
+    private static IntelligenceFact BuildHistoricalFact(
+        PlayerInjuryProfile profile,
+        InjuryHistoryEntry entry)
+    {
+        var record = entry.Record;
+        var level = record.Level == InjuryCompetitionLevel.College ? "College" : "NFL";
+        return new IntelligenceFact
+        {
+            Id = StableId(profile.PlayerId, "injury-historical", record.ExternalId ?? record.Date.ToString("O")),
+            Title = $"Historical risk — {record.BodyPart ?? "injury"} ({level})",
+            Description =
+                $"High-relevance historical {level.ToLowerInvariant()} injury context " +
+                $"({record.Status}, relevance {entry.RelevanceScore}/100). " +
+                (entry.RelevanceReason ?? "Recency/severity weighted."),
+            Category = IntelligenceCategory.Injury,
+            Confidence = Math.Clamp(55 + entry.RelevanceScore / 5, 55, 78),
+            Importance = IntelligenceImportance.Medium,
+            Source = IntelligenceSource.Historical,
+            RelatedPlayerId = profile.PlayerId,
+            RelatedNewsArticleIds = [],
+            Created = record.Date,
+            SupportingEvidence =
+            [
+                "Rule: injury-historical",
+                "Scope: Historical Risk",
+                "Verification: Historical",
+                $"Relevance: {entry.RelevanceScore} ({entry.Band})",
+                $"Reason: {entry.RelevanceReason}",
+                $"Level: {level}",
+                $"Source: {record.Source ?? "Historical provider"}"
+            ],
+            Tags = ["historical", "historical-risk", "verified"]
+        };
+    }
+
+    private static IntelligenceFact BuildUnconfirmedFact(
+        PlayerInjuryProfile profile,
+        UnconfirmedInjurySignal signal)
+    {
+        var confidence = signal.IsContradicted
+            ? Math.Max(20, signal.Confidence - 15)
+            : signal.Confidence;
+
+        return new IntelligenceFact
+        {
+            Id = signal.Id,
+            Title = "Possible injury concern — unconfirmed",
+            Description = string.IsNullOrWhiteSpace(signal.Detail)
+                ? signal.Headline
+                : $"{signal.Headline}. {signal.Detail}",
+            Category = IntelligenceCategory.Injury,
+            Confidence = confidence,
+            Importance = confidence >= 60 ? IntelligenceImportance.Medium : IntelligenceImportance.Low,
+            Source = IntelligenceSource.News,
+            RelatedPlayerId = profile.PlayerId,
+            RelatedNewsArticleIds = signal.RelatedNewsArticleIds,
+            Created = signal.Published,
+            SupportingEvidence =
+            [
+                "Rule: injury-unconfirmed",
+                "Scope: Unconfirmed Injury Concern",
+                "Verification: Unconfirmed",
+                $"Confidence: {signal.ConfidenceLabel} ({signal.Confidence})",
+                $"Sources: {signal.SourceCount}",
+                $"Source: {signal.Source}",
+                signal.IsContradicted
+                    ? "Note: contradictory positive language present — confidence reduced"
+                    : "Note: not an official injury designation"
+            ],
+            Tags = ["unconfirmed", "injury-buzz", "news"]
+        };
     }
 
     private static Guid StableId(Guid playerId, string ruleId, string key)

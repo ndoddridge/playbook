@@ -76,14 +76,17 @@ public sealed class MockPlayerInjuryProvider : IPlayerInjuryProvider
         {
             PlayerId = playerId,
             Date = date,
+            Season = season,
+            Level = InjuryCompetitionLevel.Nfl,
             Status = status,
             BodyPart = bodyPart,
             Description = description,
             PracticeStatus = practice,
             GameStatus = gameStatus,
+            Severity = InjurySeverityInference.FromStatus(status),
             Source = "Mock",
             SourceUrl = null,
-            Season = season,
+            Verified = true,
             LastUpdated = updated,
             IsCurrent = true,
             ExternalId = $"{playerId:N}:{date:yyyyMMdd}:{status}"

@@ -159,14 +159,18 @@ public sealed class LivePlayerInjuryProvider : IPlayerInjuryProvider
                 {
                     PlayerId = player.Id,
                     Date = date,
+                    Season = season,
+                    Level = InjuryCompetitionLevel.Nfl,
+                    Team = teamAbbr ?? player.Team,
                     Status = status,
                     BodyPart = bodyPart,
                     Description = description,
                     PracticeStatus = practice,
                     GameStatus = gameStatus,
+                    Severity = InjurySeverityInference.FromStatus(status),
                     Source = "ESPN",
                     SourceUrl = sourceUrl,
-                    Season = season,
+                    Verified = true,
                     LastUpdated = now,
                     IsCurrent = true,
                     ExternalId = item.Id ?? $"{player.Id:N}:{date:O}:{status}"
@@ -199,18 +203,23 @@ public sealed class LivePlayerInjuryProvider : IPlayerInjuryProvider
                 continue;
             }
 
+            var player = players.First(p => p.Id == playerId);
             rows.Add(new PlayerInjuryRecord
             {
                 PlayerId = playerId,
                 Date = ParseDate(extra.InjuryStartDate) ?? now,
+                Season = season,
+                Level = InjuryCompetitionLevel.Nfl,
+                Team = player.Team,
                 Status = status,
                 BodyPart = NullIfEmpty(extra.InjuryBodyPart),
                 Description = FirstNonEmpty(extra.InjuryNotes, $"{status} designation from Sleeper."),
                 PracticeStatus = FirstNonEmpty(extra.PracticeParticipation, extra.PracticeDescription),
                 GameStatus = status,
+                Severity = InjurySeverityInference.FromStatus(status),
                 Source = "Sleeper",
                 SourceUrl = null,
-                Season = season,
+                Verified = true,
                 LastUpdated = now,
                 IsCurrent = true,
                 ExternalId = $"sleeper:{playerId:N}:{status}"

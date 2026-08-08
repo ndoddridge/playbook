@@ -8,6 +8,10 @@ public interface IInjurySyncStatus
 
     string ActiveProvider { get; }
 
+    string InjuryProviders { get; }
+
+    string ProviderCoverage { get; }
+
     int PlayersWithInjuryData { get; }
 
     int PlayersWithCurrentInjuries { get; }
@@ -19,6 +23,12 @@ public interface IInjurySyncStatus
     int CurrentInjuryRecords { get; }
 
     int HistoricalInjuryRecords { get; }
+
+    int NflHistoricalRecords { get; }
+
+    int CollegeHistoricalRecords { get; }
+
+    int UnconfirmedInjurySignals { get; }
 
     string HistoricalDataAvailability { get; }
 
@@ -43,6 +53,10 @@ public sealed class InjurySyncStatus : IInjurySyncStatus
 
     public string ActiveProvider { get; private set; } = InjuryProviderKind.Mock.ToString();
 
+    public string InjuryProviders { get; private set; } = "—";
+
+    public string ProviderCoverage { get; private set; } = "—";
+
     public int PlayersWithInjuryData { get; private set; }
 
     public int PlayersWithCurrentInjuries { get; private set; }
@@ -54,6 +68,12 @@ public sealed class InjurySyncStatus : IInjurySyncStatus
     public int CurrentInjuryRecords { get; private set; }
 
     public int HistoricalInjuryRecords { get; private set; }
+
+    public int NflHistoricalRecords { get; private set; }
+
+    public int CollegeHistoricalRecords { get; private set; }
+
+    public int UnconfirmedInjurySignals { get; private set; }
 
     public string HistoricalDataAvailability { get; private set; } =
         HistoricalDataStatus.NotSynced.ToString();
@@ -80,12 +100,17 @@ public sealed class InjurySyncStatus : IInjurySyncStatus
 
     public void RecordSuccess(
         InjuryProviderKind active,
+        string injuryProviders,
+        string providerCoverage,
         int playersWithData,
         int playersWithCurrent,
         int playersWithHistorical,
         int recordsLoaded,
         int currentRecords,
         int historicalRecords,
+        int nflHistoricalRecords,
+        int collegeHistoricalRecords,
+        int unconfirmedSignals,
         HistoricalDataStatus historicalAvailability,
         bool supportsHistorical,
         TimeSpan runtime,
@@ -96,12 +121,17 @@ public sealed class InjurySyncStatus : IInjurySyncStatus
         lock (_gate)
         {
             ActiveProvider = active.ToString();
+            InjuryProviders = injuryProviders;
+            ProviderCoverage = providerCoverage;
             PlayersWithInjuryData = playersWithData;
             PlayersWithCurrentInjuries = playersWithCurrent;
             PlayersWithHistoricalData = playersWithHistorical;
             InjuryRecordsLoaded = recordsLoaded;
             CurrentInjuryRecords = currentRecords;
             HistoricalInjuryRecords = historicalRecords;
+            NflHistoricalRecords = nflHistoricalRecords;
+            CollegeHistoricalRecords = collegeHistoricalRecords;
+            UnconfirmedInjurySignals = unconfirmedSignals;
             HistoricalDataAvailability = historicalAvailability.ToString();
             SupportsHistoricalInjuries = supportsHistorical;
             InjurySyncRuntime = runtime;

@@ -264,36 +264,32 @@
                     <span class="pb-meta-value">@collegeLastError</span>
                 </div>
                 <div class="pb-meta-row">
-                    <span class="pb-meta-label">Injury Provider</span>
-                    <span class="pb-meta-value pb-meta-value--live">@injuryProvider</span>
+                    <span class="pb-meta-label">Injury Providers</span>
+                    <span class="pb-meta-value pb-meta-value--live">@injuryProviders</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Provider Coverage</span>
+                    <span class="pb-meta-value">@injuryCoverage</span>
                 </div>
                 <div class="pb-meta-row">
                     <span class="pb-meta-label">Current Injury Records</span>
                     <span class="pb-meta-value">@injuryCurrent</span>
                 </div>
                 <div class="pb-meta-row">
-                    <span class="pb-meta-label">Historical Injury Records</span>
-                    <span class="pb-meta-value">@injuryHistorical</span>
+                    <span class="pb-meta-label">NFL Historical Records</span>
+                    <span class="pb-meta-value">@injuryNflHistorical</span>
                 </div>
                 <div class="pb-meta-row">
-                    <span class="pb-meta-label">Players With Current Injuries</span>
-                    <span class="pb-meta-value">@injuryPlayersCurrent</span>
+                    <span class="pb-meta-label">College Historical Records</span>
+                    <span class="pb-meta-value">@injuryCollegeHistorical</span>
                 </div>
                 <div class="pb-meta-row">
-                    <span class="pb-meta-label">Players With Historical Data</span>
-                    <span class="pb-meta-value">@injuryPlayersHistorical</span>
-                </div>
-                <div class="pb-meta-row">
-                    <span class="pb-meta-label">Historical Data Availability</span>
-                    <span class="pb-meta-value">@injuryHistoricalAvailability</span>
+                    <span class="pb-meta-label">Unconfirmed Injury Signals</span>
+                    <span class="pb-meta-value">@injuryUnconfirmed</span>
                 </div>
                 <div class="pb-meta-row">
                     <span class="pb-meta-label">Last Injury Sync</span>
                     <span class="pb-meta-value">@injuryLastSync</span>
-                </div>
-                <div class="pb-meta-row">
-                    <span class="pb-meta-label">Injury Sync Runtime</span>
-                    <span class="pb-meta-value">@injuryRuntime</span>
                 </div>
                 <div class="pb-meta-row">
                     <span class="pb-meta-label">Last Injury Error</span>
@@ -435,14 +431,13 @@
     private string collegeSeasons = "—";
     private string collegeLastSync = "—";
     private string collegeLastError = "None";
-    private string injuryProvider = "—";
+    private string injuryProviders = "—";
+    private string injuryCoverage = "—";
     private string injuryCurrent = "—";
-    private string injuryHistorical = "—";
-    private string injuryPlayersCurrent = "—";
-    private string injuryPlayersHistorical = "—";
-    private string injuryHistoricalAvailability = "—";
+    private string injuryNflHistorical = "—";
+    private string injuryCollegeHistorical = "—";
+    private string injuryUnconfirmed = "—";
     private string injuryLastSync = "—";
-    private string injuryRuntime = "—";
     private string injuryLastError = "None";
 
     protected override void OnInitialized()
@@ -572,20 +567,21 @@
             : CollegeStatsSyncStatus.CollegeSyncError;
 
         _ = PlayerInjuryService.GetAllInjuries();
-        injuryProvider = InjurySyncStatus.UsedFallback
-            ? $"{InjurySyncStatus.ActiveProvider} (fallback)"
-            : InjurySyncStatus.UsedCache
-                ? $"{InjurySyncStatus.ActiveProvider} (cache)"
-                : InjurySyncStatus.ActiveProvider;
+        injuryProviders = string.IsNullOrWhiteSpace(InjurySyncStatus.InjuryProviders)
+            ? (InjurySyncStatus.UsedFallback
+                ? $"{InjurySyncStatus.ActiveProvider} (fallback)"
+                : InjurySyncStatus.UsedCache
+                    ? $"{InjurySyncStatus.ActiveProvider} (cache)"
+                    : InjurySyncStatus.ActiveProvider)
+            : InjurySyncStatus.InjuryProviders;
+        injuryCoverage = string.IsNullOrWhiteSpace(InjurySyncStatus.ProviderCoverage)
+            ? "—"
+            : InjurySyncStatus.ProviderCoverage;
         injuryCurrent = InjurySyncStatus.CurrentInjuryRecords.ToString();
-        injuryHistorical = InjurySyncStatus.HistoricalInjuryRecords.ToString();
-        injuryPlayersCurrent = InjurySyncStatus.PlayersWithCurrentInjuries.ToString();
-        injuryPlayersHistorical = InjurySyncStatus.PlayersWithHistoricalData.ToString();
-        injuryHistoricalAvailability = InjurySyncStatus.HistoricalDataAvailability;
+        injuryNflHistorical = InjurySyncStatus.NflHistoricalRecords.ToString();
+        injuryCollegeHistorical = InjurySyncStatus.CollegeHistoricalRecords.ToString();
+        injuryUnconfirmed = InjurySyncStatus.UnconfirmedInjurySignals.ToString();
         injuryLastSync = InjurySyncStatus.LastInjurySync?.ToLocalTime().ToString("h:mm:ss tt") ?? "—";
-        injuryRuntime = InjurySyncStatus.InjurySyncRuntime is { } injuryElapsed
-            ? $"{injuryElapsed.TotalMilliseconds:0} ms"
-            : "—";
         injuryLastError = string.IsNullOrWhiteSpace(InjurySyncStatus.LastInjuryError)
             ? "None"
             : InjurySyncStatus.LastInjuryError;

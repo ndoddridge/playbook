@@ -111,10 +111,11 @@ Injury designations are loaded behind `IPlayerInjuryService` (Mock or Live), exp
 ```
 
 - Live **current** source: ESPN NFL injuries feed, enriched with Sleeper `injury_status` / practice fields
-- Live providers are **current-report only** — they do not supply career historical injury records
-- Historical data uses a separate `IHistoricalInjuryProvider` abstraction (`Null` for Live, `Mock` seeds when `Provider=Mock`)
-- `HistoricalDataStatus` is explicit (`Available` / `Unavailable` / `NotSupportedByProvider` / `NotSynced` / `NoRecordsFound`) — missing history never means “never injured”
-- Intelligence maps **current** Out / IR / Questionable / Limited / Returned into health signals; unknown history does not invent a healthy signal
+- Live providers are **current-report only** — no NFL career or college injury history
+- History uses `IHistoricalInjuryProvider` + `ICollegeInjuryProvider` (`Null` for Live; Mock seeds when `Provider=Mock`)
+- Unconfirmed injury buzz is extracted from news separately and never shown as a verified designation
+- Relevance scoring de-emphasizes old history without deleting it
+- Intelligence distinguishes current verified injuries, historical risk, and unconfirmed concerns
 - Projection applies a conservative availability factor for major **current** designations
 
 ## Player statistics
