@@ -6,13 +6,15 @@ using Playbook.Application.Leagues;
 using Playbook.Application.Players;
 using Playbook.Application.Projections;
 using Playbook.Application.Projections.Interfaces;
+using Playbook.Application.Stats.Interfaces;
 using Playbook.Core.Projections.Models;
+using Playbook.Core.Stats.Models;
 
 namespace Playbook.Infrastructure.Projections.Services;
 
 /// <summary>
 /// Builds and caches <see cref="PlayerProjection"/> values from
-/// player-specific production + intelligence + league context.
+/// statistics + intelligence + optional matchup/environment + league context.
 /// </summary>
 public sealed class ProjectionService : IProjectionService
 {
@@ -20,6 +22,9 @@ public sealed class ProjectionService : IProjectionService
     private readonly IPlayerProductionProvider _production;
     private readonly IIntelligenceService _intelligence;
     private readonly IPlayerInjuryService _injuries;
+    private readonly IPlayerStatisticalContextService _statisticalContext;
+    private readonly IMatchupContextProvider _matchups;
+    private readonly IGameEnvironmentProvider _environments;
     private readonly IPlayerService _players;
     private readonly ILeagueState _leagueState;
     private readonly ProjectionSyncStatus _status;
@@ -37,6 +42,9 @@ public sealed class ProjectionService : IProjectionService
         IPlayerProductionProvider production,
         IIntelligenceService intelligence,
         IPlayerInjuryService injuries,
+        IPlayerStatisticalContextService statisticalContext,
+        IMatchupContextProvider matchups,
+        IGameEnvironmentProvider environments,
         IPlayerService players,
         ILeagueState leagueState,
         ProjectionSyncStatus status,
@@ -46,17 +54,24 @@ public sealed class ProjectionService : IProjectionService
         _production = production;
         _intelligence = intelligence;
         _injuries = injuries;
+        _statisticalContext = statisticalContext;
+        _matchups = matchups;
+        _environments = environments;
         _players = players;
         _leagueState = leagueState;
         _status = status;
         _logger = logger;
     }
 
+    public string EngineVersion => _engine.Version;
+
     public PlayerProjection? GetProjection(Guid playerId)
     {
         EnsureLoaded();
         return _byPlayer.TryGetValue(playerId, out var projection) ? projection : null;
     }
+
+    public PlayerProjection? ProjectPlayer(Guid playerId) => GetProjection(playerId);
 
     public IReadOnlyList<PlayerProjection> GetAllProjections()
     {
@@ -72,6 +87,55 @@ public sealed class ProjectionService : IProjectionService
             .ThenByDescending(p => p.Confidence)
             .ThenBy(p => p.PlayerId)
             .Take(Math.Max(1, count))
+            .ToList();
+    }
+
+    public PlayerProjectionComparison? ComparePlayers(Guid leftPlayerId, Guid rightPlayerId)
+    {
+        var left = ProjectPlayer(leftPlayerId);
+        var right = ProjectPlayer(rightPlayerId);
+        if (left is null || right is null)
+        {
+            return null;
+        }
+
+        var notes = new List<string>
+        {
+            $"Projected points delta: {left.ProjectedFantasyPoints - right.ProjectedFantasyPoints:+0.0;-0.0;0.0}",
+            $"Confidence delta: {left.Confidence - right.Confidence:+0;-0;0}",
+            $"Volatility delta: {left.Volatility - right.Volatility:+0;-0;0}",
+            $"Scoring: {left.ScoringFormat} · Week {left.Week} · Engine v{left.ProjectionVersion}"
+        };
+
+        if (left.ProjectedFantasyPoints > right.ProjectedFantasyPoints)
+        {
+            notes.Add("Left projects higher median production in this league context.");
+        }
+        else if (left.ProjectedFantasyPoints < right.ProjectedFantasyPoints)
+        {
+            notes.Add("Right projects higher median production in this league context.");
+        }
+        else
+        {
+            notes.Add("Medians are equal — compare floor/ceiling and confidence.");
+        }
+
+        return new PlayerProjectionComparison
+        {
+            Left = left,
+            Right = right,
+            ComparisonNotes = notes
+        };
+    }
+
+    public IReadOnlyList<PlayerProjection> ProjectRoster(IEnumerable<Guid> playerIds)
+    {
+        EnsureLoaded();
+        var set = playerIds.ToHashSet();
+        return _projections
+            .Where(p => set.Contains(p.PlayerId))
+            .OrderByDescending(p => p.ProjectedFantasyPoints)
+            .ThenBy(p => p.PlayerId)
             .ToList();
     }
 
@@ -134,7 +198,32 @@ public sealed class ProjectionService : IProjectionService
                 .Where(r => r is not null)
                 .ToDictionary(r => r!.PlayerId, r => r!);
 
-            var projections = _engine.ProjectMany(players, production, profiles, context, currentInjuries);
+            var statsContexts = new Dictionary<Guid, PlayerStatisticalContext>();
+            foreach (var player in players)
+            {
+                var ctx = _statisticalContext.GetContext(player.Id);
+                if (ctx is not null)
+                {
+                    statsContexts[player.Id] = ctx;
+                }
+            }
+
+            var matchups = players.ToDictionary(
+                p => p.Id,
+                p => _matchups.GetMatchup(p, context));
+            var environments = players.ToDictionary(
+                p => p.Id,
+                p => _environments.GetEnvironment(p, context));
+
+            var projections = _engine.ProjectMany(
+                players,
+                production,
+                profiles,
+                context,
+                currentInjuries,
+                statsContexts,
+                matchups,
+                environments);
             watch.Stop();
 
             _projections = projections;
@@ -145,6 +234,9 @@ public sealed class ProjectionService : IProjectionService
             var avgConfidence = projections.Count == 0
                 ? 0
                 : projections.Average(p => p.Confidence);
+            var avgVolatility = projections.Count == 0
+                ? 0
+                : projections.Average(p => p.Volatility);
             var avgProjection = projections.Count == 0
                 ? 0
                 : (double)projections.Average(p => p.ProjectedFantasyPoints);
@@ -154,19 +246,24 @@ public sealed class ProjectionService : IProjectionService
                 .Count();
 
             _status.RecordSuccess(
+                ProjectionEngineVersions.DisplayName,
+                _engine.Version,
                 projections.Count,
                 uniqueValues,
                 avgProjection,
                 avgConfidence,
+                avgVolatility,
                 watch.Elapsed);
 
             _logger.LogInformation(
-                "Projection pipeline: {Players} players, {Unique} unique values, avg {Avg:0.0} pts in {Ms} ms (avg confidence {Conf:0.0})",
+                "{Engine} v{Version}: {Players} players, avg {Avg:0.0} pts, conf {Conf:0.0}, vol {Vol:0.0} in {Ms} ms",
+                ProjectionEngineVersions.DisplayName,
+                _engine.Version,
                 projections.Count,
-                uniqueValues,
                 avgProjection,
-                watch.ElapsedMilliseconds,
-                avgConfidence);
+                avgConfidence,
+                avgVolatility,
+                watch.ElapsedMilliseconds);
         }
         catch (Exception ex)
         {

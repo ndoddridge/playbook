@@ -17,6 +17,7 @@
 @using Playbook.Web.Features.Intelligence.Models
 @using Playbook.Web.Features.League.Models
 @inject ILeagueState LeagueState
+@inject ILeagueSyncStatus LeagueSyncStatus
 @inject IRecommendationService RecommendationService
 @inject IIntelligenceService IntelligenceService
 @inject IIntelligenceSyncStatus IntelligenceSyncStatus
@@ -54,7 +55,12 @@
             <div class="league-context">
                 <div class="league-context__item">
                     <span class="league-context__label">Current League</span>
-                    <span class="league-context__value">@current.Name</span>
+                    <span class="league-context__value">
+                        @current.Name
+                        <span class="league-source-badge @(LeagueDisplay.IsLive(current) ? "league-source-badge--live" : "league-source-badge--mock")">
+                            @LeagueDisplay.DataSource(current.DataSource)
+                        </span>
+                    </span>
                 </div>
                 <div class="league-context__item">
                     <span class="league-context__label">Platform</span>
@@ -66,7 +72,11 @@
                 </div>
                 <div class="league-context__item">
                     <span class="league-context__label">Scoring</span>
-                    <span class="league-context__value">@LeagueDisplay.Scoring(current.ScoringType)</span>
+                    <span class="league-context__value">@LeagueDisplay.ScoringDetailed(current)</span>
+                </div>
+                <div class="league-context__item">
+                    <span class="league-context__label">Teams</span>
+                    <span class="league-context__value">@current.NumberOfTeams</span>
                 </div>
                 <div class="league-context__item">
                     <span class="league-context__label">Week</span>
@@ -110,6 +120,26 @@
                 <div class="pb-meta-row">
                     <span class="pb-meta-label">Current League</span>
                     <span class="pb-meta-value">@currentLeagueName</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">League Data Source</span>
+                    <span class="pb-meta-value">@currentLeagueSource</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Live Leagues Loaded</span>
+                    <span class="pb-meta-value">@leagueLiveCount</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">League Teams Loaded</span>
+                    <span class="pb-meta-value">@leagueTeamsLoaded</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Last League Connect</span>
+                    <span class="pb-meta-value">@leagueLastConnect</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">League Connect Error</span>
+                    <span class="pb-meta-value">@leagueLastError</span>
                 </div>
                 <div class="pb-meta-row">
                     <span class="pb-meta-label">Application Version</span>
@@ -192,6 +222,14 @@
                     <span class="pb-meta-value">@intelAggRuntime</span>
                 </div>
                 <div class="pb-meta-row">
+                    <span class="pb-meta-label">Projection Engine</span>
+                    <span class="pb-meta-value pb-meta-value--live">@projectionEngine</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Version</span>
+                    <span class="pb-meta-value">@projectionVersion</span>
+                </div>
+                <div class="pb-meta-row">
                     <span class="pb-meta-label">Players Projected</span>
                     <span class="pb-meta-value">@projectionPlayers</span>
                 </div>
@@ -208,8 +246,20 @@
                     <span class="pb-meta-value">@projectionAvgConfidence</span>
                 </div>
                 <div class="pb-meta-row">
+                    <span class="pb-meta-label">Average Volatility</span>
+                    <span class="pb-meta-value">@projectionAvgVolatility</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Last Projection Run</span>
+                    <span class="pb-meta-value">@projectionLastRun</span>
+                </div>
+                <div class="pb-meta-row">
                     <span class="pb-meta-label">Projection Runtime</span>
                     <span class="pb-meta-value">@projectionRuntime</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Projection Errors</span>
+                    <span class="pb-meta-value">@projectionErrors</span>
                 </div>
                 <div class="pb-meta-row">
                     <span class="pb-meta-label">Statistics Providers</span>
@@ -429,6 +479,11 @@
     private string backgroundServiceStatus = "Running";
     private string mockDataStatus = "Active";
     private string currentLeagueName = "—";
+    private string currentLeagueSource = "—";
+    private string leagueLiveCount = "—";
+    private string leagueTeamsLoaded = "—";
+    private string leagueLastConnect = "—";
+    private string leagueLastError = "None";
     private string lastUpdateDisplay = "—";
     private string currentTimeDisplay = "—";
     private int refreshCount;
@@ -465,11 +520,16 @@
     private string intelFactsAggregated = "—";
     private string intelAvgFacts = "—";
     private string intelAggRuntime = "—";
+    private string projectionEngine = "—";
+    private string projectionVersion = "—";
     private string projectionPlayers = "—";
     private string projectionUnique = "—";
     private string projectionAverage = "—";
     private string projectionRuntime = "—";
     private string projectionAvgConfidence = "—";
+    private string projectionAvgVolatility = "—";
+    private string projectionLastRun = "—";
+    private string projectionErrors = "None";
     private string statsProviders = "—";
     private string statsProvider = "—";
     private string statsPlayers = "—";
@@ -544,6 +604,17 @@
         lastUpdateDisplay = now.ToString("h:mm:ss tt");
         currentTimeDisplay = now.ToString("h:mm:ss tt");
         currentLeagueName = LeagueState.CurrentLeague?.Name ?? "None selected";
+        currentLeagueSource = LeagueState.CurrentLeague is { } league
+            ? LeagueDisplay.DataSource(league.DataSource)
+            : "—";
+        leagueLiveCount = LeagueSyncStatus.LiveLeaguesLoaded.ToString();
+        leagueTeamsLoaded = LeagueSyncStatus.TeamsLoaded.ToString();
+        leagueLastConnect = LeagueSyncStatus.LastConnectTime is { } connectTime
+            ? $"{LeagueSyncStatus.LastConnectedLeagueName ?? "League"} · {connectTime.ToLocalTime():h:mm:ss tt}"
+            : "—";
+        leagueLastError = string.IsNullOrWhiteSpace(LeagueSyncStatus.LastError)
+            ? "None"
+            : LeagueSyncStatus.LastError;
         buildStatus = "Succeeded";
         backgroundServiceStatus = "Running";
 
@@ -589,6 +660,8 @@
             : "—";
 
         _ = ProjectionService.GetAllProjections();
+        projectionEngine = ProjectionSyncStatus.ProjectionEngine;
+        projectionVersion = ProjectionSyncStatus.Version;
         projectionPlayers = ProjectionSyncStatus.PlayersProjected.ToString();
         projectionUnique = ProjectionSyncStatus.UniqueProjectionValues.ToString();
         projectionAverage = ProjectionSyncStatus.PlayersProjected > 0
@@ -600,6 +673,13 @@
         projectionAvgConfidence = ProjectionSyncStatus.PlayersProjected > 0
             ? ProjectionSyncStatus.AverageProjectionConfidence.ToString("0.0")
             : "—";
+        projectionAvgVolatility = ProjectionSyncStatus.PlayersProjected > 0
+            ? ProjectionSyncStatus.AverageVolatility.ToString("0.0")
+            : "—";
+        projectionLastRun = ProjectionSyncStatus.LastProjectionRun?.ToLocalTime().ToString("h:mm:ss tt") ?? "—";
+        projectionErrors = string.IsNullOrWhiteSpace(ProjectionSyncStatus.ProjectionErrors)
+            ? "None"
+            : ProjectionSyncStatus.ProjectionErrors;
 
         _ = PlayerStatsService.GetAllStats();
         statsProviders = PlayerStatsSyncStatus.StatisticsProviders;

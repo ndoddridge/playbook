@@ -124,30 +124,36 @@ Swap `MockIntelligenceService` for a Data-Engine-backed implementation without c
 
 ## League State
 
-The selected fantasy league is global application context. Every future recommendation engine should read from this state so outputs stay league-aware (scoring, roster rules, matchups).
+The selected fantasy league is global application context. Projection, Intelligence consumers, and player context read from this state so outputs stay league-aware (scoring, roster ownership, week).
 
 ### Contracts
 
-- `Playbook.Core.Leagues.League` — domain model with platform, type, scoring, week, season, and activity flags
-- `ILeagueService` — catalog + selection API (`GetAllLeagues`, `GetCurrentLeague`, `SelectLeague`)
-- `ILeagueState` — process-lifetime selected league plus a `Changed` notification for UI (and later engines)
+- `Playbook.Core.Leagues.League` — domain model with platform, type, scoring, week, season, `DataSource` (Mock / Sleeper), optional `ExternalId` / `ReceptionPoints`
+- `FantasyTeam` — roster/team inside a league with Playbook player ids
+- `ILeagueService` — catalog + selection + `ConnectSleeperLeagueAsync` + team/roster accessors
+- `ILeagueState` — process-lifetime selected league, teams, `Changed` notification, Sleeper connect
+- `ISleeperLeagueClient` — fetches league settings, users, and rosters by Sleeper league id
+- `ILeagueSyncStatus` — connect/loading diagnostics for the Developer Monitor
 
-### Mock Service
+### Providers
 
-`MockLeagueService` (Infrastructure) seeds three in-memory leagues: Friends League, Dynasty League, and Work League. No database or external APIs are involved.
+- `MockLeagueService` — demo catalog (Friends / Dynasty / Work) kept as fallback
+- `SleeperLeagueClient` — public Sleeper API (`/league/{id}`, `/rosters`, `/users`, `/state/nfl`)
+- `CompositeLeagueService` — merges mock + connected live leagues; scoring mapped from Sleeper `rec` (not hard-coded)
 
 ### Dependency Injection
 
 Registered as singletons so selection survives navigation for the lifetime of the running app:
 
-- `ILeagueService` → `MockLeagueService`
+- `ILeagueService` → `CompositeLeagueService`
 - `ILeagueState` → `LeagueStateService`
+- `ISleeperLeagueClient` → `SleeperLeagueClient`
 
-UI components (`LeagueSwitcher`, Dashboard) inject `ILeagueState` and subscribe to `Changed`. Avoid static state.
+UI (`LeagueSwitcher`, Dashboard, My Teams, Player Overlay) injects `ILeagueState` and distinguishes **Live Sleeper** vs **Mock demo** badges. Connect flow is league-ID only (no Sleeper OAuth yet).
 
-### Future replacement with real APIs
+### Future
 
-Swap `MockLeagueService` for an API/EF-backed implementation of `ILeagueService` without changing UI or engine consumers. Persist the last-selected league id (cookie/local storage/user profile) when accounts exist.
+Persist last-selected / connected league ids when accounts exist. Optional username→league discovery can come later without changing engine consumers.
 
 ## Recommendation Model
 
@@ -368,36 +374,35 @@ REAL DATA PROVIDERS → NORMALIZATION → CANONICAL PLAYER ID
 
 `PlayerSeasonStats` / `PlayerGameStats` / `CanonicalCountingStats` with `FootballLevel` (NFL | College | Career). Null means missing; zero means recorded zero. Optional fantasy convenience fields may be stored, but league points are calculated from football stats + `ScoringType`.
 
-### Projection Engine (V1)
+### Projection Engine v0.1
 
-Estimates **numerical expected outcomes** only. It must not encode start/sit, waiver, draft, or trade decisions. Downstream engines consume `PlayerProjection`.
+Estimates **numerical expected outcomes** only. Version-stamped for Replay Lab / backtesting. Does not encode start/sit, waiver, draft, or trade decisions.
+
+APIs: `ProjectPlayer` / `ComparePlayers` / `ProjectRoster` / `GetProjection`.
 
 ### Projection inputs
 
 | Input | Role |
 | --- | --- |
-| `IPlayerStatsService` → `PlayerProductionSnapshot` | Preferred recent / multi-season NFL production |
-| Curated / attribute fallbacks | Used only when stats service has no record |
-| `PlayerIntelligenceProfile` | Opportunity / usage / health / risk / trend modifiers |
-| `Player` + position | Routes which production components matter |
-| League scoring | Standard / Half-PPR / PPR fantasy math from components |
+| Stats store + `PlayerStatisticalContext` | Weighted recent / historical / career / college baselines |
+| `PlayerProductionSnapshot` | Season production components |
+| `PlayerIntelligenceProfile` | Health / opportunity / usage / risk / momentum / trend |
+| Injury records | Availability multipliers |
+| `IMatchupContextProvider` | Optional — unavailable in v0.1 (no fabrication) |
+| `IGameEnvironmentProvider` | Optional — unavailable in v0.1 (no fabrication) |
+| League scoring | Same football baseline → PPR / Half / Standard |
 
 ### Projection pipeline
 
 ```
-Player + IPlayerProductionProvider
+Statistics → Intelligence → Projection Engine v0.1
         │
-        ▼
- PlayerProductionSnapshot  (curated → profile → attribute fallback)
-        │
-        +── PlayerIntelligenceProfile
+        +── optional Matchup / GameEnvironment (may be unavailable)
         +── League scoring context
         ▼
- ProjectionEngine (production baseline + intelligence volume/downside)
-        │
-        ▼
  PlayerProjection
-   (points / floor / median / ceiling / confidence / volatility)
+   (points / floor / median / ceiling / confidence / volatility
+    + LeagueId / Week / ScoringFormat / InputsUsed / ProjectionVersion)
         │
         ▼
  IProjectionService → Overlay / Explorer / Monitor
@@ -405,6 +410,8 @@ Player + IPlayerProductionProvider
         ▼
  Future: Decision · Quick Picks · Draft · Waiver · Trade
 ```
+
+Floor/ceiling bands scale with volatility and uncertainty — not fixed ± offsets.
 
 ### Position-specific baselines
 

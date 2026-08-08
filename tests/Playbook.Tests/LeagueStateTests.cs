@@ -1,5 +1,6 @@
 using Playbook.Application.Leagues;
 using Playbook.Application.Players.Data;
+using Playbook.Core.Leagues;
 using Playbook.Infrastructure.Leagues;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -41,5 +42,17 @@ public class LeagueStateTests
         service.SelectLeague(work.Id);
 
         Assert.Equal("Work League", service.GetCurrentLeague()?.Name);
+        Assert.Equal(LeagueDataSource.Mock, work.DataSource);
+    }
+
+    [Fact]
+    public void Mock_Leagues_Expose_Demo_Teams_Without_Player_Ownership()
+    {
+        using var provider = TestServiceFactory.CreateProvider(PlayerDataProviderKind.Mock);
+        var state = provider.GetRequiredService<ILeagueState>();
+        var teams = state.GetCurrentTeams();
+
+        Assert.NotEmpty(teams);
+        Assert.All(teams, t => Assert.Empty(t.PlayerIds));
     }
 }

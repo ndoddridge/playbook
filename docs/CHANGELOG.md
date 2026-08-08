@@ -2,6 +2,42 @@
 
 All notable project changes are recorded here.
 
+## [Unreleased] — Sleeper League Integration
+
+### Added
+
+- Connect a real Sleeper league by league ID (no OAuth) via `ISleeperLeagueClient` / `CompositeLeagueService`
+- Live league settings: name, season, week, team count, league type, scoring from Sleeper `scoring_settings.rec`
+- Live rosters/teams with Playbook player-id mapping and starter association
+- Mock demo leagues remain available as fallback; UI badges distinguish Live vs Mock
+- My Teams roster view + league switcher connect form with loading/error/empty states
+- `ILeagueSyncStatus` Developer Monitor fields for live league connect diagnostics
+- Player context associates roster ownership when the selected league has the player
+
+### Changed
+
+- Projection Reasoning copy is slightly more natural while keeping the same underlying signals/data
+- League context (including live scoring) continues to flow into Player / Intelligence / Projection consumers via `ILeagueState`
+
+## [Unreleased] — Projection Engine v0.1
+
+### Added
+
+- Projection Engine v0.1 with versioned, explainable weekly outcomes
+- Extended `PlayerProjection` (LeagueId, Week, ScoringFormat, InputsUsed, ProjectionVersion)
+- Separate Recency / Usage / Opportunity / Trend / Health / Risk adjustments with point deltas
+- Optional `IMatchupContextProvider` + `IGameEnvironmentProvider` (unavailable by default — no fabrication)
+- APIs: `ProjectPlayer`, `ComparePlayers`, `ProjectRoster`
+- Floor/median/ceiling derived from volatility/uncertainty (not fixed ±X)
+- Developer Monitor: engine name, version, average volatility, last run, errors
+
+### Architecture
+
+```
+Statistics + Intelligence (+ optional matchup/environment) + League scoring
+→ Projection Engine v0.1 → Floor / Median / Ceiling / Confidence / Volatility
+```
+
 ## [Unreleased] — Player Statistics Data Engine
 
 ### Added

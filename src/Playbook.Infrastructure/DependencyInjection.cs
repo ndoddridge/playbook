@@ -3,6 +3,7 @@ using Playbook.Application.Injuries.Interfaces;
 using Playbook.Application.Intelligence;
 using Playbook.Application.Intelligence.Interfaces;
 using Playbook.Application.Leagues;
+using Playbook.Application.Leagues.Sleeper;
 using Playbook.Application.News;
 using Playbook.Application.Players;
 using Playbook.Application.Players.Data;
@@ -66,11 +67,35 @@ public static class DependencyInjection
         RegisterProjections(services);
 
         services.AddSingleton<IPlayerContextService, MockPlayerContextService>();
-        services.AddSingleton<ILeagueService, MockLeagueService>();
+        RegisterLeagues(services);
         services.AddSingleton<IRecommendationService, MockRecommendationService>();
 
         services.AddHostedService<DataRefreshBackgroundService>();
         return services;
+    }
+
+    private static void RegisterLeagues(IServiceCollection services)
+    {
+        services.AddSingleton<LeagueSyncStatus>();
+        services.AddSingleton<ILeagueSyncStatus>(sp => sp.GetRequiredService<LeagueSyncStatus>());
+        services.AddSingleton<MockLeagueService>();
+
+        services.AddHttpClient(SleeperLeagueClient.HttpClientName, (sp, client) =>
+        {
+            var sleeper = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<PlayerDataOptions>>().Value.Sleeper;
+            var baseUrl = string.IsNullOrWhiteSpace(sleeper.BaseUrl)
+                ? "https://api.sleeper.app/v1/"
+                : sleeper.BaseUrl.TrimEnd('/') + "/";
+            client.BaseAddress = new Uri(baseUrl);
+            client.Timeout = TimeSpan.FromSeconds(Math.Clamp(sleeper.TimeoutSeconds, 5, 120));
+            if (!string.IsNullOrWhiteSpace(sleeper.ApiKey))
+            {
+                client.DefaultRequestHeaders.TryAddWithoutValidation("Authorization", sleeper.ApiKey);
+            }
+        });
+
+        services.AddSingleton<ISleeperLeagueClient, SleeperLeagueClient>();
+        services.AddSingleton<ILeagueService, CompositeLeagueService>();
     }
 
     private static void RegisterIntelligence(IServiceCollection services)
@@ -87,6 +112,8 @@ public static class DependencyInjection
         services.AddSingleton<ProjectionSyncStatus>();
         services.AddSingleton<IProjectionSyncStatus>(sp => sp.GetRequiredService<ProjectionSyncStatus>());
         services.AddSingleton<IPlayerProductionProvider, PlayerProductionProvider>();
+        services.AddSingleton<IMatchupContextProvider, UnavailableMatchupContextProvider>();
+        services.AddSingleton<IGameEnvironmentProvider, UnavailableGameEnvironmentProvider>();
         services.AddSingleton<IProjectionEngine, ProjectionEngine>();
         services.AddSingleton<IProjectionService, ProjectionService>();
     }

@@ -3,58 +3,60 @@ using Playbook.Core.Players;
 namespace Playbook.Application.Projections;
 
 /// <summary>
-/// Centralized, configurable projection adjustment rules.
+/// Centralized, configurable projection adjustment rules for Engine v0.1.
 /// Bound from <c>Projection:Rules</c>.
 /// </summary>
 public sealed class ProjectionRuleOptions
 {
     public const string SectionName = "Projection:Rules";
 
-    /// <summary>
-    /// Max relative volume swing from Opportunity (score 100 → +factor, score 0 → −factor).
-    /// </summary>
-    public decimal OpportunityVolumeFactor { get; set; } = 0.22m;
+    public decimal OpportunityVolumeFactor { get; set; } = 0.18m;
 
-    /// <summary>Max relative swing from Usage on the median.</summary>
-    public decimal UsageVolumeFactor { get; set; } = 0.14m;
+    public decimal UsageVolumeFactor { get; set; } = 0.16m;
 
-    /// <summary>Max relative reduction from poor Health (score 0).</summary>
+    public decimal RecencyFactor { get; set; } = 0.12m;
+
     public decimal HealthDownsideFactor { get; set; } = 0.30m;
 
-    /// <summary>Small relative lift when Health is strong (score 100).</summary>
     public decimal HealthUpsideFactor { get; set; } = 0.06m;
 
-    /// <summary>Max relative reduction from elevated Risk (0–100, 0-based).</summary>
     public decimal RiskDownsideFactor { get; set; } = 0.18m;
 
-    /// <summary>Usage-driven ceiling expansion factor (above neutral usage).</summary>
-    public decimal UsageCeilingFactor { get; set; } = 0.20m;
+    public decimal TrendFactor { get; set; } = 0.10m;
 
-    /// <summary>Trend Up / Down median nudge factor.</summary>
-    public decimal TrendFactor { get; set; } = 0.08m;
+    public decimal MomentumFactor { get; set; } = 0.05m;
 
-    /// <summary>Base floor distance below median (points) before volatility/health.</summary>
-    public decimal BaseFloorSpread { get; set; } = 2.8m;
+    /// <summary>Max absolute point swing from matchup when available.</summary>
+    public decimal MatchupMaxSwing { get; set; } = 1.8m;
 
-    /// <summary>Base ceiling distance above median (points) before usage/volatility.</summary>
-    public decimal BaseCeilingSpread { get; set; } = 3.2m;
+    /// <summary>Max absolute point swing from game environment when available.</summary>
+    public decimal EnvironmentMaxSwing { get; set; } = 1.2m;
 
-    /// <summary>Volatility points added per missing confidence point (100 − confidence).</summary>
-    public double VolatilityFromLowConfidence { get; set; } = 0.40;
+    /// <summary>Floor band width as fraction of median at volatility=0.</summary>
+    public decimal FloorSigmaMin { get; set; } = 0.10m;
 
-    /// <summary>Baseline volatility before confidence/health adjustments.</summary>
-    public int BaselineVolatility { get; set; } = 18;
+    /// <summary>Floor band width as fraction of median at volatility=100.</summary>
+    public decimal FloorSigmaMax { get; set; } = 0.42m;
 
-    /// <summary>
-    /// Confidence blend: weight of intelligence confidence vs production-source confidence.
-    /// </summary>
-    public double IntelligenceConfidenceWeight { get; set; } = 0.65;
+    /// <summary>Ceiling band width as fraction of median at volatility=0.</summary>
+    public decimal CeilingSigmaMin { get; set; } = 0.12m;
+
+    /// <summary>Ceiling band width as fraction of median at volatility=100.</summary>
+    public decimal CeilingSigmaMax { get; set; } = 0.48m;
+
+    public double VolatilityFromLowConfidence { get; set; } = 0.35;
+
+    public int BaselineVolatility { get; set; } = 16;
+
+    public double IntelligenceConfidenceWeight { get; set; } = 0.55;
 
     public decimal MinProjection { get; set; } = 0m;
 
     public decimal MaxProjection { get; set; } = 45m;
 
-    /// <summary>Legacy position shells retained for docs/config compatibility (not primary baselines).</summary>
+    /// <summary>Weight of recent game-log weekly pts when sample ≥ this many games.</summary>
+    public int StrongRecentSampleGames { get; set; } = 4;
+
     public Dictionary<string, decimal> PositionBaselines { get; set; } = new(StringComparer.OrdinalIgnoreCase)
     {
         [nameof(Position.QB)] = 18.0m,

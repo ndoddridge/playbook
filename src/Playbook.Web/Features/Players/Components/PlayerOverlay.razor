@@ -53,6 +53,16 @@
                         <p class="player-overlay__league">
                             @(context.League?.Name ?? "No League Selected")
                             · @FormatScoring(context.ScoringType)
+                            @if (context.League is { } ctxLeague)
+                            {
+                                <span class="league-source-badge @(ctxLeague.DataSource == LeagueDataSource.Sleeper ? "league-source-badge--live" : "league-source-badge--mock")">
+                                    @(ctxLeague.DataSource == LeagueDataSource.Sleeper ? "Live" : "Mock")
+                                </span>
+                            }
+                            @if (context.FantasyTeam is { } fantasyTeam)
+                            {
+                                <text> · @(fantasyTeam.TeamName ?? fantasyTeam.DisplayName)</text>
+                            }
                         </p>
                     </div>
                 </div>
@@ -210,13 +220,33 @@
                                 Updated @ProjectionPresentation.RelativeTime(playerProjection.LastUpdated)
                             </p>
 
-                            <div class="player-stat" style="margin-bottom:1rem;">
-                                <span class="player-stat__label">Statistical Baseline</span>
-                                <span class="player-stat__value">@projectionBaselineLabel</span>
+                            <div class="player-profile__grid" style="margin-bottom:1rem;">
+                                <div class="player-stat">
+                                    <span class="player-stat__label">Statistical Baseline</span>
+                                    <span class="player-stat__value">@projectionBaselineLabel</span>
+                                </div>
+                                <div class="player-stat">
+                                    <span class="player-stat__label">Engine</span>
+                                    <span class="player-stat__value">v@(playerProjection.ProjectionVersion)</span>
+                                </div>
+                                <div class="player-stat">
+                                    <span class="player-stat__label">Scoring</span>
+                                    <span class="player-stat__value">@FormatScoring(playerProjection.ScoringFormat)</span>
+                                </div>
+                                <div class="player-stat">
+                                    <span class="player-stat__label">Week</span>
+                                    <span class="player-stat__value">@playerProjection.Week</span>
+                                </div>
                             </div>
                             @if (!string.IsNullOrWhiteSpace(projectionBaselineDetail))
                             {
                                 <p class="player-section__muted" style="margin-bottom:1rem;">@projectionBaselineDetail</p>
+                            }
+                            @if (playerProjection.InputsUsed.UnavailableInputs.Count > 0)
+                            {
+                                <p class="player-section__muted" style="margin-bottom:1rem;">
+                                    Unavailable inputs: @string.Join(", ", playerProjection.InputsUsed.UnavailableInputs)
+                                </p>
                             }
 
                             <h3 class="player-section__title">Reasoning</h3>

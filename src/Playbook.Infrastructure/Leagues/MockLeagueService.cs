@@ -4,11 +4,12 @@ using Playbook.Core.Leagues;
 namespace Playbook.Infrastructure.Leagues;
 
 /// <summary>
-/// In-memory mock league catalog and selection. Replace with API-backed persistence later.
+/// In-memory mock league catalog. Used as the demo fallback when no Sleeper league is connected.
 /// </summary>
-public sealed class MockLeagueService : ILeagueService
+public sealed class MockLeagueService
 {
     private readonly IReadOnlyList<League> _leagues;
+    private readonly Dictionary<Guid, IReadOnlyList<FantasyTeam>> _teamsByLeague;
     private League? _currentLeague;
 
     public MockLeagueService()
@@ -25,7 +26,9 @@ public sealed class MockLeagueService : ILeagueService
                 NumberOfTeams = 12,
                 CurrentWeek = 1,
                 Season = 2026,
-                IsActive = true
+                IsActive = true,
+                DataSource = LeagueDataSource.Mock,
+                ReceptionPoints = 1.0m
             },
             new League
             {
@@ -37,7 +40,9 @@ public sealed class MockLeagueService : ILeagueService
                 NumberOfTeams = 12,
                 CurrentWeek = 1,
                 Season = 2026,
-                IsActive = true
+                IsActive = true,
+                DataSource = LeagueDataSource.Mock,
+                ReceptionPoints = 0.5m
             },
             new League
             {
@@ -49,9 +54,15 @@ public sealed class MockLeagueService : ILeagueService
                 NumberOfTeams = 10,
                 CurrentWeek = 1,
                 Season = 2026,
-                IsActive = true
+                IsActive = true,
+                DataSource = LeagueDataSource.Mock,
+                ReceptionPoints = 0m
             }
         ];
+
+        _teamsByLeague = _leagues.ToDictionary(
+            league => league.Id,
+            league => (IReadOnlyList<FantasyTeam>)CreateDemoTeams(league));
 
         _currentLeague = _leagues[0];
     }
@@ -67,5 +78,29 @@ public sealed class MockLeagueService : ILeagueService
         {
             _currentLeague = match;
         }
+    }
+
+    public IReadOnlyList<FantasyTeam> GetTeams(Guid leagueId) =>
+        _teamsByLeague.TryGetValue(leagueId, out var teams) ? teams : [];
+
+    public FantasyTeam? FindTeamForPlayer(Guid leagueId, Guid playerId) =>
+        GetTeams(leagueId).FirstOrDefault(team => team.PlayerIds.Contains(playerId));
+
+    private static List<FantasyTeam> CreateDemoTeams(League league)
+    {
+        // Demo rosters stay empty of real player ids — My Teams shows an empty-state for mock leagues
+        // so live Sleeper rosters remain clearly distinct.
+        return Enumerable.Range(1, Math.Min(league.NumberOfTeams, 4))
+            .Select(i => new FantasyTeam
+            {
+                LeagueId = league.Id,
+                RosterId = i,
+                DisplayName = $"Demo Owner {i}",
+                TeamName = $"{league.Name} Team {i}",
+                PlayerIds = [],
+                StarterIds = [],
+                ExternalPlayerIds = []
+            })
+            .ToList();
     }
 }

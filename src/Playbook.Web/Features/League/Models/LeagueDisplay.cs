@@ -28,4 +28,20 @@ public static class LeagueDisplay
         ScoringType.Ppr => "PPR",
         _ => scoringType.ToString()
     };
+
+    public static string ScoringDetailed(Core.Leagues.League league)
+    {
+        var baseLabel = Scoring(league.ScoringType);
+        return league.ReceptionPoints is decimal rec
+            ? $"{baseLabel} ({rec:0.##} rec)"
+            : baseLabel;
+    }
+
+    public static string DataSource(LeagueDataSource source) => source switch
+    {
+        LeagueDataSource.Sleeper => "Live Sleeper",
+        _ => "Mock demo"
+    };
+
+    public static bool IsLive(Core.Leagues.League league) => league.DataSource == LeagueDataSource.Sleeper;
 }

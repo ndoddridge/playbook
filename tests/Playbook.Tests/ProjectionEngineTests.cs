@@ -143,7 +143,7 @@ public class ProjectionEngineTests
         var high = engine.Project(player, production, Profile(player.Id, opportunity: 85, health: 70, usage: 60), league);
 
         Assert.True(high.ProjectedFantasyPoints > low.ProjectedFantasyPoints);
-        Assert.Contains(high.ProjectionReasoning, r => r.Contains("Opportunity score 85", StringComparison.Ordinal));
+        Assert.Contains(high.ProjectionReasoning, r => r.Contains("opportunity score 85", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -160,7 +160,7 @@ public class ProjectionEngineTests
         Assert.True(hurt.ProjectedFantasyPoints < healthy.ProjectedFantasyPoints);
         Assert.True((healthy.Median - healthy.Floor) <= (hurt.Median - hurt.Floor) + 0.05m
             || hurt.Floor < healthy.Floor);
-        Assert.Contains(hurt.ProjectionReasoning, r => r.Contains("Health score 25", StringComparison.Ordinal));
+        Assert.Contains(hurt.ProjectionReasoning, r => r.Contains("health score 25", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -371,7 +371,7 @@ public class ProjectionEngineTests
             TrendDirection = TrendDirection.Flat,
             HealthScore = health,
             UsageScore = usage,
-            NewsMomentum = 20,
+            NewsMomentum = 50,
             LastUpdated = DateTimeOffset.UtcNow,
             SupportingFacts =
             [

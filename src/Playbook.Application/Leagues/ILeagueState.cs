@@ -17,4 +17,14 @@ public interface ILeagueState
     League? GetCurrentLeague();
 
     void SelectLeague(Guid leagueId);
+
+    IReadOnlyList<FantasyTeam> GetTeams(Guid leagueId);
+
+    IReadOnlyList<FantasyTeam> GetCurrentTeams();
+
+    FantasyTeam? FindTeamForPlayer(Guid playerId);
+
+    Task<LeagueConnectResult> ConnectSleeperLeagueAsync(
+        string sleeperLeagueId,
+        CancellationToken cancellationToken = default);
 }
