@@ -86,7 +86,7 @@ UI (Blazor)
 | --- | --- |
 | **Data Engine** | Ingest and normalize NFL, injury, weather, tracking, and market inputs |
 | **Intelligence Engine** | Convert football information into structured `IntelligenceFact` / `PlayerIntelligence` — no fantasy scoring |
-| **Projection Engine** | Produce expected points, floor, ceiling, and confidence from intelligence + league context |
+| **Projection Engine** | Produce expected points, floor, median, ceiling, confidence, and volatility from intelligence + league context (no fantasy decisions) |
 | **Prediction Engine** | Estimate outcomes (win probability, game script, volume distributions) |
 | **Decision Engine** | Turn projections/predictions into actionable choices (start/sit, waiver, trade, draft) |
 | **Recommendation Service** | Aggregate, rank, and expose `Recommendation` objects to the UI |
@@ -313,7 +313,59 @@ Projection, Prediction, and Decision engines should take `PlayerIntelligenceProf
 
 ### Background refresh
 
-`DataRefreshBackgroundService` refreshes players, then news, then intelligence — each step logged separately.
+`DataRefreshBackgroundService` refreshes players, then news, then intelligence, then projections — each step logged separately.
+
+## Projection Engine (V1)
+
+Estimates **numerical expected outcomes** only. It must not encode start/sit, waiver, draft, or trade decisions. Downstream engines consume `PlayerProjection`.
+
+### Projection pipeline
+
+```
+PlayerIntelligenceProfile + Player + League context
+        │
+        ▼
+ ProjectionEngine (weighted, deterministic rules)
+        │
+        ▼
+ PlayerProjection
+   (points / floor / median / ceiling / confidence / volatility)
+        │
+        ▼
+ IProjectionService → Overlay / Explorer / Monitor
+        │
+        ▼
+ Future: Decision · Quick Picks · Draft · Waiver · Trade
+```
+
+### Weighted projection rules
+
+Rules are centralized in `Projection:Rules` (`ProjectionRuleOptions`):
+
+| Signal | Effect |
+| --- | --- |
+| Higher Health | Raises median / projected points |
+| Higher Opportunity | Raises median / projected points |
+| Negative injury (low Health) | Lowers projection; widens floor |
+| Positive Usage | Raises median modestly; raises **ceiling** more |
+| Elevated Risk | Lowers projection |
+| Low Confidence | Increases **volatility** (wider floor–ceiling) |
+| Scoring type (Half-PPR / PPR) | Position-specific boosts on the baseline |
+
+Position baselines (QB/RB/WR/TE/K/DST) plus scoring boosts form the starting estimate. Each intelligence score (relative to neutral 50) applies an explainable delta. Reasoning strings and supporting intelligence (headline, scores, top facts) ship with every projection.
+
+### Contracts
+
+- `PlayerProjection`, `ProjectionLeagueContext` — `Playbook.Core.Projections.Models`
+- `IProjectionEngine`, `IProjectionService` — `Playbook.Application.Projections.Interfaces`
+- `ProjectionEngine`, `ProjectionService` — `Playbook.Infrastructure.Projections.Services`
+- UI feature folder — `Playbook.Web.Features.Projections` (Models / Services / Interfaces markers)
+
+### UI surfaces
+
+- Player Overlay **Projection** tab
+- Player Explorer sortable **Projected Points**
+- Developer Monitor: Players Projected, Projection Runtime, Average Projection Confidence
 
 ## Player Overlay
 

@@ -2,6 +2,25 @@
 
 All notable project changes are recorded here.
 
+## [Unreleased] — Projection Engine V1
+
+### Added
+
+- `PlayerProjection` — expected fantasy points, floor, median, ceiling, confidence, volatility, reasoning, supporting intelligence
+- `IProjectionEngine` / `ProjectionEngine` — deterministic weighted rules over `PlayerIntelligenceProfile` + player + league context
+- `IProjectionService` / `ProjectionService` — cached projections with league-aware refresh
+- Configurable rules via `Projection:Rules` (position baselines, scoring boosts, health/opportunity/usage/risk weights)
+- Player Overlay **Projection** tab
+- Player Explorer sortable **Projected Points** column
+- Developer Monitor: Players Projected, Projection Runtime, Average Projection Confidence
+- Background refresh re-runs projections after intelligence
+
+### Architecture notes
+
+- Projection estimates outcomes only — never start/sit, waiver, draft, or trade advice
+- Future Decision / Quick Picks / Draft Assistant / Waiver Assistant / Trade Analyzer must consume `PlayerProjection`
+- Rules are centralized and explainable; same intelligence + league ⇒ same projection
+
 ## [Unreleased] — Intelligence Aggregation (Player Profiles)
 
 ### Added

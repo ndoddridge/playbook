@@ -1,7 +1,11 @@
 @page "/player-explorer"
 @using Playbook.Application.Players
+@using Playbook.Application.Projections.Interfaces
 @using Playbook.Core.Players
+@using Playbook.Core.Projections.Models
+@using Playbook.Web.Features.Projections.Models
 @inject IPlayerService PlayerService
+@inject IProjectionService ProjectionService
 @inject IPlayerOverlayState PlayerOverlay
 
 <PageTitle>Player Explorer — Playbook</PageTitle>
@@ -9,10 +13,10 @@
 <section class="pb-page player-explorer">
     <header class="pb-page__header">
         <h1 class="pb-page__title">Player Explorer</h1>
-        <p class="pb-page__subtitle">Search the catalog and open any player in the shared Player Overlay.</p>
+        <p class="pb-page__subtitle">Search the catalog, sort by projected points, and open any player in the shared Player Overlay.</p>
     </header>
 
-    <div class="player-explorer__list-panel player-explorer__list-panel--solo">
+    <div class="player-explorer__list-panel player-explorer__list-panel--table">
         <label class="player-search">
             <span class="player-search__label">Search</span>
             <input class="player-search__input"
@@ -22,24 +26,46 @@
                    @oninput="OnSearchChanged" />
         </label>
 
-        <div class="player-list" role="listbox" aria-label="Players">
-            @foreach (var player in filteredPlayers)
-            {
-                <button type="button"
-                        class="player-list__item"
-                        role="option"
-                        @onclick="() => PlayerOverlay.Open(player.Id)">
-                    <span class="player-avatar" aria-hidden="true">@PlayerPresentation.Initials(player)</span>
-                    <span class="player-list__body">
-                        <span class="player-list__name">@player.FullName</span>
-                        <span class="player-list__meta">
-                            @PlayerPresentation.PositionLabel(player.Position) · @player.Team · @PlayerPresentation.StatusLabel(player.Status)
-                        </span>
-                    </span>
-                </button>
-            }
+        <div class="player-table-wrap" role="region" aria-label="Players">
+            <table class="player-table">
+                <thead>
+                    <tr>
+                        <th scope="col">Player</th>
+                        <th scope="col">Pos</th>
+                        <th scope="col">Team</th>
+                        <th scope="col">
+                            <button type="button"
+                                    class="player-table__sort"
+                                    @onclick="ToggleProjectedSort">
+                                Projected Points
+                                <span aria-hidden="true">@(sortDescending ? "↓" : "↑")</span>
+                            </button>
+                        </th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in visibleRows)
+                    {
+                        <tr class="player-table__row" @onclick="() => PlayerOverlay.Open(row.Player.Id)">
+                            <td>
+                                <span class="player-table__identity">
+                                    <span class="player-avatar" aria-hidden="true">@PlayerPresentation.Initials(row.Player)</span>
+                                    <span class="player-table__name">@row.Player.FullName</span>
+                                </span>
+                            </td>
+                            <td>@PlayerPresentation.PositionLabel(row.Player.Position)</td>
+                            <td>@row.Player.Team</td>
+                            <td class="player-table__points">
+                                @(row.Projection is null
+                                    ? "—"
+                                    : ProjectionPresentation.Points(row.Projection.ProjectedFantasyPoints))
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
 
-            @if (filteredPlayers.Count == 0)
+            @if (visibleRows.Count == 0)
             {
                 <p class="player-list__empty">No players match that search.</p>
             }
@@ -49,16 +75,49 @@
 
 @code {
     private string searchText = string.Empty;
-    private IReadOnlyList<Player> filteredPlayers = [];
+    private bool sortDescending = true;
+    private IReadOnlyList<PlayerRow> visibleRows = [];
 
     protected override void OnInitialized()
     {
-        filteredPlayers = PlayerService.GetAllPlayers();
+        RebuildRows();
     }
 
     private void OnSearchChanged(ChangeEventArgs args)
     {
         searchText = args.Value?.ToString() ?? string.Empty;
-        filteredPlayers = PlayerService.SearchPlayers(searchText);
+        RebuildRows();
     }
+
+    private void ToggleProjectedSort()
+    {
+        sortDescending = !sortDescending;
+        RebuildRows();
+    }
+
+    private void RebuildRows()
+    {
+        var players = string.IsNullOrWhiteSpace(searchText)
+            ? PlayerService.GetAllPlayers()
+            : PlayerService.SearchPlayers(searchText);
+
+        var projections = ProjectionService.GetAllProjections()
+            .ToDictionary(p => p.PlayerId);
+
+        IEnumerable<PlayerRow> rows = players.Select(player =>
+        {
+            projections.TryGetValue(player.Id, out var projection);
+            return new PlayerRow(player, projection);
+        });
+
+        rows = sortDescending
+            ? rows.OrderByDescending(r => r.Projection?.ProjectedFantasyPoints ?? decimal.MinValue)
+                .ThenBy(r => r.Player.FullName)
+            : rows.OrderBy(r => r.Projection?.ProjectedFantasyPoints ?? decimal.MaxValue)
+                .ThenBy(r => r.Player.FullName);
+
+        visibleRows = rows.ToList();
+    }
+
+    private sealed record PlayerRow(Player Player, PlayerProjection? Projection);
 }

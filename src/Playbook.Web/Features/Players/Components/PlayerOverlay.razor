@@ -1,14 +1,18 @@
 @using Playbook.Application.Intelligence.Interfaces
 @using Playbook.Application.News
 @using Playbook.Application.Players
+@using Playbook.Application.Projections.Interfaces
 @using Playbook.Core.Intelligence.Models
 @using Playbook.Core.Leagues
 @using Playbook.Core.News
 @using Playbook.Core.Players
+@using Playbook.Core.Projections.Models
 @using Playbook.Web.Features.Intelligence.Models
 @using Playbook.Web.Features.News.Models
+@using Playbook.Web.Features.Projections.Models
 @inject IPlayerOverlayState Overlay
 @inject IIntelligenceService IntelligenceService
+@inject IProjectionService ProjectionService
 @inject INewsProvider NewsProvider
 @implements IDisposable
 
@@ -152,6 +156,65 @@
                             </div>
                         </div>
                         <p class="player-section__text" style="margin-top:1rem;">@context.RecommendationSummary</p>
+                    </section>
+                }
+                else if (activeTab == "Projection")
+                {
+                    <section class="player-section">
+                        <h3 class="player-section__title">Player Projection</h3>
+                        @if (playerProjection is null)
+                        {
+                            <p class="player-section__muted">No projection available for this player yet.</p>
+                        }
+                        else
+                        {
+                            <div class="player-profile__grid" style="margin-bottom:1rem;">
+                                <div class="player-stat">
+                                    <span class="player-stat__label">Projected Points</span>
+                                    <span class="player-stat__value">@ProjectionPresentation.Points(playerProjection.ProjectedFantasyPoints)</span>
+                                </div>
+                                <div class="player-stat">
+                                    <span class="player-stat__label">Floor</span>
+                                    <span class="player-stat__value">@ProjectionPresentation.Points(playerProjection.Floor)</span>
+                                </div>
+                                <div class="player-stat">
+                                    <span class="player-stat__label">Median</span>
+                                    <span class="player-stat__value">@ProjectionPresentation.Points(playerProjection.Median)</span>
+                                </div>
+                                <div class="player-stat">
+                                    <span class="player-stat__label">Ceiling</span>
+                                    <span class="player-stat__value">@ProjectionPresentation.Points(playerProjection.Ceiling)</span>
+                                </div>
+                                <div class="player-stat">
+                                    <span class="player-stat__label">Confidence</span>
+                                    <span class="player-stat__value">@ProjectionPresentation.Percent(playerProjection.Confidence)</span>
+                                </div>
+                                <div class="player-stat">
+                                    <span class="player-stat__label">Volatility</span>
+                                    <span class="player-stat__value">@playerProjection.Volatility</span>
+                                </div>
+                            </div>
+
+                            <p class="player-section__muted" style="margin-bottom:1rem;">
+                                Updated @ProjectionPresentation.RelativeTime(playerProjection.LastUpdated)
+                            </p>
+
+                            <h3 class="player-section__title">Reasoning</h3>
+                            <ul class="projection-reason-list">
+                                @foreach (var reason in playerProjection.ProjectionReasoning)
+                                {
+                                    <li>@reason</li>
+                                }
+                            </ul>
+
+                            <h3 class="player-section__title" style="margin-top:1.25rem;">Supporting Intelligence</h3>
+                            <ul class="projection-reason-list">
+                                @foreach (var item in playerProjection.SupportingIntelligence)
+                                {
+                                    <li>@item</li>
+                                }
+                            </ul>
+                        }
                     </section>
                 }
                 else if (activeTab == "Intelligence")
@@ -332,12 +395,14 @@
 
 @code {
     private static readonly string[] Tabs =
-        ["Overview", "Fantasy", "Intelligence", "Career", "College", "Injuries"];
+        ["Overview", "Fantasy", "Projection", "Intelligence", "Career", "College", "Injuries"];
 
     private string activeTab = "Overview";
     private PlayerIntelligenceProfile? playerProfile;
+    private PlayerProjection? playerProjection;
     private IReadOnlyList<NewsArticle> playerNews = [];
     private Guid? loadedPlayerId;
+    private Guid? loadedProjectionPlayerId;
     private Guid? loadedNewsPlayerId;
 
     protected override void OnInitialized()
@@ -351,8 +416,10 @@
         {
             activeTab = "Overview";
             playerProfile = null;
+            playerProjection = null;
             playerNews = [];
             loadedPlayerId = null;
+            loadedProjectionPlayerId = null;
             loadedNewsPlayerId = null;
             EnsurePlayerNews();
         }
@@ -366,6 +433,11 @@
         if (tab == "Intelligence")
         {
             EnsurePlayerProfile();
+        }
+
+        if (tab == "Projection")
+        {
+            EnsurePlayerProjection();
         }
 
         if (tab == "Overview")
@@ -388,6 +460,22 @@
 
         playerProfile = IntelligenceService.GetPlayerProfile(context.Player.Id);
         loadedPlayerId = context.Player.Id;
+    }
+
+    private void EnsurePlayerProjection()
+    {
+        if (Overlay.Context is not { } context)
+        {
+            return;
+        }
+
+        if (loadedProjectionPlayerId == context.Player.Id && playerProjection is not null)
+        {
+            return;
+        }
+
+        playerProjection = ProjectionService.GetProjection(context.Player.Id);
+        loadedProjectionPlayerId = context.Player.Id;
     }
 
     private void EnsurePlayerNews()

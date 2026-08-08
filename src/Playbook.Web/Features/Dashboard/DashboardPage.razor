@@ -5,6 +5,8 @@
 @using Playbook.Application.News
 @using Playbook.Application.Players
 @using Playbook.Application.Players.Data
+@using Playbook.Application.Projections
+@using Playbook.Application.Projections.Interfaces
 @using Playbook.Application.Recommendations
 @using Playbook.Core.Intelligence.Models
 @using Playbook.Core.Recommendations
@@ -14,6 +16,8 @@
 @inject IRecommendationService RecommendationService
 @inject IIntelligenceService IntelligenceService
 @inject IIntelligenceSyncStatus IntelligenceSyncStatus
+@inject IProjectionService ProjectionService
+@inject IProjectionSyncStatus ProjectionSyncStatus
 @inject IPlayerService PlayerService
 @inject IPlayerDataSyncStatus PlayerDataSyncStatus
 @inject INewsProvider NewsProvider
@@ -178,6 +182,18 @@
                     <span class="pb-meta-label">Aggregation Runtime</span>
                     <span class="pb-meta-value">@intelAggRuntime</span>
                 </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Players Projected</span>
+                    <span class="pb-meta-value">@projectionPlayers</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Projection Runtime</span>
+                    <span class="pb-meta-value">@projectionRuntime</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Average Projection Confidence</span>
+                    <span class="pb-meta-value">@projectionAvgConfidence</span>
+                </div>
             </div>
         </article>
 
@@ -272,8 +288,9 @@
     [
         new("Player Engine", "Ready"),
         new("League Engine", "Ready"),
-        new("Recommendation Engine", "In Development"),
         new("Intelligence Engine", "Ready"),
+        new("Projection Engine", "Ready"),
+        new("Recommendation Engine", "In Development"),
         new("Data Engine", "In Development")
     ];
 
@@ -295,6 +312,9 @@
     private string intelFactsAggregated = "—";
     private string intelAvgFacts = "—";
     private string intelAggRuntime = "—";
+    private string projectionPlayers = "—";
+    private string projectionRuntime = "—";
+    private string projectionAvgConfidence = "—";
 
     protected override void OnInitialized()
     {
@@ -377,6 +397,15 @@
         intelAvgFacts = IntelligenceSyncStatus.AverageFactsPerPlayer.ToString("0.00");
         intelAggRuntime = IntelligenceSyncStatus.AggregationRuntime is { } aggRuntime
             ? $"{aggRuntime.TotalMilliseconds:0} ms"
+            : "—";
+
+        _ = ProjectionService.GetAllProjections();
+        projectionPlayers = ProjectionSyncStatus.PlayersProjected.ToString();
+        projectionRuntime = ProjectionSyncStatus.ProjectionRuntime is { } projRuntime
+            ? $"{projRuntime.TotalMilliseconds:0} ms"
+            : "—";
+        projectionAvgConfidence = ProjectionSyncStatus.PlayersProjected > 0
+            ? ProjectionSyncStatus.AverageProjectionConfidence.ToString("0.0")
             : "—";
 
         recommendations = RecommendationService.GetTopRecommendations();

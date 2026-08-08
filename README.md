@@ -96,7 +96,19 @@ Football news is normalized into `NewsArticle` objects behind `INewsProvider`.
 | `Mock` | In-memory headlines with related player names |
 | `Live` | ESPN NFL news. On failure, **automatically falls back to Mock** |
 
-Background refresh (`BackgroundRefresh`) periodically reloads players, news, and intelligence analysis (each step logged separately).
+Background refresh (`BackgroundRefresh`) periodically reloads players, news, intelligence analysis, and projections (each step logged separately).
+
+## Projection Engine
+
+Projection Engine V1 consumes `PlayerIntelligenceProfile` + player + league context and produces numerical expected outcomes (`PlayerProjection`). It does **not** make start/sit, waiver, draft, or trade decisions.
+
+Weighted rules live in `Projection:Rules` (`appsettings.json`): position baselines, PPR boosts, health/opportunity/usage/risk weights, floor/ceiling spreads, and volatility from low confidence.
+
+UI surfaces:
+
+- Player Overlay **Projection** tab — points, floor/median/ceiling, confidence, volatility, reasoning, supporting intelligence
+- Player Explorer — sortable **Projected Points** column
+- Developer Monitor — Players Projected, Projection Runtime, Average Projection Confidence
 
 ## Run the web app
 
@@ -114,7 +126,7 @@ dotnet test
 
 ## Current Status
 
-**Developer monitoring**, **live players/news**, **Intelligence Analyzer V1**, and **Player Intelligence Profiles** (aggregated evidence for downstream engines).
+**Developer monitoring**, **live players/news**, **Intelligence Analyzer V1**, **Player Intelligence Profiles**, and **Projection Engine V1** (numerical expected outcomes for downstream Decision / Quick Picks / Draft / Waiver / Trade engines).
 
 ## Documentation
 

@@ -4,12 +4,15 @@ using Playbook.Application.Leagues;
 using Playbook.Application.News;
 using Playbook.Application.Players;
 using Playbook.Application.Players.Data;
+using Playbook.Application.Projections;
+using Playbook.Application.Projections.Interfaces;
 using Playbook.Application.Recommendations;
 using Playbook.Infrastructure.Hosting;
 using Playbook.Infrastructure.Intelligence.Services;
 using Playbook.Infrastructure.Leagues;
 using Playbook.Infrastructure.News;
 using Playbook.Infrastructure.Players;
+using Playbook.Infrastructure.Projections.Services;
 using Playbook.Infrastructure.Recommendations;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -31,6 +34,7 @@ public static class DependencyInjection
             services.Configure<NewsOptions>(configuration.GetSection(NewsOptions.SectionName));
             services.Configure<BackgroundRefreshOptions>(configuration.GetSection(BackgroundRefreshOptions.SectionName));
             services.Configure<IntelligenceScoringOptions>(configuration.GetSection(IntelligenceScoringOptions.SectionName));
+            services.Configure<ProjectionRuleOptions>(configuration.GetSection(ProjectionRuleOptions.SectionName));
         }
         else
         {
@@ -38,11 +42,13 @@ public static class DependencyInjection
             services.Configure<NewsOptions>(_ => { });
             services.Configure<BackgroundRefreshOptions>(_ => { });
             services.Configure<IntelligenceScoringOptions>(_ => { });
+            services.Configure<ProjectionRuleOptions>(_ => { });
         }
 
         RegisterPlayerData(services);
         RegisterNews(services);
         RegisterIntelligence(services);
+        RegisterProjections(services);
 
         services.AddSingleton<IPlayerContextService, MockPlayerContextService>();
         services.AddSingleton<ILeagueService, MockLeagueService>();
@@ -59,6 +65,14 @@ public static class DependencyInjection
         services.AddSingleton<IIntelligenceAnalyzer, IntelligenceAnalyzer>();
         services.AddSingleton<IIntelligenceAggregator, IntelligenceAggregator>();
         services.AddSingleton<IIntelligenceService, IntelligenceService>();
+    }
+
+    private static void RegisterProjections(IServiceCollection services)
+    {
+        services.AddSingleton<ProjectionSyncStatus>();
+        services.AddSingleton<IProjectionSyncStatus>(sp => sp.GetRequiredService<ProjectionSyncStatus>());
+        services.AddSingleton<IProjectionEngine, ProjectionEngine>();
+        services.AddSingleton<IProjectionService, ProjectionService>();
     }
 
     private static void RegisterPlayerData(IServiceCollection services)
