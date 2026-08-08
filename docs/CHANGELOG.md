@@ -2,6 +2,25 @@
 
 All notable project changes are recorded here.
 
+## [Unreleased] — College Statistics + Player Modal Polish
+
+### Added
+
+- Dedicated `ICollegeStatsProvider` with `MockCollegeStatsProvider` + `LiveCollegeStatsProvider` (ESPN college-football athlete stats)
+- College JSON cache + Developer Monitor: College Provider / Players / Seasons / Last Sync / Error
+- College tab renders real season box scores (school, seasons, passing/rushing/receiving) when available
+- Career season selector promotes College for players with fewer than 3 NFL seasons
+
+### Fixed
+
+- Player detail modal responsive layout (viewport-fit sheet, tab strip scroll, season select width, no horizontal page overflow)
+- Removed misleading “college detail not supplied” empty copy when college data can be loaded
+
+### Limitations
+
+- ESPN college tables often omit games played and targets; those fields stay null (never fabricated)
+- College sync covers young skill players with resolvable ESPN roster ids (capped per sync)
+
 ## [Unreleased] — Historical Player Statistics Layer
 
 ### Added
@@ -15,8 +34,8 @@ All notable project changes are recorded here.
 
 ### Architecture notes
 
-- Reuses Sleeper (no new API dependency); college stats supported in model/mock only
-- Local cache under app `data/` directory; TTL configurable via `PlayerStats:CacheTtlMinutes`
+- NFL stats reuse Sleeper; college stats use a dedicated ESPN-backed provider
+- Local cache under app `data/` directory; TTL configurable via `PlayerStats:CacheTtlMinutes` / `CollegeStats:CacheTtlMinutes`
 
 ## [Unreleased] — Player-Specific Projection Fix
 

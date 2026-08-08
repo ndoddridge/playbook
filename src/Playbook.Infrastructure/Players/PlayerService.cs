@@ -203,10 +203,7 @@ public sealed class PlayerService : IPlayerService
                 ? null
                 : new CollegeStats
                 {
-                    School = player.College,
-                    Seasons = 0,
-                    GamesPlayed = 0,
-                    NotableNote = "College detail not supplied by the live player provider yet."
+                    School = player.College
                 },
             InjuryHistory = [],
             Trend = null

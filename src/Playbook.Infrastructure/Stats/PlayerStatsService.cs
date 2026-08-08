@@ -19,6 +19,7 @@ public sealed class PlayerStatsService : IPlayerStatsService
     private readonly PlayerStatsCacheStore _cache;
     private readonly PlayerStatsSyncStatus _status;
     private readonly PlayerStatsOptions _options;
+    private readonly CollegeStatsService _collegeStats;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<PlayerStatsService> _logger;
     private readonly object _gate = new();
@@ -33,6 +34,7 @@ public sealed class PlayerStatsService : IPlayerStatsService
         PlayerStatsCacheStore cache,
         PlayerStatsSyncStatus status,
         IOptions<PlayerStatsOptions> options,
+        CollegeStatsService collegeStats,
         IHttpClientFactory httpClientFactory,
         ILogger<PlayerStatsService> logger)
     {
@@ -40,6 +42,7 @@ public sealed class PlayerStatsService : IPlayerStatsService
         _cache = cache;
         _status = status;
         _options = options.Value;
+        _collegeStats = collegeStats;
         _httpClientFactory = httpClientFactory;
         _logger = logger;
 
@@ -134,12 +137,12 @@ public sealed class PlayerStatsService : IPlayerStatsService
             var request = await BuildSyncRequestAsync(cancellationToken).ConfigureAwait(false);
             string? priorError = null;
             var usedFallback = false;
-            IReadOnlyList<PlayerSeasonStats> records;
+            IReadOnlyList<PlayerSeasonStats> nflRecords;
             PlayerStatsProviderKind active;
 
             try
             {
-                records = await _primary.GetSeasonStatsAsync(request, cancellationToken)
+                nflRecords = await _primary.GetSeasonStatsAsync(request, cancellationToken)
                     .ConfigureAwait(false);
                 active = _primary.Kind;
             }
@@ -147,15 +150,36 @@ public sealed class PlayerStatsService : IPlayerStatsService
             {
                 priorError = ex.Message;
                 _logger.LogWarning(ex, "Live stats provider failed; falling back to mock");
-                records = await _fallback.GetSeasonStatsAsync(request, cancellationToken)
+                nflRecords = await _fallback.GetSeasonStatsAsync(request, cancellationToken)
                     .ConfigureAwait(false);
                 active = PlayerStatsProviderKind.Mock;
                 usedFallback = true;
             }
 
-            watch.Stop();
+            // Surface NFL rows immediately, then enrich with college (cache or live).
+            var collegeCached = _collegeStats.GetCachedOrEmpty();
+            var records = MergeRecords(nflRecords, collegeCached);
             ApplyRecords(records);
             PersistCache(records, request, active);
+
+            IReadOnlyList<PlayerSeasonStats> collegeRecords = collegeCached;
+            try
+            {
+                collegeRecords = await _collegeStats.RefreshAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                records = MergeRecords(nflRecords, collegeRecords);
+                ApplyRecords(records);
+                PersistCache(records, request, active);
+            }
+            catch (Exception ex)
+            {
+                priorError = string.IsNullOrWhiteSpace(priorError)
+                    ? $"College: {ex.Message}"
+                    : $"{priorError}; College: {ex.Message}";
+                _logger.LogWarning(ex, "College stats refresh failed; continuing with NFL stats only");
+            }
+
+            watch.Stop();
             RecordTelemetry(active, records, request, watch.Elapsed, usedFallback, usedCache: false, priorError);
         }
         catch (Exception ex)
@@ -183,13 +207,15 @@ public sealed class PlayerStatsService : IPlayerStatsService
 
             if (_cache.TryLoadFresh(out var fresh))
             {
-                ApplyRecordsUnlocked(fresh.Records);
+                var college = _collegeStats.GetCachedOrEmpty();
+                var merged = MergeRecords(fresh.Records, college);
+                ApplyRecordsUnlocked(merged);
                 _loaded = true;
                 RecordTelemetry(
                     Enum.TryParse<PlayerStatsProviderKind>(fresh.Provider, out var kind)
                         ? kind
                         : _primary.Kind,
-                    fresh.Records,
+                    merged,
                     new PlayerStatsSyncRequest
                     {
                         CurrentSeason = fresh.CurrentSeason,
@@ -209,6 +235,16 @@ public sealed class PlayerStatsService : IPlayerStatsService
         {
             _loaded = true;
         }
+    }
+
+    private static IReadOnlyList<PlayerSeasonStats> MergeRecords(
+        IReadOnlyList<PlayerSeasonStats> nfl,
+        IReadOnlyList<PlayerSeasonStats> college)
+    {
+        var rows = new List<PlayerSeasonStats>(nfl.Count + college.Count);
+        rows.AddRange(nfl.Where(r => r.Period != StatsPeriod.College));
+        rows.AddRange(college.Where(r => r.Period == StatsPeriod.College && r.HasAnyCountingStat));
+        return rows;
     }
 
     private void ApplyRecords(IReadOnlyList<PlayerSeasonStats> records)

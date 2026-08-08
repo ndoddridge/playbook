@@ -39,6 +39,7 @@ public static class DependencyInjection
             services.Configure<IntelligenceScoringOptions>(configuration.GetSection(IntelligenceScoringOptions.SectionName));
             services.Configure<ProjectionRuleOptions>(configuration.GetSection(ProjectionRuleOptions.SectionName));
             services.Configure<PlayerStatsOptions>(configuration.GetSection(PlayerStatsOptions.SectionName));
+            services.Configure<CollegeStatsOptions>(configuration.GetSection(CollegeStatsOptions.SectionName));
         }
         else
         {
@@ -48,10 +49,12 @@ public static class DependencyInjection
             services.Configure<IntelligenceScoringOptions>(_ => { });
             services.Configure<ProjectionRuleOptions>(_ => { });
             services.Configure<PlayerStatsOptions>(_ => { });
+            services.Configure<CollegeStatsOptions>(_ => { });
         }
 
         RegisterPlayerData(services);
         RegisterPlayerStats(services);
+        RegisterCollegeStats(services);
         RegisterNews(services);
         RegisterIntelligence(services);
         RegisterProjections(services);
@@ -136,6 +139,31 @@ public static class DependencyInjection
         services.AddSingleton<LivePlayerStatsProvider>();
         services.AddSingleton<IPlayerStatsProvider>(sp => sp.GetRequiredService<LivePlayerStatsProvider>());
         services.AddSingleton<IPlayerStatsService, PlayerStatsService>();
+    }
+
+    private static void RegisterCollegeStats(IServiceCollection services)
+    {
+        services.AddSingleton<CollegeStatsSyncStatus>();
+        services.AddSingleton<ICollegeStatsSyncStatus>(sp => sp.GetRequiredService<CollegeStatsSyncStatus>());
+        services.AddSingleton<CollegeStatsCacheStore>();
+
+        services.AddSingleton<MockCollegeStatsProvider>();
+        services.AddSingleton<ICollegeStatsProvider>(sp => sp.GetRequiredService<MockCollegeStatsProvider>());
+
+        services.AddHttpClient(LiveCollegeStatsProvider.HttpClientName, (sp, client) =>
+        {
+            var options = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<CollegeStatsOptions>>().Value;
+            client.BaseAddress = new Uri("https://site.web.api.espn.com/apis/");
+            client.Timeout = TimeSpan.FromSeconds(Math.Clamp(options.TimeoutSeconds, 15, 180));
+            client.DefaultRequestHeaders.TryAddWithoutValidation(
+                "User-Agent",
+                "Mozilla/5.0 (compatible; Playbook/0.1; +https://github.com/ndoddridge/playbook)");
+            client.DefaultRequestHeaders.TryAddWithoutValidation("Accept", "application/json");
+        });
+
+        services.AddSingleton<LiveCollegeStatsProvider>();
+        services.AddSingleton<ICollegeStatsProvider>(sp => sp.GetRequiredService<LiveCollegeStatsProvider>());
+        services.AddSingleton<CollegeStatsService>();
     }
 
     private static void RegisterNews(IServiceCollection services)

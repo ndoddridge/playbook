@@ -111,10 +111,11 @@ Historical and current-season NFL stats are loaded behind `IPlayerStatsService` 
 }
 ```
 
-- Live source: Sleeper bulk season stats (`/stats/nfl/regular/{season}`) for completed + current seasons
-- Local JSON cache avoids re-hitting the API on every player open
-- College rows are supported in the model/mock; Sleeper does not supply college box scores (never fabricated)
-- Developer Monitor exposes stats provider, players/seasons loaded, sync runtime, and errors
+- Live NFL source: Sleeper bulk season stats (`/stats/nfl/regular/{season}`) for completed + current seasons
+- Live college source: dedicated `ICollegeStatsProvider` via ESPN college-football athlete stats (Sleeper has no college box scores)
+- Local JSON caches avoid re-hitting APIs on every player open (`PlayerStats` + `CollegeStats` sections)
+- Career promotes College for players with &lt; 3 NFL seasons; College tab always shows college rows when present
+- Developer Monitor exposes NFL + college provider/sync metrics
 
 ## Projection Engine
 

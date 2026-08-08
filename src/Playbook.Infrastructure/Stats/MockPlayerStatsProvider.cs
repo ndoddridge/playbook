@@ -5,8 +5,8 @@ using Playbook.Core.Stats.Models;
 namespace Playbook.Infrastructure.Stats;
 
 /// <summary>
-/// Deterministic multi-season mock stats for selected catalog players.
-/// Includes college rows for young players (&lt; 3 NFL seasons). Does not invent stats for unknown players.
+/// Deterministic multi-season mock NFL stats for selected catalog players.
+/// College rows are supplied by <see cref="MockCollegeStatsProvider"/> — never fabricated here.
 /// </summary>
 public sealed class MockPlayerStatsProvider : IPlayerStatsProvider
 {
@@ -35,11 +35,6 @@ public sealed class MockPlayerStatsProvider : IPlayerStatsProvider
             if (seed.Nfl.TryGetValue(request.CurrentSeason, out var current))
             {
                 rows.Add(WithPeriod(current, StatsPeriod.CurrentSeason, request.SeasonType, now));
-            }
-
-            if (seed.YearsPro < 3 && seed.College is not null)
-            {
-                rows.Add(WithPeriod(seed.College, StatsPeriod.College, "college", now));
             }
         }
 
@@ -74,7 +69,6 @@ public sealed class MockPlayerStatsProvider : IPlayerStatsProvider
             FantasyPointsStandard = source.FantasyPointsStandard,
             FantasyPointsHalfPpr = source.FantasyPointsHalfPpr,
             FantasyPointsPpr = source.FantasyPointsPpr,
-            CollegeSchool = source.CollegeSchool,
             SourceProvider = "Mock",
             LastUpdated = now
         };
@@ -83,53 +77,50 @@ public sealed class MockPlayerStatsProvider : IPlayerStatsProvider
     {
         var seeds = new List<Seed>();
 
-        seeds.Add(new Seed(9, QbMap(
+        seeds.Add(new Seed(QbMap(
             "11111111-1111-1111-1111-111111111103",
             (2023, 16, 16, 597, 401, 4183, 27, 14, 75, 389, 0),
             (2024, 16, 16, 581, 392, 3928, 26, 11, 58, 307, 2),
-            (2025, 14, 14, 502, 330, 3588, 22, 11, 64, 422, 5)), null));
+            (2025, 14, 14, 502, 330, 3588, 22, 11, 64, 422, 5))));
 
-        seeds.Add(new Seed(2, QbMap(
+        seeds.Add(new Seed(QbMap(
             "11111111-1111-1111-1111-111111111101",
             (2024, 17, 17, 480, 331, 3568, 25, 9, 148, 891, 6),
-            (2025, 10, 10, 290, 190, 2200, 14, 5, 80, 480, 4)),
-            CollegePass("11111111-1111-1111-1111-111111111101", 2023, "LSU", 12, 12, 350, 236, 3812, 40, 4, 120, 1134, 10)));
+            (2025, 10, 10, 290, 190, 2200, 14, 5, 80, 480, 4))));
 
-        seeds.Add(new Seed(7, RbMap(
+        seeds.Add(new Seed(RbMap(
             "11111111-1111-1111-1111-111111111106",
             (2023, 14, 14, 247, 962, 6, 60, 41, 280, 4),
             (2024, 16, 16, 345, 2005, 13, 43, 33, 278, 2),
-            (2025, 12, 12, 240, 1100, 8, 35, 28, 210, 1)), null));
+            (2025, 12, 12, 240, 1100, 8, 35, 28, 210, 1))));
 
-        seeds.Add(new Seed(3, RbMap(
+        seeds.Add(new Seed(RbMap(
             "11111111-1111-1111-1111-111111111105",
             (2023, 17, 16, 214, 976, 4, 86, 58, 487, 4),
             (2024, 17, 17, 304, 1456, 14, 80, 61, 431, 1),
-            (2025, 11, 11, 180, 820, 7, 45, 35, 280, 1)), null));
+            (2025, 11, 11, 180, 820, 7, 45, 35, 280, 1))));
 
-        seeds.Add(new Seed(5, RecMap(
+        seeds.Add(new Seed(RecMap(
             "11111111-1111-1111-1111-111111111109",
             (2023, 16, 16, 145, 100, 1216, 7),
             (2024, 17, 17, 175, 127, 1708, 17),
-            (2025, 12, 12, 110, 80, 1050, 9)), null));
+            (2025, 12, 12, 110, 80, 1050, 9))));
 
-        seeds.Add(new Seed(12, RecMap(
+        seeds.Add(new Seed(RecMap(
             "11111111-1111-1111-1111-111111111113",
             (2023, 15, 15, 121, 93, 984, 5),
             (2024, 16, 16, 133, 97, 823, 3),
-            (2025, 11, 11, 80, 60, 620, 3)), null));
+            (2025, 11, 11, 80, 60, 620, 3))));
 
-        seeds.Add(new Seed(2, RecMap(
+        seeds.Add(new Seed(RecMap(
             "11111111-1111-1111-1111-111111111108",
             (2024, 17, 16, 133, 87, 1282, 10),
-            (2025, 9, 9, 70, 45, 620, 4)),
-            CollegeRec("11111111-1111-1111-1111-111111111108", 2023, "LSU", 13, 13, 100, 68, 1177, 17)));
+            (2025, 9, 9, 70, 45, 620, 4))));
 
-        seeds.Add(new Seed(2, RecMap(
+        seeds.Add(new Seed(RecMap(
             "11111111-1111-1111-1111-111111111114",
             (2024, 17, 16, 153, 112, 1194, 5),
-            (2025, 8, 8, 70, 50, 540, 3)),
-            CollegeRec("11111111-1111-1111-1111-111111111114", 2023, "Georgia", 10, 10, 80, 56, 714, 6)));
+            (2025, 8, 8, 70, 50, 540, 3))));
 
         return seeds;
     }
@@ -225,66 +216,8 @@ public sealed class MockPlayerStatsProvider : IPlayerStatsProvider
                 };
             });
 
-    private static PlayerSeasonStats CollegePass(
-        string id, int season, string school, int gp, int gs,
-        int att, int cmp, int yds, int td, int interceptions, int ruAtt, int ruYd, int ruTd)
-    {
-        var pts = Round(yds / 25m + td * 4m - interceptions * 2m + ruYd / 10m + ruTd * 6m);
-        return new PlayerSeasonStats
-        {
-            PlayerId = Guid.Parse(id),
-            Season = season,
-            SeasonType = "college",
-            Period = StatsPeriod.College,
-            Games = gp,
-            Starts = gs,
-            PassAttempts = att,
-            PassCompletions = cmp,
-            PassYards = yds,
-            PassTouchdowns = td,
-            PassInterceptions = interceptions,
-            RushAttempts = ruAtt,
-            RushYards = ruYd,
-            RushTouchdowns = ruTd,
-            FantasyPointsStandard = pts,
-            FantasyPointsHalfPpr = pts,
-            FantasyPointsPpr = pts,
-            CollegeSchool = school,
-            SourceProvider = "Mock",
-            LastUpdated = DateTimeOffset.UtcNow
-        };
-    }
-
-    private static PlayerSeasonStats CollegeRec(
-        string id, int season, string school, int gp, int gs, int tgt, int rec, int yds, int td)
-    {
-        var std = yds / 10m + td * 6m;
-        return new PlayerSeasonStats
-        {
-            PlayerId = Guid.Parse(id),
-            Season = season,
-            SeasonType = "college",
-            Period = StatsPeriod.College,
-            Games = gp,
-            Starts = gs,
-            Targets = tgt,
-            Receptions = rec,
-            ReceivingYards = yds,
-            ReceivingTouchdowns = td,
-            FantasyPointsStandard = Round(std),
-            FantasyPointsHalfPpr = Round(std + rec * 0.5m),
-            FantasyPointsPpr = Round(std + rec),
-            CollegeSchool = school,
-            SourceProvider = "Mock",
-            LastUpdated = DateTimeOffset.UtcNow
-        };
-    }
-
     private static decimal Round(decimal value) =>
         Math.Round(value, 1, MidpointRounding.AwayFromZero);
 
-    private sealed record Seed(
-        int YearsPro,
-        Dictionary<int, PlayerSeasonStats> Nfl,
-        PlayerSeasonStats? College);
+    private sealed record Seed(Dictionary<int, PlayerSeasonStats> Nfl);
 }

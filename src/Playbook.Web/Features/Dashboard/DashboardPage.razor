@@ -24,6 +24,7 @@
 @inject IPlayerDataSyncStatus PlayerDataSyncStatus
 @inject IPlayerStatsService PlayerStatsService
 @inject IPlayerStatsSyncStatus PlayerStatsSyncStatus
+@inject ICollegeStatsSyncStatus CollegeStatsSyncStatus
 @inject INewsProvider NewsProvider
 @inject INewsSyncStatus NewsSyncStatus
 @implements IDisposable
@@ -238,6 +239,26 @@
                     <span class="pb-meta-label">Last Stats Error</span>
                     <span class="pb-meta-value">@statsLastError</span>
                 </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">College Provider</span>
+                    <span class="pb-meta-value pb-meta-value--live">@collegeProvider</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">College Players Loaded</span>
+                    <span class="pb-meta-value">@collegePlayers</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">College Seasons Loaded</span>
+                    <span class="pb-meta-value">@collegeSeasons</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Last College Sync</span>
+                    <span class="pb-meta-value">@collegeLastSync</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">College Sync Error</span>
+                    <span class="pb-meta-value">@collegeLastError</span>
+                </div>
             </div>
         </article>
 
@@ -369,6 +390,11 @@
     private string statsLastSync = "—";
     private string statsRuntime = "—";
     private string statsLastError = "None";
+    private string collegeProvider = "—";
+    private string collegePlayers = "—";
+    private string collegeSeasons = "—";
+    private string collegeLastSync = "—";
+    private string collegeLastError = "None";
 
     protected override void OnInitialized()
     {
@@ -483,6 +509,18 @@
         statsLastError = string.IsNullOrWhiteSpace(PlayerStatsSyncStatus.LastStatsError)
             ? "None"
             : PlayerStatsSyncStatus.LastStatsError;
+
+        collegeProvider = CollegeStatsSyncStatus.UsedFallback
+            ? $"{CollegeStatsSyncStatus.ActiveProvider} (fallback)"
+            : CollegeStatsSyncStatus.UsedCache
+                ? $"{CollegeStatsSyncStatus.ActiveProvider} (cache)"
+                : CollegeStatsSyncStatus.ActiveProvider;
+        collegePlayers = CollegeStatsSyncStatus.CollegePlayersLoaded.ToString();
+        collegeSeasons = CollegeStatsSyncStatus.CollegeSeasonsLoaded.ToString();
+        collegeLastSync = CollegeStatsSyncStatus.LastCollegeSync?.ToLocalTime().ToString("h:mm:ss tt") ?? "—";
+        collegeLastError = string.IsNullOrWhiteSpace(CollegeStatsSyncStatus.CollegeSyncError)
+            ? "None"
+            : CollegeStatsSyncStatus.CollegeSyncError;
 
         recommendations = RecommendationService.GetTopRecommendations();
     }

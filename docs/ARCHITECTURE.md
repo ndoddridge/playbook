@@ -333,7 +333,7 @@ Live endpoint: `GET /stats/nfl/regular/{season}` on `api.sleeper.app/v1`, joined
 
 `PlayerSeasonStats` includes PlayerId, Season, SeasonType, Period (`CompletedSeason` | `CurrentSeason` | `College`), games/starts, passing/rushing/receiving counting stats, and fantasy points (Standard / Half-PPR / PPR). Missing values stay null — never fabricated.
 
-College statistics are first-class for players with fewer than 3 NFL seasons. Sleeper does not currently provide college box scores; mock seeds include college rows, live leaves college empty.
+College statistics are first-class for players with fewer than 3 NFL seasons. Sleeper does not provide college box scores. A dedicated `ICollegeStatsProvider` supplies college rows (Mock seeds or Live ESPN college-football athlete stats), merged by `PlayerStatsService`. Games/targets may be null when the source omits them — never fabricated.
 
 ### Projection Engine (V1)
 
