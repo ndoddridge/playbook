@@ -30,11 +30,19 @@ public interface IInjurySyncStatus
 
     int UnconfirmedInjurySignals { get; }
 
+    int PlayerIdentityMatches { get; }
+
+    int UnresolvedPlayers { get; }
+
+    int IdentitiesWithGsisId { get; }
+
     string HistoricalDataAvailability { get; }
 
     DateTimeOffset? LastInjurySync { get; }
 
     TimeSpan? InjurySyncRuntime { get; }
+
+    TimeSpan? ProviderResponseTime { get; }
 
     string? LastInjuryError { get; }
 
@@ -75,12 +83,20 @@ public sealed class InjurySyncStatus : IInjurySyncStatus
 
     public int UnconfirmedInjurySignals { get; private set; }
 
+    public int PlayerIdentityMatches { get; private set; }
+
+    public int UnresolvedPlayers { get; private set; }
+
+    public int IdentitiesWithGsisId { get; private set; }
+
     public string HistoricalDataAvailability { get; private set; } =
         HistoricalDataStatus.NotSynced.ToString();
 
     public DateTimeOffset? LastInjurySync { get; private set; }
 
     public TimeSpan? InjurySyncRuntime { get; private set; }
+
+    public TimeSpan? ProviderResponseTime { get; private set; }
 
     public string? LastInjuryError { get; private set; }
 
@@ -111,9 +127,13 @@ public sealed class InjurySyncStatus : IInjurySyncStatus
         int nflHistoricalRecords,
         int collegeHistoricalRecords,
         int unconfirmedSignals,
+        int playerIdentityMatches,
+        int unresolvedPlayers,
+        int identitiesWithGsisId,
         HistoricalDataStatus historicalAvailability,
         bool supportsHistorical,
         TimeSpan runtime,
+        TimeSpan? providerResponseTime,
         bool usedFallback,
         bool usedCache,
         string? priorError)
@@ -132,9 +152,13 @@ public sealed class InjurySyncStatus : IInjurySyncStatus
             NflHistoricalRecords = nflHistoricalRecords;
             CollegeHistoricalRecords = collegeHistoricalRecords;
             UnconfirmedInjurySignals = unconfirmedSignals;
+            PlayerIdentityMatches = playerIdentityMatches;
+            UnresolvedPlayers = unresolvedPlayers;
+            IdentitiesWithGsisId = identitiesWithGsisId;
             HistoricalDataAvailability = historicalAvailability.ToString();
             SupportsHistoricalInjuries = supportsHistorical;
             InjurySyncRuntime = runtime;
+            ProviderResponseTime = providerResponseTime;
             LastInjurySync = DateTimeOffset.Now;
             UsedFallback = usedFallback;
             UsedCache = usedCache;

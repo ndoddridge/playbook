@@ -321,16 +321,17 @@ Structured injury designations for the Injuries tab, Intelligence health signals
 
 ### Provider reality (inspected)
 
-| Capability | Live ESPN + Sleeper | Mock |
+| Capability | Live path | Mock |
 | --- | --- | --- |
-| Current injuries | Yes (report-window snapshot) | Yes |
-| NFL historical / career injuries | **No** | `MockHistoricalInjuryProvider` |
-| College injuries | **No** | `MockCollegeInjuryProvider` |
-| Practice participation | Sparse (Sleeper when set) | Seeded |
-| Game status | Derived from designation | Seeded |
-| Body part / notes / source URLs | Partial | Seeded (no URLs) |
-| Unconfirmed injury buzz | Via news extractor (not a designation) | Via news extractor |
-| Player ID mapping | Name + team (not stable ESPN ids) | Catalog GUIDs |
+| Current injuries | ESPN + Sleeper | Mock current |
+| NFL historical / career injuries | **nflverse CSVs (GSIS join)** | `MockHistoricalInjuryProvider` |
+| College injuries | **Not supported** (`NullCollegeInjuryProvider`) | `MockCollegeInjuryProvider` |
+| Practice participation | Current: sparse Sleeper; Historical: nflverse | Seeded |
+| Game status | Current designation / historical report_status | Seeded |
+| Player identity | Sleeper + ESPN + GSIS crosswalk | Fixed catalog GUIDs |
+| Unconfirmed / reported news | News extractor (separate from verified) | News extractor |
+
+Pipeline: Providers → normalization → identity resolution → profile/relevance → Intelligence (no provider knowledge in the engine).
 
 ### Provider pattern
 

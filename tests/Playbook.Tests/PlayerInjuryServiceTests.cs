@@ -10,7 +10,9 @@ using Playbook.Core.Leagues;
 using Playbook.Core.News;
 using Playbook.Core.Players;
 using Playbook.Core.Projections.Models;
+using Playbook.Application.Players;
 using Playbook.Infrastructure.Injuries;
+using Playbook.Infrastructure.Players;
 using Playbook.Infrastructure.Projections.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -384,6 +386,7 @@ public class PlayerInjuryServiceTests
             new MockHistoricalInjuryProvider(),
             new MockCollegeInjuryProvider(),
             new EmptyNewsProvider(),
+            new PlayerIdentityDirectory(),
             cache,
             status,
             Options.Create(new InjuryOptions { Provider = InjuryProviderKind.Live }),
@@ -440,6 +443,7 @@ public class PlayerInjuryServiceTests
             historical,
             college,
             news,
+            new PlayerIdentityDirectory(),
             cache,
             status,
             Options.Create(new InjuryOptions { Provider = configured }),

@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Net.Http.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
+using Playbook.Application.Players;
 using Playbook.Application.Players.Data;
 using Playbook.Core.Players;
 
@@ -9,6 +10,7 @@ namespace Playbook.Infrastructure.Players;
 
 /// <summary>
 /// Live NFL player catalog via the public Sleeper API (players, teams, positions, status).
+/// Also populates <see cref="IPlayerIdentityDirectory"/> with Sleeper/ESPN/GSIS crosswalk IDs.
 /// Auth is configuration-ready (<see cref="SleeperOptions.ApiKey"/>) though unused for public reads.
 /// </summary>
 public sealed class LivePlayerDataProvider : IPlayerDataProvider
@@ -18,13 +20,16 @@ public sealed class LivePlayerDataProvider : IPlayerDataProvider
     private static readonly string[] FantasyPositions = ["QB", "RB", "WR", "TE", "K", "DEF"];
 
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly IPlayerIdentityDirectory _identities;
     private readonly ILogger<LivePlayerDataProvider> _logger;
 
     public LivePlayerDataProvider(
         IHttpClientFactory httpClientFactory,
+        IPlayerIdentityDirectory identities,
         ILogger<LivePlayerDataProvider> logger)
     {
         _httpClientFactory = httpClientFactory;
+        _identities = identities;
         _logger = logger;
     }
 
@@ -67,10 +72,14 @@ public sealed class LivePlayerDataProvider : IPlayerDataProvider
             }
         }
 
+        // Full catalog carries stable GSIS/ESPN ids used for historical injury joins.
+        await HydrateIdentitiesAsync(httpClient, byId, cancellationToken).ConfigureAwait(false);
+
         stopwatch.Stop();
         _logger.LogInformation(
-            "Sleeper live provider loaded {Count} players in {ElapsedMs} ms",
+            "Sleeper live provider loaded {Count} players ({Gsis} GSIS ids) in {ElapsedMs} ms",
             byId.Count,
+            _identities.IdentitiesWithGsisId,
             stopwatch.ElapsedMilliseconds);
 
         if (byId.Count == 0)
@@ -83,6 +92,43 @@ public sealed class LivePlayerDataProvider : IPlayerDataProvider
             .ThenBy(p => p.LastName)
             .ThenBy(p => p.FirstName)
             .ToList();
+    }
+
+    private async Task HydrateIdentitiesAsync(
+        HttpClient httpClient,
+        Dictionary<string, Player> bySleeperId,
+        CancellationToken cancellationToken)
+    {
+        using var response = await httpClient.GetAsync("players/nfl", cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        var payload = await response.Content
+            .ReadFromJsonAsync<Dictionary<string, SleeperPlayerDto>>(cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+
+        if (payload is null)
+        {
+            return;
+        }
+
+        var identities = new List<PlaybookPlayerIdentity>(bySleeperId.Count);
+        foreach (var (sleeperId, player) in bySleeperId)
+        {
+            payload.TryGetValue(sleeperId, out var dto);
+            identities.Add(new PlaybookPlayerIdentity
+            {
+                PlaybookId = player.Id,
+                FullName = player.FullName,
+                Team = player.Team,
+                Position = player.Position.ToString(),
+                SleeperId = sleeperId,
+                EspnId = dto?.EspnId?.ToString(),
+                GsisId = string.IsNullOrWhiteSpace(dto?.GsisId) ? null : dto.GsisId.Trim(),
+                YahooId = dto?.YahooId?.ToString(),
+                CollegeName = player.College
+            });
+        }
+
+        _identities.ReplaceAll(identities);
     }
 
     private static Player? MapPlayer(string sleeperId, SleeperPlayerDto dto)
@@ -242,5 +288,14 @@ public sealed class LivePlayerDataProvider : IPlayerDataProvider
 
         [JsonPropertyName("active")]
         public bool? Active { get; set; }
+
+        [JsonPropertyName("espn_id")]
+        public long? EspnId { get; set; }
+
+        [JsonPropertyName("gsis_id")]
+        public string? GsisId { get; set; }
+
+        [JsonPropertyName("yahoo_id")]
+        public long? YahooId { get; set; }
     }
 }

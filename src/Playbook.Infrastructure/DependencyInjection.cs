@@ -95,6 +95,8 @@ public static class DependencyInjection
     {
         services.AddSingleton<PlayerDataSyncStatus>();
         services.AddSingleton<IPlayerDataSyncStatus>(sp => sp.GetRequiredService<PlayerDataSyncStatus>());
+        services.AddSingleton<PlayerIdentityDirectory>();
+        services.AddSingleton<IPlayerIdentityDirectory>(sp => sp.GetRequiredService<PlayerIdentityDirectory>());
 
         services.AddSingleton<MockPlayerDataProvider>();
         services.AddSingleton<IPlayerDataProvider>(sp => sp.GetRequiredService<MockPlayerDataProvider>());
@@ -195,15 +197,36 @@ public static class DependencyInjection
         services.AddSingleton<LivePlayerInjuryProvider>();
         services.AddSingleton<IPlayerInjuryProvider>(sp => sp.GetRequiredService<LivePlayerInjuryProvider>());
 
-        // Historical / college injury sources are separate. Live ESPN/Sleeper are current-report only.
+        // Historical / college injury sources are separate from current ESPN/Sleeper designations.
         services.AddSingleton<NullHistoricalInjuryProvider>();
         services.AddSingleton<MockHistoricalInjuryProvider>();
+        services.AddHttpClient(NflverseHistoricalInjuryProvider.HttpClientName, (sp, client) =>
+        {
+            var options = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<InjuryOptions>>().Value;
+            client.Timeout = TimeSpan.FromSeconds(Math.Clamp(options.TimeoutSeconds, 30, 180));
+            client.DefaultRequestHeaders.TryAddWithoutValidation(
+                "User-Agent",
+                "Mozilla/5.0 (compatible; Playbook/0.1; +https://github.com/ndoddridge/playbook)");
+            client.DefaultRequestHeaders.TryAddWithoutValidation("Accept", "text/csv,*/*");
+        });
+        services.AddSingleton<NflverseHistoricalInjuryProvider>();
         services.AddSingleton<IHistoricalInjuryProvider>(sp =>
         {
             var options = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<InjuryOptions>>().Value;
-            return options.Provider == InjuryProviderKind.Mock
-                ? sp.GetRequiredService<MockHistoricalInjuryProvider>()
-                : sp.GetRequiredService<NullHistoricalInjuryProvider>();
+            // Mock current catalog uses fixed GUIDs — keep mock historical seeds.
+            if (options.Provider == InjuryProviderKind.Mock)
+            {
+                return sp.GetRequiredService<MockHistoricalInjuryProvider>();
+            }
+
+            return options.HistoricalProvider switch
+            {
+                HistoricalInjuryProviderKind.Nflverse =>
+                    sp.GetRequiredService<NflverseHistoricalInjuryProvider>(),
+                HistoricalInjuryProviderKind.Mock =>
+                    sp.GetRequiredService<MockHistoricalInjuryProvider>(),
+                _ => sp.GetRequiredService<NullHistoricalInjuryProvider>()
+            };
         });
 
         services.AddSingleton<NullCollegeInjuryProvider>();

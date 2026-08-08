@@ -2,6 +2,22 @@
 
 All notable project changes are recorded here.
 
+## [Unreleased] — Real Historical NFL Injuries (nflverse) + Identity Crosswalk
+
+### Added
+
+- `PlaybookPlayerIdentity` + `IPlayerIdentityDirectory` (Sleeper / ESPN / GSIS)
+- `NflverseHistoricalInjuryProvider` loading real multi-season NFL injury reports (no API key)
+- `Injuries:HistoricalProvider` / `HistoricalSeasonCount` configuration
+- Source confidence: Verified / Reported / Unconfirmed / Unknown
+- Developer Monitor: identity matches, unresolved players, GSIS count, provider response time
+- `docs/INJURY_DATA_SOURCES.md` provider audit
+
+### Changed
+
+- Live path no longer reports NFL history as unsupported when nflverse is configured
+- College injuries remain explicitly unsupported until a reliable source is wired
+
 ## [Unreleased] — Career Injury Profile + Unconfirmed Signals
 
 ### Added

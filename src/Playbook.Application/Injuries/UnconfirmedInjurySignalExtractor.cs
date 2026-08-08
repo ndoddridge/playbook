@@ -78,30 +78,39 @@ public static class UnconfirmedInjurySignalExtractor
             }
 
             var text = $"{article.Title} {article.Summary}";
-            if (!ContainsAny(text, InjuryContextPhrases))
+            if (!ContainsAny(text, InjuryContextPhrases) && article.Category != NewsCategory.Injury)
             {
                 continue;
             }
 
-            var speculative = ContainsAny(text, SpeculativePhrases) ||
-                              article.Category == NewsCategory.Injury;
-            if (!speculative)
+            var speculative = ContainsAny(text, SpeculativePhrases);
+            var designationReport = ContainsAny(text,
+                "placed on ir", "injured reserve", "ruled out", "listed as questionable",
+                "listed as doubtful", "inactive", "missed practice", "did not practice",
+                "limited participant", "limited practice");
+
+            if (!speculative && !designationReport && article.Category != NewsCategory.Injury)
             {
                 continue;
             }
 
             // If we already have a confirmed current designation, skip pure designation echoes
             // unless the article is clearly speculative buzz.
-            if (hasConfirmedCurrentInjury &&
-                !ContainsAny(text, SpeculativePhrases))
+            if (hasConfirmedCurrentInjury && !speculative)
             {
                 continue;
             }
 
-            var confidence = 45;
-            if (ContainsAny(text, SpeculativePhrases))
+            var confidence = designationReport && !speculative ? 62 : 45;
+            var sourceConfidence = speculative
+                ? InjurySourceConfidence.Unconfirmed
+                : designationReport
+                    ? InjurySourceConfidence.Reported
+                    : InjurySourceConfidence.Unconfirmed;
+
+            if (speculative)
             {
-                confidence += 10;
+                confidence += 5;
             }
 
             if (article.Category == NewsCategory.Injury)
@@ -141,7 +150,8 @@ public static class UnconfirmedInjurySignalExtractor
                 Confidence = confidence,
                 SourceCount = 1,
                 RelatedNewsArticleIds = [article.Id],
-                IsContradicted = contradicted
+                IsContradicted = contradicted,
+                SourceConfidence = sourceConfidence
             });
         }
 
@@ -175,6 +185,12 @@ public static class UnconfirmedInjurySignalExtractor
                 avg = Math.Clamp(avg - 8, 15, 85);
             }
 
+            var confidenceLevel = ordered.Any(s => s.SourceConfidence == InjurySourceConfidence.Unconfirmed)
+                ? InjurySourceConfidence.Unconfirmed
+                : ordered.Any(s => s.SourceConfidence == InjurySourceConfidence.Reported)
+                    ? InjurySourceConfidence.Reported
+                    : InjurySourceConfidence.Unconfirmed;
+
             yield return new UnconfirmedInjurySignal
             {
                 Id = primary.Id,
@@ -189,7 +205,8 @@ public static class UnconfirmedInjurySignalExtractor
                 Confidence = avg,
                 SourceCount = ordered.Count,
                 RelatedNewsArticleIds = ordered.SelectMany(s => s.RelatedNewsArticleIds).Distinct().ToList(),
-                IsContradicted = ordered.Any(s => s.IsContradicted)
+                IsContradicted = ordered.Any(s => s.IsContradicted),
+                SourceConfidence = confidenceLevel
             };
         }
     }

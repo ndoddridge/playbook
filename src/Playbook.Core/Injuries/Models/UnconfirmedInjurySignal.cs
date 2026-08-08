@@ -39,5 +39,13 @@ public sealed class UnconfirmedInjurySignal
 
     public bool IsContradicted { get; init; }
 
-    public string VerificationLabel => "Unconfirmed";
+    public InjurySourceConfidence SourceConfidence { get; init; } = InjurySourceConfidence.Unconfirmed;
+
+    public string VerificationLabel => SourceConfidence switch
+    {
+        InjurySourceConfidence.Reported => "Reported",
+        InjurySourceConfidence.Verified => "Verified",
+        InjurySourceConfidence.Unknown => "Unknown",
+        _ => "Unconfirmed"
+    };
 }

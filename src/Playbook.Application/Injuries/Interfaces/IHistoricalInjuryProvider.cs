@@ -8,9 +8,10 @@ public enum HistoricalInjuryProviderKind
     None = 0,
 
     /// <summary>Mock historical seeds for tests / demos.</summary>
-    Mock = 1
+    Mock = 1,
 
-    // Future: Live historical sources can be added without changing consumers.
+    /// <summary>nflverse official-injury-report CSVs (2009+), free/public releases.</summary>
+    Nflverse = 2
 }
 
 /// <summary>

@@ -41,6 +41,8 @@ public sealed record PlayerInjuryRecord
     /// <summary>True for official provider designations; false for speculative rows (should be rare here).</summary>
     public bool Verified { get; init; } = true;
 
+    public InjurySourceConfidence SourceConfidence { get; init; } = InjurySourceConfidence.Verified;
+
     public DateTimeOffset LastUpdated { get; init; }
 
     /// <summary>True when this is the player's latest known injury designation.</summary>
@@ -48,8 +50,16 @@ public sealed record PlayerInjuryRecord
 
     public string? ExternalId { get; init; }
 
-    public string VerificationLabel =>
-        IsCurrent && Verified ? "Current" :
-        Verified ? "Verified" :
-        "Unconfirmed";
+    public string? GsisId { get; init; }
+
+    public int? Week { get; init; }
+
+    public string VerificationLabel => SourceConfidence switch
+    {
+        InjurySourceConfidence.Verified when IsCurrent => "Current",
+        InjurySourceConfidence.Verified => "Verified",
+        InjurySourceConfidence.Reported => "Reported",
+        InjurySourceConfidence.Unconfirmed => "Unconfirmed",
+        _ => "Unknown"
+    };
 }

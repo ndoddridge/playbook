@@ -34,15 +34,18 @@ public enum InjuryRelevanceBand
     Minimal = 3
 }
 
-/// <summary>Verification posture for injury knowledge.</summary>
-public enum InjuryVerification
+/// <summary>Verification posture for injury knowledge. Never silently merge these.</summary>
+public enum InjurySourceConfidence
 {
-    /// <summary>Official / provider injury designation.</summary>
+    /// <summary>Directly provided by a reliable structured source (official report feed).</summary>
     Verified = 0,
 
-    /// <summary>Reported in news or practice notes; not an official designation.</summary>
-    Unconfirmed = 1,
+    /// <summary>Supported by reliable news/reporting of a designation or practice status.</summary>
+    Reported = 1,
 
-    /// <summary>Historical record from a trusted historical provider.</summary>
-    Historical = 2
+    /// <summary>Possible injury buzz / speculation.</summary>
+    Unconfirmed = 2,
+
+    /// <summary>Insufficient information to classify.</summary>
+    Unknown = 3
 }

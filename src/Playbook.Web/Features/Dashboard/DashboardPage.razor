@@ -276,23 +276,39 @@
                     <span class="pb-meta-value">@injuryCurrent</span>
                 </div>
                 <div class="pb-meta-row">
-                    <span class="pb-meta-label">NFL Historical Records</span>
+                    <span class="pb-meta-label">Historical NFL Records</span>
                     <span class="pb-meta-value">@injuryNflHistorical</span>
                 </div>
                 <div class="pb-meta-row">
-                    <span class="pb-meta-label">College Historical Records</span>
+                    <span class="pb-meta-label">College Records</span>
                     <span class="pb-meta-value">@injuryCollegeHistorical</span>
                 </div>
                 <div class="pb-meta-row">
-                    <span class="pb-meta-label">Unconfirmed Injury Signals</span>
+                    <span class="pb-meta-label">Unconfirmed Signals</span>
                     <span class="pb-meta-value">@injuryUnconfirmed</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Player Identity Matches</span>
+                    <span class="pb-meta-value">@injuryIdentityMatches</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Unresolved Players</span>
+                    <span class="pb-meta-value">@injuryUnresolved</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">GSIS Identities</span>
+                    <span class="pb-meta-value">@injuryGsisIdentities</span>
                 </div>
                 <div class="pb-meta-row">
                     <span class="pb-meta-label">Last Injury Sync</span>
                     <span class="pb-meta-value">@injuryLastSync</span>
                 </div>
                 <div class="pb-meta-row">
-                    <span class="pb-meta-label">Last Injury Error</span>
+                    <span class="pb-meta-label">Provider Response Time</span>
+                    <span class="pb-meta-value">@injuryProviderRuntime</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Last Error</span>
                     <span class="pb-meta-value">@injuryLastError</span>
                 </div>
             </div>
@@ -437,7 +453,11 @@
     private string injuryNflHistorical = "—";
     private string injuryCollegeHistorical = "—";
     private string injuryUnconfirmed = "—";
+    private string injuryIdentityMatches = "—";
+    private string injuryUnresolved = "—";
+    private string injuryGsisIdentities = "—";
     private string injuryLastSync = "—";
+    private string injuryProviderRuntime = "—";
     private string injuryLastError = "None";
 
     protected override void OnInitialized()
@@ -581,7 +601,13 @@
         injuryNflHistorical = InjurySyncStatus.NflHistoricalRecords.ToString();
         injuryCollegeHistorical = InjurySyncStatus.CollegeHistoricalRecords.ToString();
         injuryUnconfirmed = InjurySyncStatus.UnconfirmedInjurySignals.ToString();
+        injuryIdentityMatches = InjurySyncStatus.PlayerIdentityMatches.ToString();
+        injuryUnresolved = InjurySyncStatus.UnresolvedPlayers.ToString();
+        injuryGsisIdentities = InjurySyncStatus.IdentitiesWithGsisId.ToString();
         injuryLastSync = InjurySyncStatus.LastInjurySync?.ToLocalTime().ToString("h:mm:ss tt") ?? "—";
+        injuryProviderRuntime = InjurySyncStatus.ProviderResponseTime is { } providerElapsed
+            ? $"{providerElapsed.TotalMilliseconds:0} ms"
+            : "—";
         injuryLastError = string.IsNullOrWhiteSpace(InjurySyncStatus.LastInjuryError)
             ? "None"
             : InjurySyncStatus.LastInjuryError;

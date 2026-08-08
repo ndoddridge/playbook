@@ -171,6 +171,7 @@ public sealed class LivePlayerInjuryProvider : IPlayerInjuryProvider
                     Source = "ESPN",
                     SourceUrl = sourceUrl,
                     Verified = true,
+                    SourceConfidence = InjurySourceConfidence.Verified,
                     LastUpdated = now,
                     IsCurrent = true,
                     ExternalId = item.Id ?? $"{player.Id:N}:{date:O}:{status}"
@@ -220,6 +221,7 @@ public sealed class LivePlayerInjuryProvider : IPlayerInjuryProvider
                 Source = "Sleeper",
                 SourceUrl = null,
                 Verified = true,
+                SourceConfidence = InjurySourceConfidence.Verified,
                 LastUpdated = now,
                 IsCurrent = true,
                 ExternalId = $"sleeper:{playerId:N}:{status}"

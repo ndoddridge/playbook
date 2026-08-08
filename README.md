@@ -110,13 +110,12 @@ Injury designations are loaded behind `IPlayerInjuryService` (Mock or Live), exp
 }
 ```
 
-- Live **current** source: ESPN NFL injuries feed, enriched with Sleeper `injury_status` / practice fields
-- Live providers are **current-report only** — no NFL career or college injury history
-- History uses `IHistoricalInjuryProvider` + `ICollegeInjuryProvider` (`Null` for Live; Mock seeds when `Provider=Mock`)
-- Unconfirmed injury buzz is extracted from news separately and never shown as a verified designation
-- Relevance scoring de-emphasizes old history without deleting it
-- Intelligence distinguishes current verified injuries, historical risk, and unconfirmed concerns
-- Projection applies a conservative availability factor for major **current** designations
+- **Current:** ESPN NFL injuries feed + Sleeper enrichment (`Injuries:Provider=Live`)
+- **Historical NFL:** nflverse official injury-report CSVs via `HistoricalProvider=Nflverse` (GSIS join; no API key)
+- **College injuries:** not available from configured free sources (`ICollegeInjuryProvider` extension point)
+- Player identity crosswalk: PlaybookId ↔ Sleeper / ESPN / GSIS (`IPlayerIdentityDirectory`)
+- Source confidence: Verified / Reported / Unconfirmed / Unknown (never silently merged)
+- See `docs/INJURY_DATA_SOURCES.md` for the full audit
 
 ## Player statistics
 

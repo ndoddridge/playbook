@@ -4,6 +4,7 @@ using Microsoft.Extensions.Options;
 using Playbook.Application.Injuries;
 using Playbook.Application.Injuries.Interfaces;
 using Playbook.Application.News;
+using Playbook.Application.Players;
 using Playbook.Core.Injuries.Models;
 
 namespace Playbook.Infrastructure.Injuries;
@@ -19,6 +20,7 @@ public sealed class PlayerInjuryService : IPlayerInjuryService
     private readonly IHistoricalInjuryProvider _historical;
     private readonly ICollegeInjuryProvider _college;
     private readonly INewsProvider _news;
+    private readonly IPlayerIdentityDirectory _identities;
     private readonly InjuryCacheStore _cache;
     private readonly InjurySyncStatus _status;
     private readonly InjuryOptions _options;
@@ -44,6 +46,7 @@ public sealed class PlayerInjuryService : IPlayerInjuryService
         IHistoricalInjuryProvider historical,
         ICollegeInjuryProvider college,
         INewsProvider news,
+        IPlayerIdentityDirectory identities,
         InjuryCacheStore cache,
         InjurySyncStatus status,
         IOptions<InjuryOptions> options,
@@ -53,6 +56,7 @@ public sealed class PlayerInjuryService : IPlayerInjuryService
         _historical = historical;
         _college = college;
         _news = news;
+        _identities = identities;
         _cache = cache;
         _status = status;
         _options = options.Value;
@@ -536,6 +540,9 @@ public sealed class PlayerInjuryService : IPlayerInjuryService
         {
             IsCurrent = true,
             Verified = true,
+            SourceConfidence = r.SourceConfidence is InjurySourceConfidence.Unknown
+                ? InjurySourceConfidence.Verified
+                : r.SourceConfidence,
             Level = r.Level ?? InjuryCompetitionLevel.Nfl,
             Severity = r.Severity ?? InjurySeverityInference.FromStatus(r.Status, r.GamesMissed)
         };
@@ -546,7 +553,10 @@ public sealed class PlayerInjuryService : IPlayerInjuryService
         r with
         {
             IsCurrent = false,
-            Verified = true,
+            Verified = r.SourceConfidence != InjurySourceConfidence.Unconfirmed,
+            SourceConfidence = r.SourceConfidence is InjurySourceConfidence.Unknown
+                ? InjurySourceConfidence.Verified
+                : r.SourceConfidence,
             Level = r.Level ?? level,
             Severity = r.Severity ?? InjurySeverityInference.FromStatus(r.Status, r.GamesMissed)
         };
@@ -646,6 +656,26 @@ public sealed class PlayerInjuryService : IPlayerInjuryService
             _logger.LogDebug(ex, "Unconfirmed injury telemetry skipped");
         }
 
+        var identityMatches = 0;
+        var unresolved = 0;
+        TimeSpan? providerResponse = runtime;
+        if (_historical is NflverseHistoricalInjuryProvider nflverse)
+        {
+            identityMatches = nflverse.LastMatchedRows;
+            unresolved = nflverse.LastUnresolvedRows;
+            providerResponse = nflverse.LastResponseTime == TimeSpan.Zero
+                ? runtime
+                : nflverse.LastResponseTime;
+            if (!string.IsNullOrWhiteSpace(nflverse.LastError))
+            {
+                priorError = AppendError(priorError, nflverse.LastError);
+            }
+        }
+        else
+        {
+            identityMatches = historical.Select(r => r.PlayerId).Distinct().Count();
+        }
+
         _status.RecordSuccess(
             active,
             _injuryProviders,
@@ -659,9 +689,13 @@ public sealed class PlayerInjuryService : IPlayerInjuryService
             nfl.Count,
             college.Count,
             unconfirmedCount,
+            identityMatches,
+            unresolved,
+            _identities.IdentitiesWithGsisId,
             _globalHistoricalStatus,
             _historical.IsConfigured || _college.IsConfigured || _capabilities.SupportsHistoricalInjuries,
             runtime,
+            providerResponse,
             usedFallback,
             usedCache,
             priorError);

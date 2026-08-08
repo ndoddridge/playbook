@@ -136,10 +136,17 @@ public static class InjuryFactBuilder
             ? Math.Max(20, signal.Confidence - 15)
             : signal.Confidence;
 
+        var isReported = signal.SourceConfidence == InjurySourceConfidence.Reported;
+        var ruleId = isReported ? "injury-reported" : "injury-unconfirmed";
+        var scope = isReported ? "Reported Injury Concern" : "Unconfirmed Injury Concern";
+        var title = isReported
+            ? "Injury concern — reported (not a structured designation)"
+            : "Possible injury concern — unconfirmed";
+
         return new IntelligenceFact
         {
             Id = signal.Id,
-            Title = "Possible injury concern — unconfirmed",
+            Title = title,
             Description = string.IsNullOrWhiteSpace(signal.Detail)
                 ? signal.Headline
                 : $"{signal.Headline}. {signal.Detail}",
@@ -152,17 +159,17 @@ public static class InjuryFactBuilder
             Created = signal.Published,
             SupportingEvidence =
             [
-                "Rule: injury-unconfirmed",
-                "Scope: Unconfirmed Injury Concern",
-                "Verification: Unconfirmed",
+                $"Rule: {ruleId}",
+                $"Scope: {scope}",
+                $"Verification: {signal.VerificationLabel}",
                 $"Confidence: {signal.ConfidenceLabel} ({signal.Confidence})",
                 $"Sources: {signal.SourceCount}",
                 $"Source: {signal.Source}",
                 signal.IsContradicted
                     ? "Note: contradictory positive language present — confidence reduced"
-                    : "Note: not an official injury designation"
+                    : "Note: not an official structured injury designation"
             ],
-            Tags = ["unconfirmed", "injury-buzz", "news"]
+            Tags = [isReported ? "reported" : "unconfirmed", "injury-buzz", "news"]
         };
     }
 
