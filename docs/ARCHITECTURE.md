@@ -315,7 +315,27 @@ Projection, Prediction, and Decision engines should take `PlayerIntelligenceProf
 
 `DataRefreshBackgroundService` refreshes players, then news, then intelligence, then projections — each step logged separately.
 
-## Projection Engine (V1)
+## Player Statistics Layer
+
+Normalized historical + current-season statistics feed Projection and the Career/Stats overlay.
+
+### Provider pattern
+
+Mirrors players/news:
+
+- `IPlayerStatsProvider` — `MockPlayerStatsProvider` | `LivePlayerStatsProvider` (Sleeper)
+- `IPlayerStatsService` — facade with config switch, mock fallback, telemetry
+- `PlayerStatsCacheStore` — JSON file cache (`data/player-stats-cache.json`) for initial sync / reuse / refresh
+
+Live endpoint: `GET /stats/nfl/regular/{season}` on `api.sleeper.app/v1`, joined to Playbook player ids via the same deterministic Sleeper id hash used by the player catalog. NFL state (`/state/nfl`) selects current vs previous seasons.
+
+### Data model
+
+`PlayerSeasonStats` includes PlayerId, Season, SeasonType, Period (`CompletedSeason` | `CurrentSeason` | `College`), games/starts, passing/rushing/receiving counting stats, and fantasy points (Standard / Half-PPR / PPR). Missing values stay null — never fabricated.
+
+College statistics are first-class for players with fewer than 3 NFL seasons. Sleeper does not currently provide college box scores; mock seeds include college rows, live leaves college empty.
+
+### Projection Engine (V1)
 
 Estimates **numerical expected outcomes** only. It must not encode start/sit, waiver, draft, or trade decisions. Downstream engines consume `PlayerProjection`.
 
@@ -323,7 +343,8 @@ Estimates **numerical expected outcomes** only. It must not encode start/sit, wa
 
 | Input | Role |
 | --- | --- |
-| `PlayerProductionSnapshot` | Player-specific historical/season box scores (or documented fallback) |
+| `IPlayerStatsService` → `PlayerProductionSnapshot` | Preferred recent / multi-season NFL production |
+| Curated / attribute fallbacks | Used only when stats service has no record |
 | `PlayerIntelligenceProfile` | Opportunity / usage / health / risk / trend modifiers |
 | `Player` + position | Routes which production components matter |
 | League scoring | Standard / Half-PPR / PPR fantasy math from components |

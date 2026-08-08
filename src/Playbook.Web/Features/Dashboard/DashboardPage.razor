@@ -8,6 +8,8 @@
 @using Playbook.Application.Projections
 @using Playbook.Application.Projections.Interfaces
 @using Playbook.Application.Recommendations
+@using Playbook.Application.Stats
+@using Playbook.Application.Stats.Interfaces
 @using Playbook.Core.Intelligence.Models
 @using Playbook.Core.Recommendations
 @using Playbook.Web.Features.Intelligence.Models
@@ -20,6 +22,8 @@
 @inject IProjectionSyncStatus ProjectionSyncStatus
 @inject IPlayerService PlayerService
 @inject IPlayerDataSyncStatus PlayerDataSyncStatus
+@inject IPlayerStatsService PlayerStatsService
+@inject IPlayerStatsSyncStatus PlayerStatsSyncStatus
 @inject INewsProvider NewsProvider
 @inject INewsSyncStatus NewsSyncStatus
 @implements IDisposable
@@ -202,6 +206,38 @@
                     <span class="pb-meta-label">Projection Runtime</span>
                     <span class="pb-meta-value">@projectionRuntime</span>
                 </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Stats Provider</span>
+                    <span class="pb-meta-value pb-meta-value--live">@statsProvider</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Players With Stats</span>
+                    <span class="pb-meta-value">@statsPlayers</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Seasons Loaded</span>
+                    <span class="pb-meta-value">@statsSeasons</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Current Season Records</span>
+                    <span class="pb-meta-value">@statsCurrent</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Historical Records</span>
+                    <span class="pb-meta-value">@statsHistorical</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Last Stats Sync</span>
+                    <span class="pb-meta-value">@statsLastSync</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Stats Sync Runtime</span>
+                    <span class="pb-meta-value">@statsRuntime</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Last Stats Error</span>
+                    <span class="pb-meta-value">@statsLastError</span>
+                </div>
             </div>
         </article>
 
@@ -325,6 +361,14 @@
     private string projectionAverage = "—";
     private string projectionRuntime = "—";
     private string projectionAvgConfidence = "—";
+    private string statsProvider = "—";
+    private string statsPlayers = "—";
+    private string statsSeasons = "—";
+    private string statsCurrent = "—";
+    private string statsHistorical = "—";
+    private string statsLastSync = "—";
+    private string statsRuntime = "—";
+    private string statsLastError = "None";
 
     protected override void OnInitialized()
     {
@@ -421,6 +465,24 @@
         projectionAvgConfidence = ProjectionSyncStatus.PlayersProjected > 0
             ? ProjectionSyncStatus.AverageProjectionConfidence.ToString("0.0")
             : "—";
+
+        _ = PlayerStatsService.GetAllStats();
+        statsProvider = PlayerStatsSyncStatus.UsedFallback
+            ? $"{PlayerStatsSyncStatus.ActiveProvider} (fallback)"
+            : PlayerStatsSyncStatus.UsedCache
+                ? $"{PlayerStatsSyncStatus.ActiveProvider} (cache)"
+                : PlayerStatsSyncStatus.ActiveProvider;
+        statsPlayers = PlayerStatsSyncStatus.PlayersWithStats.ToString();
+        statsSeasons = PlayerStatsSyncStatus.SeasonsLoaded.ToString();
+        statsCurrent = PlayerStatsSyncStatus.CurrentSeasonRecords.ToString();
+        statsHistorical = PlayerStatsSyncStatus.HistoricalRecords.ToString();
+        statsLastSync = PlayerStatsSyncStatus.LastStatsSync?.ToLocalTime().ToString("h:mm:ss tt") ?? "—";
+        statsRuntime = PlayerStatsSyncStatus.StatsSyncRuntime is { } statsElapsed
+            ? $"{statsElapsed.TotalMilliseconds:0} ms"
+            : "—";
+        statsLastError = string.IsNullOrWhiteSpace(PlayerStatsSyncStatus.LastStatsError)
+            ? "None"
+            : PlayerStatsSyncStatus.LastStatsError;
 
         recommendations = RecommendationService.GetTopRecommendations();
     }

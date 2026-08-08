@@ -1,7 +1,5 @@
 using System.Diagnostics;
 using System.Net.Http.Json;
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 using Playbook.Application.Players.Data;
@@ -108,7 +106,7 @@ public sealed class LivePlayerDataProvider : IPlayerDataProvider
 
         return new Player
         {
-            Id = ToDeterministicGuid(sleeperId),
+            Id = SleeperPlayerIds.ToPlaybookId(sleeperId),
             FirstName = first,
             LastName = last,
             FullName = full,
@@ -191,12 +189,6 @@ public sealed class LivePlayerDataProvider : IPlayerDataProvider
 
     private static int? ParseWeight(string? raw) =>
         int.TryParse(raw, out var weight) ? weight : null;
-
-    private static Guid ToDeterministicGuid(string sleeperId)
-    {
-        var bytes = MD5.HashData(Encoding.UTF8.GetBytes($"playbook:sleeper:nfl:{sleeperId}"));
-        return new Guid(bytes);
-    }
 
     private sealed class SleeperPlayerDto
     {

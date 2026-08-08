@@ -2,6 +2,22 @@
 
 All notable project changes are recorded here.
 
+## [Unreleased] — Historical Player Statistics Layer
+
+### Added
+
+- `PlayerSeasonStats` normalized model (passing / rushing / receiving / fantasy; Completed / Current / College periods)
+- `IPlayerStatsProvider` with `MockPlayerStatsProvider` + `LivePlayerStatsProvider` (Sleeper season stats)
+- `IPlayerStatsService` / `PlayerStatsService` with JSON file cache, refresh, and mock fallback
+- Player Overlay Career/Stats season switcher (NFL completed, current season, college)
+- Developer Monitor: Stats Provider, Players With Stats, Seasons Loaded, Current/Historical records, sync runtime/error
+- Projection production path prefers stats-service seasons before curated/attribute fallbacks
+
+### Architecture notes
+
+- Reuses Sleeper (no new API dependency); college stats supported in model/mock only
+- Local cache under app `data/` directory; TTL configurable via `PlayerStats:CacheTtlMinutes`
+
 ## [Unreleased] — Player-Specific Projection Fix
 
 ### Fixed

@@ -1,6 +1,7 @@
 using Playbook.Application;
 using Playbook.Application.News;
 using Playbook.Application.Players.Data;
+using Playbook.Application.Stats;
 using Playbook.Infrastructure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -13,6 +14,7 @@ internal static class TestServiceFactory
     public static ServiceProvider CreateProvider(
         PlayerDataProviderKind playerProvider = PlayerDataProviderKind.Mock,
         NewsProviderKind newsProvider = NewsProviderKind.Mock,
+        PlayerStatsProviderKind statsProvider = PlayerStatsProviderKind.Mock,
         string? sleeperBaseUrl = null,
         string? espnBaseUrl = null,
         bool backgroundRefreshEnabled = false)
@@ -26,6 +28,10 @@ internal static class TestServiceFactory
             ["News:Espn:BaseUrl"] = espnBaseUrl ?? "https://site.api.espn.com/apis/site/v2/",
             ["News:Espn:Limit"] = "20",
             ["News:Espn:TimeoutSeconds"] = "15",
+            ["PlayerStats:Provider"] = statsProvider.ToString(),
+            ["PlayerStats:HistoricalSeasonCount"] = "3",
+            ["PlayerStats:CacheTtlMinutes"] = "360",
+            ["PlayerStats:CacheFileName"] = $"player-stats-cache-tests-{Guid.NewGuid():N}.json",
             ["BackgroundRefresh:Enabled"] = backgroundRefreshEnabled ? "true" : "false",
             ["BackgroundRefresh:IntervalMinutes"] = "15"
         };

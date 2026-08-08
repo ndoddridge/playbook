@@ -19,8 +19,9 @@ public class PlayerOverlayStateTests
         overlay.Open(playerId);
         Assert.True(overlay.IsOpen);
         Assert.NotNull(overlay.Context);
-        var firstProjection = overlay.Context!.WeeklyProjection;
-        var firstLeague = overlay.Context.League?.Name;
+        var first = overlay.Context!;
+        var firstLeague = first.League?.Name;
+        var firstSummary = first.RecommendationSummary;
 
         var dynasty = leagues.GetAllLeagues().Single(l => l.Name == "Dynasty League");
         leagues.SelectLeague(dynasty.Id);
@@ -30,8 +31,9 @@ public class PlayerOverlayStateTests
         Assert.Equal("Dynasty League", overlay.Context?.League?.Name);
         Assert.Equal(ScoringType.HalfPpr, overlay.Context?.ScoringType);
         Assert.NotEqual(firstLeague, overlay.Context?.League?.Name);
-        // Scoring change should alter mock fantasy values while keeping the same player.
-        Assert.NotEqual(firstProjection, overlay.Context?.WeeklyProjection);
+        // League/scoring switch refreshes context for the same player.
+        Assert.NotEqual(firstSummary, overlay.Context?.RecommendationSummary);
+        Assert.Contains("Half PPR", overlay.Context?.RecommendationSummary ?? string.Empty);
 
         overlay.Close();
         Assert.False(overlay.IsOpen);

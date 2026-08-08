@@ -1,30 +1,41 @@
 using Playbook.Application.Players;
 using Playbook.Application.Projections;
 using Playbook.Application.Projections.Interfaces;
+using Playbook.Application.Stats.Interfaces;
 using Playbook.Core.Players;
 using Playbook.Core.Projections.Models;
+using Playbook.Core.Stats.Models;
 
 namespace Playbook.Infrastructure.Projections.Services;
 
 /// <summary>
 /// Resolves player-specific production:
-/// 1) curated season catalog (by normalized name),
-/// 2) non-empty <see cref="SeasonStats"/> from the player profile,
-/// 3) documented attribute fallback (position + YearsPro + Age + Status).
+/// 1) <see cref="IPlayerStatsService"/> recent/multi-season NFL stats,
+/// 2) curated season catalog (by normalized name),
+/// 3) non-empty <see cref="SeasonStats"/> from the player profile,
+/// 4) documented attribute fallback (position + YearsPro + Age + Status).
 /// </summary>
 public sealed class PlayerProductionProvider : IPlayerProductionProvider
 {
     private readonly IPlayerService _players;
+    private readonly IPlayerStatsService _stats;
     private readonly IReadOnlyDictionary<string, CuratedSeasonRow> _catalog;
 
-    public PlayerProductionProvider(IPlayerService players)
+    public PlayerProductionProvider(IPlayerService players, IPlayerStatsService stats)
     {
         _players = players;
+        _stats = stats;
         _catalog = BuildCatalog();
     }
 
     public PlayerProductionSnapshot GetProduction(Player player)
     {
+        var fromStats = TryFromStatsService(player);
+        if (fromStats is not null)
+        {
+            return fromStats;
+        }
+
         if (_catalog.TryGetValue(Normalize(player.FullName), out var curated))
         {
             return ToSnapshot(player, curated, ProductionDataSource.CuratedSeason,
@@ -34,14 +45,62 @@ public sealed class PlayerProductionProvider : IPlayerProductionProvider
         var profileStats = _players.GetPlayerProfile(player.Id)?.SeasonStats;
         if (profileStats is not null && HasMeaningfulBoxScore(profileStats))
         {
-            // Only use profile stats when they look player-populated (future live stats path).
-            // Identical position templates are avoided by preferring curated above; remaining
-            // mock templates still flow here only if the name was not curated.
             return FromSeasonStats(player, profileStats, ProductionDataSource.ProfileSeason,
                 $"Profile season stats ({profileStats.Season}) for {player.FullName}.");
         }
 
         return BuildAttributeFallback(player);
+    }
+
+    private PlayerProductionSnapshot? TryFromStatsService(Player player)
+    {
+        var primary = _stats.GetPrimaryProductionSeason(player.Id);
+        if (primary is null || !primary.HasAnyCountingStat)
+        {
+            return null;
+        }
+
+        var recent = _stats.GetRecentNflSeasons(player.Id, 3);
+        var seasonList = string.Join(", ", recent.Select(r =>
+            $"{r.Season}{(r.Period == StatsPeriod.CurrentSeason ? "*" : "")}"));
+
+        var description =
+            $"Stats service {primary.Period} {primary.Season} production for {player.FullName} " +
+            $"(recent NFL seasons: {seasonList}). Source={primary.SourceProvider ?? "unknown"}.";
+
+        decimal? specialist = null;
+        if (player.Position is Position.K or Position.DST)
+        {
+            var fantasy = primary.FantasyPointsPpr
+                          ?? primary.FantasyPointsHalfPpr
+                          ?? primary.FantasyPointsStandard;
+            if (fantasy is decimal pts && (primary.Games ?? 0) > 0)
+            {
+                specialist = Math.Round(pts / primary.Games!.Value, 1, MidpointRounding.AwayFromZero);
+            }
+        }
+
+        return new PlayerProductionSnapshot
+        {
+            PlayerId = player.Id,
+            PlayerName = player.FullName,
+            Position = player.Position,
+            Season = primary.Season,
+            Source = ProductionDataSource.StatsService,
+            SourceDescription = description,
+            GamesPlayed = Math.Max(1, primary.Games ?? 1),
+            PassingYards = primary.PassYards ?? 0,
+            PassingTouchdowns = primary.PassTouchdowns ?? 0,
+            Interceptions = primary.PassInterceptions ?? 0,
+            RushingAttempts = primary.RushAttempts ?? 0,
+            RushingYards = primary.RushYards ?? 0,
+            RushingTouchdowns = primary.RushTouchdowns ?? 0,
+            Targets = primary.Targets ?? 0,
+            Receptions = primary.Receptions ?? 0,
+            ReceivingYards = primary.ReceivingYards ?? 0,
+            ReceivingTouchdowns = primary.ReceivingTouchdowns ?? 0,
+            SpecialistWeeklyPrior = specialist
+        };
     }
 
     private static PlayerProductionSnapshot BuildAttributeFallback(Player player)

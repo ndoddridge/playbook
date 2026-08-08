@@ -58,5 +58,8 @@ public enum ProductionDataSource
     /// <summary>
     /// No box-score stats available — documented fallback using position + YearsPro + Age + Status.
     /// </summary>
-    AttributeFallback = 2
+    AttributeFallback = 2,
+
+    /// <summary>Normalized records from <c>IPlayerStatsService</c> (live/mock stats providers).</summary>
+    StatsService = 3
 }

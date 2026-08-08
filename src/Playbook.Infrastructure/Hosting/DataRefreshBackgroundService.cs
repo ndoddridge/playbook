@@ -5,15 +5,17 @@ using Playbook.Application.Intelligence.Interfaces;
 using Playbook.Application.News;
 using Playbook.Application.Players;
 using Playbook.Application.Projections.Interfaces;
+using Playbook.Application.Stats.Interfaces;
 
 namespace Playbook.Infrastructure.Hosting;
 
 /// <summary>
-/// Periodically refreshes player data, news, intelligence, and projections. Each step is logged separately.
+/// Periodically refreshes players, stats, news, intelligence, and projections.
 /// </summary>
 public sealed class DataRefreshBackgroundService : BackgroundService
 {
     private readonly IPlayerService _players;
+    private readonly IPlayerStatsService _stats;
     private readonly INewsProvider _news;
     private readonly IIntelligenceService _intelligence;
     private readonly IProjectionService _projections;
@@ -22,6 +24,7 @@ public sealed class DataRefreshBackgroundService : BackgroundService
 
     public DataRefreshBackgroundService(
         IPlayerService players,
+        IPlayerStatsService stats,
         INewsProvider news,
         IIntelligenceService intelligence,
         IProjectionService projections,
@@ -29,6 +32,7 @@ public sealed class DataRefreshBackgroundService : BackgroundService
         ILogger<DataRefreshBackgroundService> logger)
     {
         _players = players;
+        _stats = stats;
         _news = news;
         _intelligence = intelligence;
         _projections = projections;
@@ -60,6 +64,7 @@ public sealed class DataRefreshBackgroundService : BackgroundService
         while (!stoppingToken.IsCancellationRequested)
         {
             RefreshPlayers();
+            await RefreshStatsAsync(stoppingToken).ConfigureAwait(false);
             await RefreshNewsAsync(stoppingToken).ConfigureAwait(false);
             RefreshIntelligence();
             RefreshProjections();
@@ -88,6 +93,19 @@ public sealed class DataRefreshBackgroundService : BackgroundService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Background refresh: player data update failed");
+        }
+    }
+
+    private async Task RefreshStatsAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _stats.RefreshAsync(cancellationToken).ConfigureAwait(false);
+            _logger.LogInformation("Background refresh: player stats updated successfully");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Background refresh: player stats update failed");
         }
     }
 

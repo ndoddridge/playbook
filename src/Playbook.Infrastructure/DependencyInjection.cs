@@ -7,6 +7,8 @@ using Playbook.Application.Players.Data;
 using Playbook.Application.Projections;
 using Playbook.Application.Projections.Interfaces;
 using Playbook.Application.Recommendations;
+using Playbook.Application.Stats;
+using Playbook.Application.Stats.Interfaces;
 using Playbook.Infrastructure.Hosting;
 using Playbook.Infrastructure.Intelligence.Services;
 using Playbook.Infrastructure.Leagues;
@@ -14,6 +16,7 @@ using Playbook.Infrastructure.News;
 using Playbook.Infrastructure.Players;
 using Playbook.Infrastructure.Projections.Services;
 using Playbook.Infrastructure.Recommendations;
+using Playbook.Infrastructure.Stats;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -35,6 +38,7 @@ public static class DependencyInjection
             services.Configure<BackgroundRefreshOptions>(configuration.GetSection(BackgroundRefreshOptions.SectionName));
             services.Configure<IntelligenceScoringOptions>(configuration.GetSection(IntelligenceScoringOptions.SectionName));
             services.Configure<ProjectionRuleOptions>(configuration.GetSection(ProjectionRuleOptions.SectionName));
+            services.Configure<PlayerStatsOptions>(configuration.GetSection(PlayerStatsOptions.SectionName));
         }
         else
         {
@@ -43,9 +47,11 @@ public static class DependencyInjection
             services.Configure<BackgroundRefreshOptions>(_ => { });
             services.Configure<IntelligenceScoringOptions>(_ => { });
             services.Configure<ProjectionRuleOptions>(_ => { });
+            services.Configure<PlayerStatsOptions>(_ => { });
         }
 
         RegisterPlayerData(services);
+        RegisterPlayerStats(services);
         RegisterNews(services);
         RegisterIntelligence(services);
         RegisterProjections(services);
@@ -101,6 +107,35 @@ public static class DependencyInjection
         services.AddSingleton<LivePlayerDataProvider>();
         services.AddSingleton<IPlayerDataProvider>(sp => sp.GetRequiredService<LivePlayerDataProvider>());
         services.AddSingleton<IPlayerService, PlayerService>();
+    }
+
+    private static void RegisterPlayerStats(IServiceCollection services)
+    {
+        services.AddSingleton<PlayerStatsSyncStatus>();
+        services.AddSingleton<IPlayerStatsSyncStatus>(sp => sp.GetRequiredService<PlayerStatsSyncStatus>());
+        services.AddSingleton<PlayerStatsCacheStore>();
+
+        services.AddSingleton<MockPlayerStatsProvider>();
+        services.AddSingleton<IPlayerStatsProvider>(sp => sp.GetRequiredService<MockPlayerStatsProvider>());
+
+        services.AddHttpClient(LivePlayerStatsProvider.HttpClientName, (sp, client) =>
+        {
+            var sleeper = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<PlayerDataOptions>>().Value.Sleeper;
+            var stats = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<PlayerStatsOptions>>().Value;
+            var baseUrl = string.IsNullOrWhiteSpace(sleeper.BaseUrl)
+                ? "https://api.sleeper.app/v1/"
+                : sleeper.BaseUrl.TrimEnd('/') + "/";
+            client.BaseAddress = new Uri(baseUrl);
+            client.Timeout = TimeSpan.FromSeconds(Math.Clamp(stats.TimeoutSeconds, 10, 180));
+            if (!string.IsNullOrWhiteSpace(sleeper.ApiKey))
+            {
+                client.DefaultRequestHeaders.TryAddWithoutValidation("Authorization", sleeper.ApiKey);
+            }
+        });
+
+        services.AddSingleton<LivePlayerStatsProvider>();
+        services.AddSingleton<IPlayerStatsProvider>(sp => sp.GetRequiredService<LivePlayerStatsProvider>());
+        services.AddSingleton<IPlayerStatsService, PlayerStatsService>();
     }
 
     private static void RegisterNews(IServiceCollection services)

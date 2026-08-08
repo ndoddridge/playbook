@@ -5,10 +5,12 @@ using Playbook.Application.Players;
 using Playbook.Application.Players.Data;
 using Playbook.Application.Projections;
 using Playbook.Application.Projections.Interfaces;
+using Playbook.Application.Stats.Interfaces;
 using Playbook.Core.Intelligence.Models;
 using Playbook.Core.Leagues;
 using Playbook.Core.Players;
 using Playbook.Core.Projections.Models;
+using Playbook.Core.Stats.Models;
 using Playbook.Infrastructure.Projections.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -248,7 +250,7 @@ public class ProjectionEngineTests
     [Fact]
     public void Josh_Allen_Curated_Production_Differs_From_Mahomes()
     {
-        var productionProvider = new PlayerProductionProvider(new StubPlayerService());
+        var productionProvider = new PlayerProductionProvider(new StubPlayerService(), new StubPlayerStatsService());
         var mahomes = SamplePlayer(Position.QB, "Patrick Mahomes", Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"));
         var allen = SamplePlayer(Position.QB, "Josh Allen", Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc"));
 
@@ -399,5 +401,17 @@ public class ProjectionEngineTests
         public PlayerProfile? GetPlayerProfile(Guid playerId) => null;
         public IReadOnlyList<Player> SearchPlayers(string? query) => [];
         public void Refresh() { }
+    }
+
+    private sealed class StubPlayerStatsService : IPlayerStatsService
+    {
+        public IReadOnlyList<PlayerSeasonStats> GetAllStats() => [];
+        public IReadOnlyList<PlayerSeasonStats> GetStatsForPlayer(Guid playerId) => [];
+        public IReadOnlyList<int> GetAvailableSeasons(Guid playerId) => [];
+        public PlayerSeasonStats? GetStats(Guid playerId, int season, StatsPeriod? period = null) => null;
+        public PlayerSeasonStats? GetPrimaryProductionSeason(Guid playerId) => null;
+        public IReadOnlyList<PlayerSeasonStats> GetRecentNflSeasons(Guid playerId, int maxSeasons = 3) => [];
+        public void Refresh() { }
+        public Task RefreshAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 }

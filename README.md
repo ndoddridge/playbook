@@ -98,13 +98,31 @@ Football news is normalized into `NewsArticle` objects behind `INewsProvider`.
 
 Background refresh (`BackgroundRefresh`) periodically reloads players, news, intelligence analysis, and projections (each step logged separately).
 
+## Player statistics
+
+Historical and current-season NFL stats are loaded behind `IPlayerStatsService` (Mock or Live Sleeper).
+
+```json
+"PlayerStats": {
+  "Provider": "Live",
+  "HistoricalSeasonCount": 3,
+  "CacheFileName": "player-stats-cache.json",
+  "CacheTtlMinutes": 360
+}
+```
+
+- Live source: Sleeper bulk season stats (`/stats/nfl/regular/{season}`) for completed + current seasons
+- Local JSON cache avoids re-hitting the API on every player open
+- College rows are supported in the model/mock; Sleeper does not supply college box scores (never fabricated)
+- Developer Monitor exposes stats provider, players/seasons loaded, sync runtime, and errors
+
 ## Projection Engine
 
 Projection Engine V1 produces numerical expected outcomes (`PlayerProjection`). It does **not** make start/sit, waiver, draft, or trade decisions.
 
 **Inputs**
 
-1. Player-specific production (`IPlayerProductionProvider`) — curated season box scores when available; otherwise a documented attribute fallback (position + YearsPro + Age + Status)
+1. Player-specific production (`IPlayerProductionProvider`) — prefers `IPlayerStatsService` recent/multi-season NFL stats, then curated catalog, then attribute fallback
 2. `PlayerIntelligenceProfile` — opportunity / usage / health / risk / trend adjustments
 3. League scoring (Standard / Half-PPR / PPR) — receptions change fantasy math
 
