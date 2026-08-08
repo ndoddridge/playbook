@@ -180,6 +180,25 @@
     line-height: 1.45;
 }
 
+.qp-card__signals {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+
+.qp-card__signal {
+    color: var(--pb-color-text-muted);
+    font-size: var(--pb-text-xs);
+    line-height: 1.35;
+}
+
+.qp-card__signal--unconfirmed {
+    color: #7a4b00;
+}
+
 .qp-card__footer {
     display: flex;
     justify-content: space-between;

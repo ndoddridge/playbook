@@ -42,13 +42,25 @@
 
     <p class="qp-card__reasoning">@Prediction.Reasoning</p>
 
+    @if (highlightSignals.Count > 0)
+    {
+        <ul class="qp-card__signals">
+            @foreach (var signal in highlightSignals)
+            {
+                <li class="@(signal.IsUnconfirmed ? "qp-card__signal qp-card__signal--unconfirmed" : "qp-card__signal")">
+                    @signal.Text
+                </li>
+            }
+        </ul>
+    }
+
     <footer class="qp-card__footer">
         <span>@Prediction.Source@(string.IsNullOrWhiteSpace(Prediction.Bookmaker) ? "" : $" · {Prediction.Bookmaker}")</span>
         <span>Updated @QuickPickDisplay.Timestamp(Prediction.LastUpdated)</span>
     </footer>
 
     <button type="button" class="qp-card__expand" @onclick="Toggle">
-        @(expanded ? "Hide calculation" : "Show calculation")
+        @(expanded ? "Hide details" : "Show details")
     </button>
 
     @if (expanded)
@@ -58,9 +70,16 @@
             {
                 <li>@note</li>
             }
-            @foreach (var signal in Prediction.SupportingIntelligence)
+            @foreach (var contribution in Prediction.SignalContributions)
             {
-                <li>@signal</li>
+                <li>
+                    @contribution.Label:
+                    @(contribution.Available ? (contribution.Detail ?? "available") : (contribution.Detail ?? "unavailable"))
+                    @if (contribution.IsUnconfirmed)
+                    {
+                        <text> (unconfirmed)</text>
+                    }
+                </li>
             }
         </ul>
     }
@@ -71,6 +90,20 @@
     public Prediction Prediction { get; set; } = default!;
 
     private bool expanded;
+    private IReadOnlyList<SignalChip> highlightSignals = [];
+
+    protected override void OnParametersSet()
+    {
+        highlightSignals = Prediction.SupportingIntelligence
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .Take(3)
+            .Select(s => new SignalChip(
+                s,
+                s.StartsWith("Unconfirmed", StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+    }
 
     private void Toggle() => expanded = !expanded;
+
+    private sealed record SignalChip(string Text, bool IsUnconfirmed);
 }

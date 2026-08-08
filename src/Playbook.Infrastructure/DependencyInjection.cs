@@ -45,6 +45,7 @@ public static class DependencyInjection
             services.Configure<BackgroundRefreshOptions>(configuration.GetSection(BackgroundRefreshOptions.SectionName));
             services.Configure<IntelligenceScoringOptions>(configuration.GetSection(IntelligenceScoringOptions.SectionName));
             services.Configure<ProjectionRuleOptions>(configuration.GetSection(ProjectionRuleOptions.SectionName));
+            services.Configure<QuickPicksScoringOptions>(configuration.GetSection(QuickPicksScoringOptions.SectionName));
             services.Configure<PlayerStatsOptions>(configuration.GetSection(PlayerStatsOptions.SectionName));
             services.Configure<CollegeStatsOptions>(configuration.GetSection(CollegeStatsOptions.SectionName));
             services.Configure<InjuryOptions>(configuration.GetSection(InjuryOptions.SectionName));
@@ -58,6 +59,7 @@ public static class DependencyInjection
             services.Configure<BackgroundRefreshOptions>(_ => { });
             services.Configure<IntelligenceScoringOptions>(_ => { });
             services.Configure<ProjectionRuleOptions>(_ => { });
+            services.Configure<QuickPicksScoringOptions>(_ => { });
             services.Configure<PlayerStatsOptions>(_ => { });
             services.Configure<CollegeStatsOptions>(_ => { });
             services.Configure<InjuryOptions>(_ => { });

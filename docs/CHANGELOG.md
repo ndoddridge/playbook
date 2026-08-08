@@ -2,6 +2,17 @@
 
 All notable project changes are recorded here.
 
+## [Unreleased] — Intelligence-driven Quick Picks (Engine v0.2)
+
+### Added / Changed
+
+- Quick Picks Engine **v0.2** combines projection-vs-line with player intelligence, health, current/historical injury, unconfirmed buzz, usage/opportunity, and capped recent facts
+- Tunable weights via `QuickPicks:Scoring` (`QuickPicksScoringOptions`) — structured `PredictionSignalContribution` output for later weight tuning without UI rewrites
+- `QuickPickEvaluationContext` feeds engine from existing injury/intelligence services (no parallel intelligence system)
+- Missing signals reduce confidence; unconfirmed buzz is labeled and never treated as fact; current injuries outweigh age-decayed historical ones
+- Ranked by `OpportunityScore`; Quick Picks remain independent of fantasy league selection
+- Prediction cards show up to 3 supporting signal lines (unconfirmed styled distinctly)
+
 ## [Unreleased] — Odds API key configuration diagnostics
 
 ### Fixed / Clarified

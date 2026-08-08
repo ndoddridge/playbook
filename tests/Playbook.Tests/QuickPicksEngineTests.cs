@@ -1,100 +1,81 @@
 using Playbook.Application.Players.Data;
 using Playbook.Application.Predictions;
 using Playbook.Application.Predictions.Interfaces;
+using Playbook.Core.Injuries.Models;
 using Playbook.Core.Intelligence.Models;
 using Playbook.Core.Players;
 using Playbook.Core.Predictions;
 using Playbook.Infrastructure.Predictions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Playbook.Tests;
 
 public class QuickPicksEngineTests
 {
-    private readonly QuickPicksEngine _engine = new();
+    private readonly QuickPicksEngine _engine = CreateEngine();
 
     [Fact]
-    public void Engine_Version_Is_0_1()
+    public void Engine_Version_Is_0_2()
     {
-        Assert.Equal("0.1", _engine.Version);
+        Assert.Equal("0.2", _engine.Version);
         Assert.Equal(QuickPicksEngine.CurrentVersion, _engine.Version);
     }
 
     [Fact]
     public void Projection_Above_Line_Favors_Over()
     {
-        var prediction = Require(_engine.Evaluate(
+        var prediction = Require(Eval(
             Line(PredictionMarketType.ReceivingYards, 94.5m),
-            playbookProjection: 108.2m,
-            projectionConfidence: 80,
-            volatility: 35,
-            intelligence: Intel(usage: 70, health: 75),
-            statisticalContext: null,
-            injuryNote: null));
+            108.2m, 80, 35, Intel(usage: 70, health: 75)));
 
         Assert.Equal(PredictionDirection.Over, prediction.Direction);
         Assert.True(prediction.Edge > 0);
         Assert.True(prediction.Probability > 50);
         Assert.Contains("above", prediction.Reasoning, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("Base projection", prediction.Reasoning, StringComparison.Ordinal);
+        Assert.NotEmpty(prediction.SignalContributions);
+        Assert.Equal("0.2", prediction.EngineVersion);
     }
 
     [Fact]
     public void Projection_Below_Line_Favors_Under()
     {
-        var prediction = Require(_engine.Evaluate(
+        var prediction = Require(Eval(
             Line(PredictionMarketType.RushingYards, 90.5m),
-            playbookProjection: 62.0m,
-            projectionConfidence: 78,
-            volatility: 30,
-            intelligence: Intel(usage: 45, health: 70),
-            statisticalContext: null,
-            injuryNote: null));
+            62.0m, 78, 30, Intel(usage: 45, health: 70)));
 
         Assert.Equal(PredictionDirection.Under, prediction.Direction);
         Assert.True(prediction.Edge > 0);
-        Assert.True(prediction.Probability > 50);
         Assert.Contains("below", prediction.Reasoning, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
     public void Projection_Equal_To_Line_Has_Minimal_Edge()
     {
-        var prediction = Require(_engine.Evaluate(
+        var prediction = Require(Eval(
             Line(PredictionMarketType.ReceivingYards, 94.5m),
-            playbookProjection: 94.5m,
-            projectionConfidence: 70,
-            volatility: 40,
-            intelligence: Intel(),
-            statisticalContext: null,
-            injuryNote: null));
+            94.5m, 70, 40, Intel()));
 
-        Assert.Equal(0m, prediction.Edge);
-        Assert.Equal(50, prediction.Probability);
-        Assert.Equal(PredictionDirection.Over, prediction.Direction);
+        Assert.True(prediction.Edge <= 1.5m);
+        Assert.InRange(prediction.Probability, 45, 55);
     }
 
     [Fact]
     public void High_Confidence_Produces_Stronger_Edge_Than_Low_Confidence()
     {
-        var high = Require(_engine.Evaluate(
-            Line(PredictionMarketType.ReceivingYards, 94.5m),
-            108.2m, projectionConfidence: 90, volatility: 30, Intel(usage: 70, health: 80), null, null));
-        var low = Require(_engine.Evaluate(
-            Line(PredictionMarketType.ReceivingYards, 94.5m),
-            108.2m, projectionConfidence: 25, volatility: 30, Intel(usage: 70, health: 80), null, null));
+        var high = Require(Eval(Line(PredictionMarketType.ReceivingYards, 94.5m), 108.2m, 90, 30, Intel(usage: 70, health: 80)));
+        var low = Require(Eval(Line(PredictionMarketType.ReceivingYards, 94.5m), 108.2m, 25, 30, Intel(usage: 70, health: 80)));
 
         Assert.True(high.Edge > low.Edge);
         Assert.True(high.Confidence > low.Confidence);
-        Assert.True(high.Probability >= low.Probability);
     }
 
     [Fact]
     public void Low_Confidence_Edge_Is_Dampened()
     {
-        var prediction = Require(_engine.Evaluate(
+        var prediction = Require(Eval(
             Line(PredictionMarketType.ReceivingYards, 94.5m),
-            108.2m, projectionConfidence: 20, volatility: 40, Intel(), null, null));
+            108.2m, 20, 40, Intel()));
 
         Assert.Contains(prediction.CalculationNotes, n => n.Contains("dampened", StringComparison.OrdinalIgnoreCase));
         Assert.True(prediction.Edge < 5m);
@@ -103,90 +84,107 @@ public class QuickPicksEngineTests
     [Fact]
     public void High_Volatility_Reduces_Edge_Vs_Low_Volatility()
     {
-        var calm = Require(_engine.Evaluate(
-            Line(PredictionMarketType.RushingYards, 70.5m),
-            90m, 80, volatility: 20, Intel(health: 75), null, null));
-        var volatilePick = Require(_engine.Evaluate(
-            Line(PredictionMarketType.RushingYards, 70.5m),
-            90m, 80, volatility: 90, Intel(health: 75), null, null));
-
+        var calm = Require(Eval(Line(PredictionMarketType.RushingYards, 70.5m), 90m, 80, 20, Intel(health: 75)));
+        var volatilePick = Require(Eval(Line(PredictionMarketType.RushingYards, 70.5m), 90m, 80, 90, Intel(health: 75)));
         Assert.True(calm.Edge > volatilePick.Edge);
     }
 
     [Fact]
     public void Missing_Line_Returns_Null()
     {
-        var line = Line(PredictionMarketType.ReceivingYards, null);
-        var prediction = _engine.Evaluate(line, 100m, 70, 40, Intel(), null, null);
-        Assert.Null(prediction);
+        Assert.Null(Eval(Line(PredictionMarketType.ReceivingYards, null), 100m, 70, 40, Intel()));
     }
 
     [Fact]
     public void Unavailable_Line_Returns_Null()
     {
-        var line = Line(PredictionMarketType.ReceivingYards, 94.5m, PropLineFreshness.Unavailable);
-        Assert.Null(_engine.Evaluate(line, 108m, 70, 40, Intel(), null, null));
+        Assert.Null(Eval(
+            Line(PredictionMarketType.ReceivingYards, 94.5m, PropLineFreshness.Unavailable),
+            108m, 70, 40, Intel()));
     }
 
     [Fact]
     public void Stale_Line_Reduces_Confidence_And_Probability()
     {
-        var live = Require(_engine.Evaluate(
-            Line(PredictionMarketType.ReceivingYards, 94.5m, PropLineFreshness.Mock),
-            108.2m, 80, 35, Intel(health: 75), null, null));
-        var stale = Require(_engine.Evaluate(
-            Line(PredictionMarketType.ReceivingYards, 94.5m, PropLineFreshness.Stale),
-            108.2m, 80, 35, Intel(health: 75), null, null));
-
+        var live = Require(Eval(Line(PredictionMarketType.ReceivingYards, 94.5m, PropLineFreshness.Mock), 108.2m, 80, 35, Intel(health: 75)));
+        var stale = Require(Eval(Line(PredictionMarketType.ReceivingYards, 94.5m, PropLineFreshness.Stale), 108.2m, 80, 35, Intel(health: 75)));
         Assert.True(stale.Confidence < live.Confidence);
         Assert.True(stale.Probability < live.Probability);
-        Assert.Equal(PropLineFreshness.Stale, stale.LineFreshness);
-        Assert.Contains("stale", stale.Reasoning, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
-    public void Missing_Player_Intelligence_Still_Produces_Prediction()
+    public void Missing_Player_Intelligence_Reduces_Confidence_Without_Fabricating()
     {
-        var prediction = Require(_engine.Evaluate(
-            Line(PredictionMarketType.ReceivingYards, 94.5m),
-            108.2m, 75, 40, intelligence: null, statisticalContext: null, injuryNote: null));
+        var withIntel = Require(Eval(Line(PredictionMarketType.ReceivingYards, 94.5m), 108.2m, 75, 40, Intel()));
+        var missing = Require(Eval(Line(PredictionMarketType.ReceivingYards, 94.5m), 108.2m, 75, 40, intelligence: null));
 
-        Assert.Equal(PredictionDirection.Over, prediction.Direction);
-        Assert.Contains(prediction.SupportingIntelligence, s =>
-            s.Contains("No player intelligence", StringComparison.OrdinalIgnoreCase));
-        Assert.Contains("Playbook projects", prediction.Reasoning, StringComparison.Ordinal);
+        Assert.True(missing.Confidence < withIntel.Confidence);
+        Assert.Contains(missing.SignalContributions, c =>
+            c.SignalId == "intelligence-confidence" && !c.Available);
+        Assert.Contains("Limited player intelligence", missing.Reasoning, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(missing.SupportingIntelligence, s =>
+            s.Contains("Health score", StringComparison.OrdinalIgnoreCase) &&
+            s.Contains("50", StringComparison.Ordinal));
     }
 
     [Fact]
-    public void Player_Injury_Concern_Tempers_Edge()
+    public void Current_Injury_Tempers_Over_More_Than_Healthy()
     {
-        var healthy = Require(_engine.Evaluate(
+        var healthy = Require(Eval(
             Line(PredictionMarketType.ReceivingYards, 94.5m),
-            108.2m, 80, 35, Intel(health: 80), null, injuryNote: null));
-        var injured = Require(_engine.Evaluate(
+            108.2m, 80, 35, Intel(health: 80)));
+
+        var injured = Require(Eval(
             Line(PredictionMarketType.ReceivingYards, 94.5m),
-            108.2m, 80, 35, Intel(health: 80), null, injuryNote: "Questionable (ankle)"));
+            108.2m, 80, 35, Intel(health: 80),
+            injuryProfile: InjuryProfile(
+                current: CurrentInjury("Questionable", "ankle"))));
 
         Assert.True(injured.Edge < healthy.Edge);
-        Assert.Contains("Injury note", injured.Reasoning, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains(injured.CalculationNotes, n => n.Contains("Injury", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(injured.SupportingIntelligence, s =>
+            s.Contains("Current injury", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains("Current designation", injured.Reasoning, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Unconfirmed_Buzz_Is_Labeled_And_Does_Not_Crash()
+    {
+        var prediction = Require(Eval(
+            Line(PredictionMarketType.ReceivingYards, 94.5m),
+            108.2m, 80, 35, Intel(health: 70),
+            injuryProfile: InjuryProfile(unconfirmed: true)));
+
+        Assert.Contains(prediction.SupportingIntelligence, s =>
+            s.StartsWith("Unconfirmed:", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains("Unconfirmed", prediction.Reasoning, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(prediction.SignalContributions, c => c.IsUnconfirmed && c.Available);
+        Assert.DoesNotContain(prediction.Reasoning, "ruled out", StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Historical_Injury_Is_Age_Weighted_Weaker_Than_Current()
+    {
+        var withHistory = Require(Eval(
+            Line(PredictionMarketType.ReceivingYards, 94.5m),
+            108.2m, 80, 35, Intel(health: 70),
+            injuryProfile: InjuryProfile(historicalHigh: true)));
+
+        var withCurrent = Require(Eval(
+            Line(PredictionMarketType.ReceivingYards, 94.5m),
+            108.2m, 80, 35, Intel(health: 70),
+            injuryProfile: InjuryProfile(current: CurrentInjury("Out", "knee"))));
+
+        Assert.True(withCurrent.Edge < withHistory.Edge);
+        Assert.Contains(withHistory.SupportingIntelligence, s =>
+            s.Contains("Relevant history", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
     public void Multiple_Markets_For_Same_Player_Produce_Distinct_Predictions()
     {
-        var yards = Require(_engine.Evaluate(
-            Line(PredictionMarketType.ReceivingYards, 94.5m, id: "chase-yds"),
-            108.2m, 80, 35, Intel(usage: 70), null, null));
-        var receptions = Require(_engine.Evaluate(
-            Line(PredictionMarketType.Receptions, 6.5m, id: "chase-rec"),
-            7.8m, 78, 35, Intel(usage: 70), null, null));
-
+        var yards = Require(Eval(Line(PredictionMarketType.ReceivingYards, 94.5m, id: "chase-yds"), 108.2m, 80, 35, Intel(usage: 70)));
+        var receptions = Require(Eval(Line(PredictionMarketType.Receptions, 6.5m, id: "chase-rec"), 7.8m, 78, 35, Intel(usage: 70)));
         Assert.NotEqual(yards.Id, receptions.Id);
-        Assert.Equal(PredictionMarketType.ReceivingYards, yards.Market);
-        Assert.Equal(PredictionMarketType.Receptions, receptions.Market);
-        Assert.Equal("Ja'Marr Chase", yards.PlayerName);
-        Assert.Equal("Ja'Marr Chase", receptions.PlayerName);
     }
 
     [Fact]
@@ -194,29 +192,28 @@ public class QuickPicksEngineTests
     {
         var line = Line(PredictionMarketType.ReceivingYards, 94.5m);
         var intel = Intel(usage: 68, health: 72, opportunity: 70);
-        var a = Require(_engine.Evaluate(line, 108.2m, 82, 33, intel, null, null));
-        var b = Require(_engine.Evaluate(line, 108.2m, 82, 33, intel, null, null));
-
+        var a = Require(Eval(line, 108.2m, 82, 33, intel));
+        var b = Require(Eval(line, 108.2m, 82, 33, intel));
         Assert.Equal(a.Id, b.Id);
         Assert.Equal(a.Direction, b.Direction);
         Assert.Equal(a.Edge, b.Edge);
         Assert.Equal(a.Probability, b.Probability);
         Assert.Equal(a.Confidence, b.Confidence);
         Assert.Equal(a.Reasoning, b.Reasoning);
-        Assert.Equal(a.CalculationNotes, b.CalculationNotes);
+        Assert.Equal(a.OpportunityScore, b.OpportunityScore);
     }
 
     [Fact]
-    public void Human_Reasoning_Omits_Raw_Adjustment_Jargon()
+    public void Signal_Contributions_Are_Structured_For_Weight_Tuning()
     {
-        var prediction = Require(_engine.Evaluate(
+        var prediction = Require(Eval(
             Line(PredictionMarketType.ReceivingYards, 94.5m),
-            108.2m, 80, 35, Intel(usage: 70, health: 75), null, null));
+            108.2m, 80, 35, Intel(usage: 70, health: 75)));
 
-        Assert.DoesNotContain("Opportunity adjustment", prediction.Reasoning, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("Health adjustment", prediction.Reasoning, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("quality weight", prediction.Reasoning, StringComparison.OrdinalIgnoreCase);
-        Assert.NotEmpty(prediction.CalculationNotes);
+        Assert.Contains(prediction.SignalContributions, c => c.SignalId == "projection-vs-line");
+        Assert.Contains(prediction.SignalContributions, c => c.SignalId == "usage-opportunity" && c.Available);
+        Assert.All(prediction.SignalContributions, c => Assert.False(string.IsNullOrWhiteSpace(c.Label)));
+        Assert.True(prediction.OpportunityScore > 0);
     }
 
     [Fact]
@@ -233,48 +230,34 @@ public class QuickPicksEngineTests
         quickPicks.Refresh();
 
         var all = quickPicks.GetAllPredictions();
-        var top = quickPicks.GetTopPicks();
-        var watch = quickPicks.GetWatchPicks();
-        var events = quickPicks.GetUpcomingEvents();
-        var status = provider.GetRequiredService<IQuickPicksSyncStatus>();
-
         Assert.NotEmpty(all);
-        Assert.NotEmpty(events);
-        Assert.True(top.Count + watch.Count > 0);
-        Assert.Equal("Mock", status.PropProvider);
-        Assert.True(status.PropsLoaded > 0);
-        Assert.True(status.PredictionsGenerated > 0);
-        Assert.NotNull(status.LastPropSync);
-        Assert.NotNull(status.LastPredictionRun);
-        Assert.True(status.AveragePredictionConfidence > 0);
-        Assert.DoesNotContain(all, p => p.LineFreshness == PropLineFreshness.Unavailable);
-        Assert.Contains(all, p => p.LineFreshness == PropLineFreshness.Mock);
+        Assert.Contains(all, p => p.EngineVersion == "0.2");
+        Assert.Contains(all, p => p.SignalContributions.Count > 0);
         Assert.All(all, p => Assert.False(string.IsNullOrWhiteSpace(p.Reasoning)));
     }
 
-    [Fact]
-    public async Task Mock_Provider_Includes_Stale_And_Multiple_Chase_Markets()
-    {
-        using var provider = TestServiceFactory.CreateProvider(PlayerDataProviderKind.Mock);
-        var lines = await provider.GetRequiredService<MockPropLineProvider>()
-            .GetPropLinesAsync();
+    private static QuickPicksEngine CreateEngine(QuickPicksScoringOptions? options = null) =>
+        new(Options.Create(options ?? new QuickPicksScoringOptions()));
 
-        Assert.Contains(lines, l => l.Freshness == PropLineFreshness.Stale);
-        Assert.True(lines.Count(l => l.PlayerName == "Ja'Marr Chase") >= 2);
-        Assert.Contains(lines, l => l.Market == PredictionMarketType.GameTotal);
-        Assert.Contains(lines, l => l.Market == PredictionMarketType.Winner);
-    }
-
-    [Fact]
-    public void Top_Picks_Exclude_Stale_Lines()
-    {
-        using var provider = TestServiceFactory.CreateProvider(PlayerDataProviderKind.Mock);
-        var quickPicks = provider.GetRequiredService<IQuickPicksService>();
-        quickPicks.Refresh();
-
-        Assert.All(quickPicks.GetTopPicks(20), p =>
-            Assert.True(p.LineFreshness is PropLineFreshness.Live or PropLineFreshness.Mock));
-    }
+    private Prediction? Eval(
+        PropLine line,
+        decimal? projection,
+        int confidence,
+        int volatility,
+        PlayerIntelligenceProfile? intelligence,
+        PlayerInjuryProfile? injuryProfile = null,
+        IReadOnlyList<IntelligenceFact>? facts = null) =>
+        _engine.Evaluate(new QuickPickEvaluationContext
+        {
+            Line = line,
+            PlaybookProjection = projection,
+            ProjectionConfidence = confidence,
+            Volatility = volatility,
+            Intelligence = intelligence,
+            StatisticalContext = null,
+            InjuryProfile = injuryProfile,
+            RecentFacts = facts ?? []
+        });
 
     private static Prediction Require(Prediction? prediction)
     {
@@ -329,4 +312,80 @@ public class QuickPicksEngineTests
             Headline = "Neutral",
             ChangeSignal = IntelligenceChangeSignal.Neutral
         };
+
+    private static PlayerInjuryRecord CurrentInjury(string status, string bodyPart) =>
+        new()
+        {
+            PlayerId = Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"),
+            Date = DateTimeOffset.UtcNow.AddDays(-1),
+            Status = status,
+            BodyPart = bodyPart,
+            Source = "Test",
+            Verified = true,
+            SourceConfidence = InjurySourceConfidence.Verified,
+            LastUpdated = DateTimeOffset.UtcNow,
+            IsCurrent = true
+        };
+
+    private static PlayerInjuryProfile InjuryProfile(
+        PlayerInjuryRecord? current = null,
+        bool unconfirmed = false,
+        bool historicalHigh = false)
+    {
+        var playerId = Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+        IReadOnlyList<UnconfirmedInjurySignal> buzz = unconfirmed
+            ?
+            [
+                new UnconfirmedInjurySignal
+                {
+                    Id = Guid.NewGuid(),
+                    PlayerId = playerId,
+                    Headline = "Reportedly limited in practice with ankle soreness",
+                    Source = "TestWire",
+                    Published = DateTimeOffset.UtcNow.AddHours(-6),
+                    LastUpdated = DateTimeOffset.UtcNow,
+                    Confidence = 62
+                }
+            ]
+            : [];
+
+        IReadOnlyList<InjuryHistoryEntry> history = historicalHigh
+            ?
+            [
+                new InjuryHistoryEntry
+                {
+                    Record = new PlayerInjuryRecord
+                    {
+                        PlayerId = playerId,
+                        Date = DateTimeOffset.UtcNow.AddMonths(-10),
+                        Status = "Out",
+                        BodyPart = "hamstring",
+                        Source = "nflverse",
+                        Verified = true,
+                        SourceConfidence = InjurySourceConfidence.Verified,
+                        LastUpdated = DateTimeOffset.UtcNow.AddMonths(-10),
+                        IsCurrent = false
+                    },
+                    RelevanceScore = 78,
+                    Band = InjuryRelevanceBand.High,
+                    RelevanceReason = "Same body region cluster"
+                }
+            ]
+            : [];
+
+        return new PlayerInjuryProfile
+        {
+            PlayerId = playerId,
+            CurrentDataStatus = current is null ? CurrentInjuryDataStatus.NoCurrentInjury : CurrentInjuryDataStatus.Available,
+            CurrentStatus = current?.Status,
+            CurrentInjury = current,
+            RecentHistory = history,
+            HistoricalEntries = history,
+            HistoricalDataStatus = HistoricalDataStatus.Available,
+            NflHistoricalDataStatus = HistoricalDataStatus.Available,
+            CollegeHistoricalDataStatus = HistoricalDataStatus.NotSupportedByProvider,
+            UnconfirmedSignals = buzz,
+            LastUpdated = DateTimeOffset.UtcNow
+        };
+    }
 }

@@ -4,6 +4,7 @@ using Playbook.Application.Predictions.Interfaces;
 using Playbook.Core.Predictions;
 using Playbook.Infrastructure.Predictions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Playbook.Tests;
 
@@ -147,7 +148,7 @@ public class PropLineProviderTests
     [Fact]
     public void Missing_Line_Does_Not_Produce_Prediction()
     {
-        var engine = new QuickPicksEngine();
+        var engine = new QuickPicksEngine(Options.Create(new QuickPicksScoringOptions()));
         var line = new PropLine
         {
             Id = "missing-line",
@@ -167,7 +168,13 @@ public class PropLineProviderTests
             Freshness = PropLineFreshness.Mock
         };
 
-        Assert.Null(engine.Evaluate(line, 100m, 70, 40, null, null, null));
+        Assert.Null(engine.Evaluate(new QuickPickEvaluationContext
+        {
+            Line = line,
+            PlaybookProjection = 100m,
+            ProjectionConfidence = 70,
+            Volatility = 40
+        }));
     }
 
     [Fact]

@@ -433,23 +433,27 @@ Statistics → Intelligence → Projection Engine v0.1
 
 Floor/ceiling bands scale with volatility and uncertainty — not fixed ± offsets.
 
-### Quick Picks / Prediction Engine v0.1
+### Quick Picks / Prediction Engine v0.2
 
 Independent football prediction surface (player/game props). **Not fantasy** — does not read active league, owned team, roster, or scoring settings.
 
 ```
 Real Football Data
         ↓
-Intelligence Engine
+Intelligence + Injury services (existing)
         ↓
 PropStatProjector (counting-stat estimates)
         ↓
 Prop lines (The Odds API or Mock)
         ↓
-QuickPicksEngine (edge / probability / confidence)
+QuickPicksEngine v0.2 (weighted signals → edge / probability / confidence)
         ↓
-Quick Picks board
+Quick Picks board (ranked by OpportunityScore)
 ```
+
+Engine inputs (`QuickPickEvaluationContext`): projection, player intelligence, injury profile (current + historical + unconfirmed), statistical usage, recent facts, live/mock line.
+Weights are tunable via `QuickPicks:Scoring`. Each evaluation emits structured `PredictionSignalContribution` rows so weights can be tuned without rewriting the UI.
+Missing signals reduce confidence (never fabricated). Unconfirmed buzz is labeled. Current injuries dominate; historical injuries are relevance- and age-weighted.
 
 Fantasy remains a separate consumer: Projection + Intelligence + League Context → Decision Engine → Recommendations.
 

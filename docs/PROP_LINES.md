@@ -127,9 +127,14 @@ Stale/unavailable lines are never presented as Live. Top Picks only includes Liv
 ```
 Live/Mock prop lines (IPropLineProvider)
         ↓
-Intelligence + PropStatProjector
+Intelligence + Injury services + PropStatProjector
         ↓
-QuickPicksEngine
+QuickPickEvaluationContext
         ↓
-Edge / probability / confidence → Quick Picks UI
+QuickPicksEngine v0.2 (QuickPicks:Scoring weights)
+        ↓
+Edge / probability / confidence / OpportunityScore
++ SignalContributions → Quick Picks UI
 ```
+
+Engine v0.2 is intelligence-driven: projection vs line is one signal among health, current/historical injury, unconfirmed buzz (labeled), usage/opportunity, and capped recent facts. Missing intelligence reduces confidence rather than inventing values.

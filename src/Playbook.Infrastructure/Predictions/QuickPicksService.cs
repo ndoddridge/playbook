@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Playbook.Application.Injuries;
 using Playbook.Application.Injuries.Interfaces;
 using Playbook.Application.Intelligence.Interfaces;
 using Playbook.Application.Players;
@@ -8,6 +9,8 @@ using Playbook.Application.Predictions;
 using Playbook.Application.Predictions.Interfaces;
 using Playbook.Application.Projections.Interfaces;
 using Playbook.Application.Stats.Interfaces;
+using Playbook.Core.Injuries.Models;
+using Playbook.Core.Intelligence.Models;
 using Playbook.Core.Predictions;
 using Playbook.Core.Projections.Models;
 
@@ -75,7 +78,8 @@ public sealed class QuickPicksService : IQuickPicksService
         return _predictions
             .Where(p => p.LineFreshness is PropLineFreshness.Live or PropLineFreshness.Mock)
             .Where(p => p.Confidence >= 55 && Math.Abs(p.Edge) >= 0.4m && p.Probability >= 55)
-            .OrderByDescending(p => p.Edge)
+            .OrderByDescending(p => p.OpportunityScore)
+            .ThenByDescending(p => p.Edge)
             .ThenByDescending(p => p.Probability)
             .ThenByDescending(p => p.Confidence)
             .Take(Math.Max(1, count))
@@ -89,7 +93,8 @@ public sealed class QuickPicksService : IQuickPicksService
         return _predictions
             .Where(p => !topIds.Contains(p.Id))
             .Where(p => p.LineFreshness != PropLineFreshness.Unavailable)
-            .OrderByDescending(p => p.Probability)
+            .OrderByDescending(p => p.OpportunityScore)
+            .ThenByDescending(p => p.Probability)
             .ThenByDescending(p => p.Confidence)
             .Take(Math.Max(1, count))
             .ToList();
@@ -178,9 +183,10 @@ public sealed class QuickPicksService : IQuickPicksService
         foreach (var line in lines)
         {
             PlayerProductionSnapshot? production = null;
-            Core.Intelligence.Models.PlayerIntelligenceProfile? intel = null;
+            PlayerIntelligenceProfile? intel = null;
             Core.Stats.Models.PlayerStatisticalContext? statsCtx = null;
-            string? injuryNote = null;
+            PlayerInjuryProfile? injuryProfile = null;
+            IReadOnlyList<IntelligenceFact> facts = [];
 
             if (line.PlayerId is Guid playerId)
             {
@@ -192,25 +198,35 @@ public sealed class QuickPicksService : IQuickPicksService
 
                 intel = _intelligence.GetPlayerProfile(playerId);
                 statsCtx = _stats.GetContext(playerId);
-                var injury = _injuries.GetCurrentInjury(playerId);
-                if (injury is not null &&
-                    !string.Equals(injury.Status, "Active", StringComparison.OrdinalIgnoreCase) &&
-                    !string.Equals(injury.Status, "Healthy", StringComparison.OrdinalIgnoreCase))
-                {
-                    injuryNote = $"{injury.Status}" +
-                                 (string.IsNullOrWhiteSpace(injury.BodyPart) ? "" : $" ({injury.BodyPart})");
-                }
+                injuryProfile = _injuries.GetPlayerInjuryProfile(playerId);
+                facts = _intelligence.GetFactsForPlayer(playerId);
             }
 
             var projected = PropStatProjector.Project(line.Market, production, statsCtx, intel);
-            var prediction = _engine.Evaluate(
-                line,
-                projected.Projection,
-                projected.Confidence,
-                projected.Volatility,
-                intel,
-                statsCtx,
-                injuryNote);
+            var projection = projected.Projection;
+            var projConfidence = projected.Confidence;
+            var volatility = projected.Volatility;
+
+            // Apply verified current-injury health multiplier to the counting-stat projection.
+            var injuryMult = InjuryIntelligenceMapping.ProjectionHealthMultiplier(injuryProfile?.CurrentInjury);
+            if (projection is not null && injuryMult is not null)
+            {
+                projection = Math.Round(projection.Value * injuryMult.Value, 1, MidpointRounding.AwayFromZero);
+                projConfidence = Math.Clamp(projConfidence - (injuryMult < 0.5m ? 14 : 6), 10, 95);
+                volatility = Math.Clamp(volatility + (injuryMult < 0.5m ? 12 : 6), 10, 95);
+            }
+
+            var prediction = _engine.Evaluate(new QuickPickEvaluationContext
+            {
+                Line = line,
+                PlaybookProjection = projection,
+                ProjectionConfidence = projConfidence,
+                Volatility = volatility,
+                Intelligence = intel,
+                StatisticalContext = statsCtx,
+                InjuryProfile = injuryProfile,
+                RecentFacts = facts
+            });
             if (prediction is not null)
             {
                 predictions.Add(prediction);
@@ -218,7 +234,8 @@ public sealed class QuickPicksService : IQuickPicksService
         }
 
         _predictions = predictions
-            .OrderByDescending(p => p.Edge)
+            .OrderByDescending(p => p.OpportunityScore)
+            .ThenByDescending(p => p.Edge)
             .ThenByDescending(p => p.Probability)
             .ToList();
         _events = lines

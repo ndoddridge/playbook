@@ -1,40 +1,39 @@
+using Microsoft.Extensions.Options;
+using Playbook.Application.Injuries;
+using Playbook.Application.Predictions;
 using Playbook.Application.Predictions.Interfaces;
+using Playbook.Core.Injuries.Models;
 using Playbook.Core.Intelligence.Models;
 using Playbook.Core.Predictions;
-using Playbook.Core.Projections.Models;
-using Playbook.Core.Stats.Models;
 
 namespace Playbook.Infrastructure.Predictions;
 
 /// <summary>
-/// Quick Picks Engine v0.1 — deterministic, explainable edge vs market lines.
+/// Quick Picks Engine v0.2 — intelligence-driven prop recommendations.
 ///
-/// V1 formula (documented):
-/// 1. rawDiff = projection − line
-/// 2. scale = typical market unit (e.g. 22 receiving yards)
-/// 3. quality = (confidence/100) × (1 − volatility/200) × healthFactor
-/// 4. signedEdge = rawDiff × quality
-/// 5. direction = Over/Yes when signedEdge ≥ 0, else Under/No
-/// 6. probability = 50 + clamp(|signedEdge| / scale × 28, 0, 35)
-/// 7. pickConfidence = confidence × √quality (− stale penalty)
-///
-/// Small diffs or low quality are dampened so projection &gt; line alone is not enough.
+/// Combines projection-vs-line with health, usage/opportunity, historical injury
+/// (relevance + age decay), unconfirmed buzz (labeled, soft), and intel confidence.
+/// Missing signals reduce confidence — they are never fabricated into positives/negatives.
+/// Weights come from <see cref="QuickPicksScoringOptions"/>.
 /// </summary>
 public sealed class QuickPicksEngine : IQuickPicksEngine
 {
-    public const string CurrentVersion = "0.1";
+    public const string CurrentVersion = "0.2";
+
+    private readonly QuickPicksScoringOptions _options;
+
+    public QuickPicksEngine(IOptions<QuickPicksScoringOptions> options)
+    {
+        _options = options.Value;
+    }
 
     public string Version => CurrentVersion;
 
-    public Prediction? Evaluate(
-        PropLine line,
-        decimal? playbookProjection,
-        int projectionConfidence,
-        int volatility,
-        PlayerIntelligenceProfile? intelligence,
-        PlayerStatisticalContext? statisticalContext,
-        string? injuryNote)
+    public Prediction? Evaluate(QuickPickEvaluationContext context)
     {
+        ArgumentNullException.ThrowIfNull(context);
+        var line = context.Line;
+
         if (line.Freshness == PropLineFreshness.Unavailable)
         {
             return null;
@@ -45,13 +44,14 @@ public sealed class QuickPicksEngine : IQuickPicksEngine
             or PredictionMarketType.Winner
             or PredictionMarketType.Spread;
 
-        if (playbookProjection is null && !isGameMarket)
+        if (context.PlaybookProjection is null && !isGameMarket)
         {
             return null;
         }
 
         var calc = new List<string>();
         var supporting = new List<string>();
+        var contributions = new List<PredictionSignalContribution>();
 
         var lineValue = ResolveComparableLine(line);
         if (lineValue is null && line.Market != PredictionMarketType.Winner)
@@ -59,62 +59,72 @@ public sealed class QuickPicksEngine : IQuickPicksEngine
             return null;
         }
 
-        var projection = playbookProjection ?? lineValue ?? 0.5m;
+        var projection = context.PlaybookProjection ?? lineValue ?? 0.5m;
         var comparableLine = lineValue ?? 0.5m;
+        var scale = MarketScale(line.Market);
+        var rawDiff = projection - comparableLine;
 
+        calc.Add($"Engine v{CurrentVersion}");
         calc.Add($"Market line: {FormatValue(line.Market, comparableLine)}");
         calc.Add($"Playbook projection: {FormatValue(line.Market, projection)}");
-        calc.Add($"Projection confidence: {projectionConfidence}% · Volatility: {volatility}");
-
-        var rawDiff = projection - comparableLine;
+        calc.Add($"Projection confidence: {context.ProjectionConfidence}% · Volatility: {context.Volatility}");
         calc.Add($"Raw difference: {rawDiff:+0.0;-0.0;0.0}");
 
-        var healthFactor = 1m;
-        if (intelligence is not null)
-        {
-            healthFactor = intelligence.HealthScore switch
-            {
-                < 25 => 0.55m,
-                < 40 => 0.72m,
-                < 55 => 0.88m,
-                > 75 => 1.05m,
-                _ => 1.0m
-            };
-            supporting.Add(
-                $"Health score {intelligence.HealthScore}, usage {intelligence.UsageScore}, opportunity {intelligence.OpportunityScore}");
-            calc.Add($"Health factor: {healthFactor:0.00}");
-        }
-        else
-        {
-            supporting.Add("No player intelligence profile — neutral health/usage assumptions.");
-            calc.Add("Health factor: 1.00 (no intelligence profile)");
-        }
+        var quality = 1m;
+        var confidenceDelta = 0;
+        var edgeBias = 0m;
 
-        if (!string.IsNullOrWhiteSpace(injuryNote))
+        // --- Projection confidence & volatility ---
+        var projQ = Math.Clamp(context.ProjectionConfidence / 100m, 0.05m, 1.2m);
+        var volQ = Math.Clamp(1m - context.Volatility / 200m, 0.35m, 1.1m);
+        quality *= projQ * volQ;
+        contributions.Add(new PredictionSignalContribution
         {
-            supporting.Add(injuryNote);
-            healthFactor *= 0.8m;
-            calc.Add("Injury concern applied (×0.80 quality).");
-        }
+            SignalId = "projection-vs-line",
+            Label = "Projection vs line",
+            Available = context.PlaybookProjection is not null,
+            Weight = 1m,
+            QualityMultiplier = projQ * volQ,
+            Detail = context.PlaybookProjection is null
+                ? "No counting-stat projection for this market."
+                : $"Diff {rawDiff:+0.0;-0.0;0.0} · conf {context.ProjectionConfidence}% · vol {context.Volatility}"
+        });
 
-        if (statisticalContext?.Usage is { } usage)
+        // --- Player intelligence confidence ---
+        ApplyIntelligenceConfidence(
+            context, isGameMarket, ref quality, ref confidenceDelta, contributions, supporting, calc);
+
+        // --- Health score (profile) ---
+        ApplyHealthScore(context, ref quality, contributions, supporting, calc);
+
+        // --- Current verified injury (strong) ---
+        ApplyCurrentInjury(
+            context, scale, rawDiff, ref quality, ref confidenceDelta, ref edgeBias,
+            contributions, supporting, calc);
+
+        // --- Historical injury (weak, relevance + age) ---
+        ApplyHistoricalInjury(context, ref quality, ref confidenceDelta, contributions, supporting, calc);
+
+        // --- Unconfirmed buzz (soft, labeled) ---
+        ApplyUnconfirmed(context, ref quality, ref confidenceDelta, contributions, supporting, calc);
+
+        // --- Usage / opportunity ---
+        ApplyUsageOpportunity(
+            context, scale, rawDiff, ref quality, ref confidenceDelta, ref edgeBias,
+            contributions, supporting, calc);
+
+        // --- Recent news/facts (capped — cannot dominate) ---
+        ApplyNewsFacts(context, ref quality, ref confidenceDelta, contributions, supporting, calc);
+
+        quality = Math.Clamp(quality, 0.05m, 1.20m);
+        calc.Add($"Composite quality: {quality:0.00}");
+        calc.Add($"Edge bias: {edgeBias:+0.0;-0.0;0.0}");
+
+        var signedEdge = Math.Round((rawDiff + edgeBias) * quality, 1, MidpointRounding.AwayFromZero);
+        if (Math.Abs(rawDiff) < scale * _options.SmallDiffScaleFraction || quality < _options.LowQualityThreshold)
         {
-            supporting.Add(
-                $"Recent usage — targets/g {usage.TargetsPerGame?.ToString("0.0") ?? "—"}, " +
-                $"carries/g {usage.CarriesPerGame?.ToString("0.0") ?? "—"}, workload {usage.WorkloadTrend ?? "—"}");
-        }
-
-        var quality = (projectionConfidence / 100m) * (1m - volatility / 200m) * healthFactor;
-        quality = Math.Clamp(quality, 0.05m, 1.15m);
-        calc.Add($"Quality weight: {quality:0.00}");
-
-        var scale = MarketScale(line.Market);
-        var signedEdge = Math.Round(rawDiff * quality, 1, MidpointRounding.AwayFromZero);
-
-        if (Math.Abs(rawDiff) < scale * 0.08m || quality < 0.25m)
-        {
-            signedEdge = Math.Round(signedEdge * 0.35m, 1, MidpointRounding.AwayFromZero);
-            calc.Add("Small difference or low quality — edge dampened ×0.35.");
+            signedEdge = Math.Round(signedEdge * _options.LowQualityDampener, 1, MidpointRounding.AwayFromZero);
+            calc.Add($"Small difference or low quality — edge dampened ×{_options.LowQualityDampener:0.00}.");
         }
 
         calc.Add($"Adjusted signed edge: {signedEdge:+0.0;-0.0;0.0}");
@@ -122,20 +132,22 @@ public sealed class QuickPicksEngine : IQuickPicksEngine
         var direction = ResolveDirection(line.Market, signedEdge);
         var absEdge = Math.Abs(signedEdge);
         var probability = (int)Math.Round(
-            50m + Math.Clamp(absEdge / scale * 28m, 0m, 35m),
+            50m + Math.Clamp(absEdge / scale * _options.ProbabilityEdgeScale, 0m, 35m),
             MidpointRounding.AwayFromZero);
         probability = Math.Clamp(probability, 15, 88);
 
         var pickConfidence = (int)Math.Round(
-            projectionConfidence * (decimal)Math.Sqrt((double)Math.Clamp(quality, 0.05m, 1m)));
+            context.ProjectionConfidence * (decimal)Math.Sqrt((double)Math.Clamp(quality, 0.05m, 1m))
+            + confidenceDelta);
         pickConfidence = Math.Clamp(pickConfidence, 12, 92);
 
         if (line.Freshness == PropLineFreshness.Stale)
         {
-            pickConfidence = Math.Max(12, pickConfidence - 18);
-            probability = Math.Max(15, probability - 6);
+            pickConfidence = Math.Max(12, pickConfidence - _options.StaleConfidencePenalty);
+            probability = Math.Max(15, probability - _options.StaleProbabilityPenalty);
             supporting.Add("Market line is stale — confidence reduced.");
-            calc.Add("Stale-line penalty: −18 confidence, −6 probability.");
+            calc.Add(
+                $"Stale-line penalty: −{_options.StaleConfidencePenalty} confidence, −{_options.StaleProbabilityPenalty} probability.");
         }
 
         if (line.Freshness == PropLineFreshness.Mock)
@@ -144,7 +156,12 @@ public sealed class QuickPicksEngine : IQuickPicksEngine
         }
 
         var reasoning = BuildHumanReasoning(
-            line, projection, comparableLine, direction, absEdge, probability, intelligence, injuryNote);
+            line, projection, comparableLine, direction, probability, context, contributions);
+
+        var opportunity = Math.Round(
+            absEdge * (pickConfidence / 100m) * (0.75m + (probability / 100m) * 0.5m),
+            2,
+            MidpointRounding.AwayFromZero);
 
         return new Prediction
         {
@@ -155,20 +172,524 @@ public sealed class QuickPicksEngine : IQuickPicksEngine
             TeamName = line.TeamName,
             Market = line.Market,
             Line = line.Line,
-            PlaybookProjection = playbookProjection,
+            PlaybookProjection = context.PlaybookProjection,
             Probability = probability,
             Edge = absEdge,
             Confidence = pickConfidence,
             Direction = direction,
             Reasoning = reasoning,
             SupportingIntelligence = supporting,
+            SignalContributions = contributions,
             CalculationNotes = calc,
             Source = line.Source,
             LineFreshness = line.Freshness,
             LastUpdated = DateTimeOffset.UtcNow,
-            Bookmaker = line.Bookmaker
+            Bookmaker = line.Bookmaker,
+            EngineVersion = CurrentVersion,
+            OpportunityScore = opportunity
         };
     }
+
+    private void ApplyIntelligenceConfidence(
+        QuickPickEvaluationContext context,
+        bool isGameMarket,
+        ref decimal quality,
+        ref int confidenceDelta,
+        List<PredictionSignalContribution> contributions,
+        List<string> supporting,
+        List<string> calc)
+    {
+        var intel = context.Intelligence;
+        if (intel is null)
+        {
+            if (!isGameMarket && context.Line.PlayerId is not null)
+            {
+                var q = _options.MissingIntelligenceQualityFactor;
+                quality *= q;
+                confidenceDelta -= _options.MissingIntelligenceConfidencePenalty;
+                contributions.Add(new PredictionSignalContribution
+                {
+                    SignalId = "intelligence-confidence",
+                    Label = "Player intelligence",
+                    Available = false,
+                    Weight = _options.IntelligenceConfidenceWeight,
+                    QualityMultiplier = q,
+                    ConfidenceDelta = -_options.MissingIntelligenceConfidencePenalty,
+                    Detail = "No intelligence profile — confidence reduced (no fabricated signals)."
+                });
+                supporting.Add("Player intelligence unavailable — confidence reduced.");
+                calc.Add($"Missing intelligence: quality ×{q:0.00}, conf −{_options.MissingIntelligenceConfidencePenalty}");
+            }
+            else
+            {
+                contributions.Add(new PredictionSignalContribution
+                {
+                    SignalId = "intelligence-confidence",
+                    Label = "Player intelligence",
+                    Available = false,
+                    Weight = _options.IntelligenceConfidenceWeight,
+                    Detail = "Not applicable / unavailable for this market."
+                });
+            }
+
+            return;
+        }
+
+        var confNorm = Math.Clamp(intel.OverallConfidence / 100m, 0m, 1m);
+        var qMult = 1m + _options.IntelligenceConfidenceWeight * (confNorm - 0.5m) * 2m * 0.12m;
+        qMult = Math.Clamp(qMult, 0.80m, 1.12m);
+        quality *= qMult;
+        contributions.Add(new PredictionSignalContribution
+        {
+            SignalId = "intelligence-confidence",
+            Label = "Intelligence confidence",
+            Available = true,
+            Weight = _options.IntelligenceConfidenceWeight,
+            QualityMultiplier = qMult,
+            Detail = $"Overall confidence {intel.OverallConfidence}%"
+        });
+        calc.Add($"Intelligence confidence factor: {qMult:0.00}");
+    }
+
+    private void ApplyHealthScore(
+        QuickPickEvaluationContext context,
+        ref decimal quality,
+        List<PredictionSignalContribution> contributions,
+        List<string> supporting,
+        List<string> calc)
+    {
+        var intel = context.Intelligence;
+        if (intel is null)
+        {
+            contributions.Add(new PredictionSignalContribution
+            {
+                SignalId = "health-score",
+                Label = "Health score",
+                Available = false,
+                Weight = _options.HealthScoreWeight,
+                Detail = "Health score unavailable."
+            });
+            return;
+        }
+
+        var baseFactor = intel.HealthScore switch
+        {
+            < 25 => 0.55m,
+            < 40 => 0.72m,
+            < 55 => 0.88m,
+            > 75 => 1.05m,
+            _ => 1.0m
+        };
+        var qMult = 1m + (baseFactor - 1m) * _options.HealthScoreWeight;
+        quality *= qMult;
+        contributions.Add(new PredictionSignalContribution
+        {
+            SignalId = "health-score",
+            Label = "Health score",
+            Available = true,
+            Weight = _options.HealthScoreWeight,
+            QualityMultiplier = qMult,
+            Detail = $"Health {intel.HealthScore}"
+        });
+        supporting.Add($"Health score {intel.HealthScore}.");
+        calc.Add($"Health factor: {qMult:0.00}");
+    }
+
+    private void ApplyCurrentInjury(
+        QuickPickEvaluationContext context,
+        decimal scale,
+        decimal rawDiff,
+        ref decimal quality,
+        ref int confidenceDelta,
+        ref decimal edgeBias,
+        List<PredictionSignalContribution> contributions,
+        List<string> supporting,
+        List<string> calc)
+    {
+        var current = context.InjuryProfile?.CurrentInjury;
+        if (current is null ||
+            string.Equals(current.Status, "Active", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(current.Status, "Healthy", StringComparison.OrdinalIgnoreCase))
+        {
+            contributions.Add(new PredictionSignalContribution
+            {
+                SignalId = "current-injury",
+                Label = "Current injury",
+                Available = current is not null,
+                Weight = _options.CurrentInjuryWeight,
+                Detail = current is null
+                    ? (context.Line.PlayerId is null
+                        ? "No player-linked injury context."
+                        : "No verified current injury designation.")
+                    : $"Status {current.Status} (not a limiting designation)."
+            });
+            if (current is null && context.Line.PlayerId is not null)
+            {
+                supporting.Add("No verified current injury designation.");
+            }
+
+            return;
+        }
+
+        var rule = InjuryIntelligenceMapping.ResolveRuleId(current);
+        var healthMult = InjuryIntelligenceMapping.ProjectionHealthMultiplier(current) ?? 0.92m;
+        // Map health multiplier into quality strongly when current injury weight is high.
+        var qMult = 1m - (1m - healthMult) * Math.Clamp(_options.CurrentInjuryWeight, 0m, 1.25m);
+        qMult = Math.Clamp(qMult, 0.12m, 1.0m);
+        quality *= qMult;
+
+        var bias = 0m;
+        if (rawDiff > 0 && rule is "injury-out" or "injury-ir" or "injury-doubtful")
+        {
+            bias = -scale * _options.SevereInjuryOverBiasScale * _options.CurrentInjuryWeight;
+            edgeBias += bias;
+        }
+        else if (rawDiff > 0 && rule is "injury-questionable" or "injury-limited")
+        {
+            bias = -scale * 0.25m * _options.CurrentInjuryWeight;
+            edgeBias += bias;
+        }
+
+        if (rule is "injury-out" or "injury-ir")
+        {
+            confidenceDelta -= 12;
+        }
+        else if (rule is "injury-doubtful" or "injury-questionable")
+        {
+            confidenceDelta -= 6;
+        }
+
+        var label =
+            $"{current.Status}" +
+            (string.IsNullOrWhiteSpace(current.BodyPart) ? "" : $" ({current.BodyPart})");
+        contributions.Add(new PredictionSignalContribution
+        {
+            SignalId = "current-injury",
+            Label = "Current injury",
+            Available = true,
+            Weight = _options.CurrentInjuryWeight,
+            QualityMultiplier = qMult,
+            ConfidenceDelta = rule is "injury-out" or "injury-ir" ? -12 :
+                rule is "injury-doubtful" or "injury-questionable" ? -6 : 0,
+            EdgeBias = bias,
+            Detail = label
+        });
+        supporting.Add($"Current injury: {label}.");
+        calc.Add($"Current injury ({rule ?? "n/a"}): quality ×{qMult:0.00}, edge bias {bias:+0.0;-0.0;0.0}");
+    }
+
+    private void ApplyHistoricalInjury(
+        QuickPickEvaluationContext context,
+        ref decimal quality,
+        ref int confidenceDelta,
+        List<PredictionSignalContribution> contributions,
+        List<string> supporting,
+        List<string> calc)
+    {
+        var profile = context.InjuryProfile;
+        if (profile is null)
+        {
+            contributions.Add(new PredictionSignalContribution
+            {
+                SignalId = "historical-injury",
+                Label = "Historical injury",
+                Available = false,
+                Weight = _options.HistoricalInjuryWeight,
+                Detail = "Injury profile unavailable."
+            });
+            return;
+        }
+
+        if (profile.HistoricalDataStatus is HistoricalDataStatus.Unavailable
+            or HistoricalDataStatus.NotSupportedByProvider)
+        {
+            confidenceDelta -= 2;
+            contributions.Add(new PredictionSignalContribution
+            {
+                SignalId = "historical-injury",
+                Label = "Historical injury",
+                Available = false,
+                Weight = _options.HistoricalInjuryWeight,
+                ConfidenceDelta = -2,
+                Detail = "Historical injury data unavailable — slight confidence reduction."
+            });
+            supporting.Add("Historical injury data unavailable.");
+            return;
+        }
+
+        var relevant = profile.RecentHistory
+            .Where(e => e.Band is InjuryRelevanceBand.High or InjuryRelevanceBand.Moderate)
+            .OrderByDescending(e => e.RelevanceScore)
+            .Take(2)
+            .ToList();
+
+        if (relevant.Count == 0)
+        {
+            contributions.Add(new PredictionSignalContribution
+            {
+                SignalId = "historical-injury",
+                Label = "Historical injury",
+                Available = true,
+                Weight = _options.HistoricalInjuryWeight,
+                Detail = "No high/moderate relevance historical injuries in recent window."
+            });
+            return;
+        }
+
+        var drag = 0m;
+        foreach (var entry in relevant)
+        {
+            var years = Math.Max(0, (DateTimeOffset.UtcNow - entry.Record.Date).TotalDays / 365.25);
+            var ageWeight = Math.Clamp(
+                1m - (decimal)years * _options.HistoricalInjuryDecayPerYear,
+                0.12m,
+                1m);
+            var bandStrength = entry.Band == InjuryRelevanceBand.High ? 0.10m : 0.05m;
+            drag += bandStrength * ageWeight * _options.HistoricalInjuryWeight;
+
+            var when = entry.Record.Date.ToString("MMM yyyy");
+            var part = string.IsNullOrWhiteSpace(entry.Record.BodyPart) ? "injury" : entry.Record.BodyPart!;
+            supporting.Add($"Relevant history ({entry.Band}, aged): {part} — {when}.");
+        }
+
+        drag = Math.Clamp(drag, 0m, 0.18m);
+        var qMult = 1m - drag;
+        quality *= qMult;
+        confidenceDelta -= drag > 0.08m ? 4 : 2;
+        contributions.Add(new PredictionSignalContribution
+        {
+            SignalId = "historical-injury",
+            Label = "Historical injury",
+            Available = true,
+            Weight = _options.HistoricalInjuryWeight,
+            QualityMultiplier = qMult,
+            ConfidenceDelta = drag > 0.08m ? -4 : -2,
+            Detail = $"{relevant.Count} relevant historical event(s); age-weighted."
+        });
+        calc.Add($"Historical injury drag: quality ×{qMult:0.00}");
+    }
+
+    private void ApplyUnconfirmed(
+        QuickPickEvaluationContext context,
+        ref decimal quality,
+        ref int confidenceDelta,
+        List<PredictionSignalContribution> contributions,
+        List<string> supporting,
+        List<string> calc)
+    {
+        var signals = context.InjuryProfile?.UnconfirmedSignals ?? [];
+        if (signals.Count == 0)
+        {
+            contributions.Add(new PredictionSignalContribution
+            {
+                SignalId = "unconfirmed-injury-buzz",
+                Label = "Unconfirmed injury buzz",
+                Available = false,
+                Weight = _options.UnconfirmedSignalWeight,
+                IsUnconfirmed = true,
+                Detail = "No unconfirmed injury buzz."
+            });
+            return;
+        }
+
+        // Cap influence — a single unconfirmed item must not dominate.
+        var top = signals.OrderByDescending(s => s.Confidence).Take(2).ToList();
+        var avgConf = top.Average(s => s.Confidence) / 100.0;
+        var drag = Math.Min(
+            _options.UnconfirmedMaxQualityDrag,
+            (decimal)avgConf * _options.UnconfirmedSignalWeight * 0.35m);
+        var qMult = 1m - drag;
+        quality *= qMult;
+        confidenceDelta -= _options.UnconfirmedConfidencePenalty;
+
+        foreach (var signal in top)
+        {
+            supporting.Add($"Unconfirmed: {signal.Headline}");
+        }
+
+        contributions.Add(new PredictionSignalContribution
+        {
+            SignalId = "unconfirmed-injury-buzz",
+            Label = "Unconfirmed injury buzz",
+            Available = true,
+            Weight = _options.UnconfirmedSignalWeight,
+            QualityMultiplier = qMult,
+            ConfidenceDelta = -_options.UnconfirmedConfidencePenalty,
+            IsUnconfirmed = true,
+            Detail = $"{top.Count} unconfirmed report(s); soft confidence drag only."
+        });
+        calc.Add($"Unconfirmed buzz: quality ×{qMult:0.00} (labeled unconfirmed, not treated as fact)");
+    }
+
+    private void ApplyUsageOpportunity(
+        QuickPickEvaluationContext context,
+        decimal scale,
+        decimal rawDiff,
+        ref decimal quality,
+        ref int confidenceDelta,
+        ref decimal edgeBias,
+        List<PredictionSignalContribution> contributions,
+        List<string> supporting,
+        List<string> calc)
+    {
+        var intel = context.Intelligence;
+        var usage = context.StatisticalContext?.Usage;
+        var hasUsage = intel is not null || usage is not null;
+
+        if (!hasUsage)
+        {
+            if (context.Line.PlayerId is not null)
+            {
+                confidenceDelta -= 3;
+            }
+
+            contributions.Add(new PredictionSignalContribution
+            {
+                SignalId = "usage-opportunity",
+                Label = "Usage / opportunity",
+                Available = false,
+                Weight = _options.UsageSignalWeight,
+                ConfidenceDelta = context.Line.PlayerId is not null ? -3 : 0,
+                Detail = "Usage/opportunity signals unavailable."
+            });
+            if (context.Line.PlayerId is not null)
+            {
+                supporting.Add("Usage/opportunity data unavailable.");
+            }
+
+            return;
+        }
+
+        var usageScore = intel?.UsageScore ?? 50;
+        var oppScore = intel?.OpportunityScore ?? 50;
+        var usageTilt = (usageScore - 50) / 50m;
+        var oppTilt = (oppScore - 50) / 50m;
+
+        var qMult = 1m
+                    + usageTilt * 0.06m * _options.UsageSignalWeight
+                    + oppTilt * 0.05m * _options.OpportunitySignalWeight;
+        qMult = Math.Clamp(qMult, 0.85m, 1.12m);
+        quality *= qMult;
+
+        // Mild edge bias: strong usage supports overs; soft usage leans against oversized overs.
+        var bias = 0m;
+        if (Math.Abs(rawDiff) > scale * 0.05m)
+        {
+            bias = scale * 0.08m * (usageTilt * _options.UsageSignalWeight * 0.5m
+                                    + oppTilt * _options.OpportunitySignalWeight * 0.4m);
+            // Bias reinforces the projection side rather than inventing a new side.
+            if (rawDiff < 0)
+            {
+                bias = -Math.Abs(bias) * Math.Sign(usageTilt + oppTilt == 0 ? 1 : Math.Sign(usageTilt + oppTilt));
+                // Keep bias aligned with quality of usage on Unders: high usage fights Under a bit.
+                if (usageTilt > 0.15m)
+                {
+                    bias = Math.Abs(bias) * 0.5m; // pull toward Over slightly
+                }
+            }
+
+            edgeBias += bias;
+        }
+
+        var workload = usage?.WorkloadTrend;
+        var detail =
+            $"Usage {usageScore}, opportunity {oppScore}" +
+            (workload is null ? "" : $", workload {workload}");
+        if (usage?.TargetsPerGame is decimal tgt)
+        {
+            detail += $", targets/g {tgt:0.0}";
+        }
+
+        if (usage?.CarriesPerGame is decimal car)
+        {
+            detail += $", carries/g {car:0.0}";
+        }
+
+        contributions.Add(new PredictionSignalContribution
+        {
+            SignalId = "usage-opportunity",
+            Label = "Usage / opportunity",
+            Available = true,
+            Weight = (_options.UsageSignalWeight + _options.OpportunitySignalWeight) / 2m,
+            QualityMultiplier = qMult,
+            EdgeBias = bias,
+            Detail = detail
+        });
+        supporting.Add(detail + ".");
+        calc.Add($"Usage/opportunity: quality ×{qMult:0.00}, edge bias {bias:+0.0;-0.0;0.0}");
+    }
+
+    private void ApplyNewsFacts(
+        QuickPickEvaluationContext context,
+        ref decimal quality,
+        ref int confidenceDelta,
+        List<PredictionSignalContribution> contributions,
+        List<string> supporting,
+        List<string> calc)
+    {
+        var facts = context.RecentFacts
+            .OrderByDescending(f => f.Importance)
+            .ThenByDescending(f => f.Confidence)
+            .Take(3)
+            .ToList();
+
+        if (facts.Count == 0)
+        {
+            contributions.Add(new PredictionSignalContribution
+            {
+                SignalId = "recent-intelligence",
+                Label = "Recent intelligence",
+                Available = false,
+                Weight = _options.NewsSignalWeight,
+                Detail = "No recent intelligence facts for this player."
+            });
+            return;
+        }
+
+        // Cap: one fact cannot dominate. Unconfirmed facts stay labeled.
+        var primary = facts[0];
+        var isUnconfirmed = primary.Tags.Any(t =>
+                                t.Contains("unconfirmed", StringComparison.OrdinalIgnoreCase))
+                            || primary.SupportingEvidence.Any(e =>
+                                e.Contains("Unconfirmed", StringComparison.OrdinalIgnoreCase));
+
+        var dragOrBoost = Math.Clamp(
+            (primary.Confidence - 50) / 50m * 0.04m * _options.NewsSignalWeight,
+            -_options.MaxSingleNewsQualityDrag,
+            _options.MaxSingleNewsQualityDrag);
+
+        if (isUnconfirmed)
+        {
+            // Unconfirmed news: confidence softener only, never a strong directional claim.
+            dragOrBoost = -Math.Abs(dragOrBoost);
+            confidenceDelta -= 3;
+        }
+
+        var qMult = 1m + dragOrBoost;
+        quality *= qMult;
+
+        var label = isUnconfirmed
+            ? $"Unconfirmed: {Trim(primary.Title, 90)}"
+            : Trim(primary.Title, 90);
+        supporting.Add(isUnconfirmed ? label : $"Intel: {label}");
+
+        contributions.Add(new PredictionSignalContribution
+        {
+            SignalId = "recent-intelligence",
+            Label = "Recent intelligence",
+            Available = true,
+            Weight = _options.NewsSignalWeight,
+            QualityMultiplier = qMult,
+            ConfidenceDelta = isUnconfirmed ? -3 : 0,
+            IsUnconfirmed = isUnconfirmed,
+            Detail = label
+        });
+        calc.Add($"Recent intelligence (capped): quality ×{qMult:0.00}" +
+                 (isUnconfirmed ? " [unconfirmed]" : ""));
+    }
+
+    private static string Trim(string value, int max) =>
+        value.Length <= max ? value : value[..(max - 1)] + "…";
 
     private static decimal? ResolveComparableLine(PropLine line)
     {
@@ -240,10 +761,9 @@ public sealed class QuickPicksEngine : IQuickPicksEngine
         decimal projection,
         decimal lineValue,
         PredictionDirection direction,
-        decimal edge,
         int probability,
-        PlayerIntelligenceProfile? intelligence,
-        string? injuryNote)
+        QuickPickEvaluationContext context,
+        List<PredictionSignalContribution> contributions)
     {
         var subject = line.PlayerName ?? line.TeamName ?? line.Event.DisplayName;
         var market = line.MarketLabel.ToLowerInvariant();
@@ -265,38 +785,53 @@ public sealed class QuickPicksEngine : IQuickPicksEngine
         var unit = MarketUnit(line.Market);
         var core =
             $"Playbook projects {FormatValue(line.Market, projection)} {market} for {subject}, " +
-            $"about {delta:0.0}{unit} {relation} the current line ({FormatValue(line.Market, lineValue)}). " +
-            $"That favors {side} at roughly {probability}% estimated probability.";
+            $"about {delta:0.0}{unit} {relation} the line ({FormatValue(line.Market, lineValue)}) — " +
+            $"favoring {side} (~{probability}%).";
 
-        if (intelligence is not null)
+        var current = contributions.FirstOrDefault(c => c.SignalId == "current-injury" && c.Available);
+        if (current?.Detail is { } injuryDetail &&
+            !injuryDetail.Contains("not a limiting", StringComparison.OrdinalIgnoreCase) &&
+            !injuryDetail.Contains("No verified", StringComparison.OrdinalIgnoreCase))
         {
-            if (intelligence.UsageScore >= 60)
+            core += $" Current designation: {injuryDetail} is weighing on the edge.";
+        }
+        else if (context.Intelligence is { HealthScore: >= 65 })
+        {
+            core += " No verified current injury concern.";
+        }
+        else if (context.Intelligence is { HealthScore: <= 40 })
+        {
+            core += " Health risk is tempering conviction.";
+        }
+
+        var usage = contributions.FirstOrDefault(c => c.SignalId == "usage-opportunity" && c.Available);
+        if (usage is not null && context.Intelligence is { } intel)
+        {
+            if (intel.UsageScore >= 60)
             {
                 core += " Recent usage looks constructive.";
             }
-            else if (intelligence.UsageScore <= 40)
+            else if (intel.UsageScore <= 40)
             {
                 core += " Recent usage is softer than usual.";
             }
-
-            if (intelligence.HealthScore >= 65)
-            {
-                core += " No meaningful health concerns right now.";
-            }
-            else if (intelligence.HealthScore <= 40)
-            {
-                core += " Health/availability risk is tempering the edge.";
-            }
         }
 
-        if (!string.IsNullOrWhiteSpace(injuryNote))
+        var unconfirmed = contributions.FirstOrDefault(c => c.IsUnconfirmed && c.Available);
+        if (unconfirmed is not null)
         {
-            core += $" Injury note: {injuryNote}.";
+            core += " Unconfirmed injury buzz is noted cautiously and is not treated as fact.";
+        }
+
+        if (!contributions.Any(c => c.SignalId == "intelligence-confidence" && c.Available) &&
+            line.PlayerId is not null)
+        {
+            core += " Limited player intelligence reduced confidence.";
         }
 
         if (line.Freshness == PropLineFreshness.Stale)
         {
-            core += " The posted line looks stale, so treat this cautiously.";
+            core += " The posted line looks stale.";
         }
 
         return core;
@@ -305,7 +840,7 @@ public sealed class QuickPicksEngine : IQuickPicksEngine
     private static Guid CreateId(PropLine line)
     {
         var bytes = System.Security.Cryptography.MD5.HashData(
-            System.Text.Encoding.UTF8.GetBytes($"playbook:prediction:{line.Id}:{line.Market}"));
+            System.Text.Encoding.UTF8.GetBytes($"playbook:prediction:{line.Id}:{line.Market}:v2"));
         return new Guid(bytes);
     }
 }

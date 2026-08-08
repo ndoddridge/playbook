@@ -41,6 +41,9 @@ public sealed class Prediction
 
     public required IReadOnlyList<string> SupportingIntelligence { get; init; }
 
+    /// <summary>Structured signal contributions for weight tuning / explainability.</summary>
+    public IReadOnlyList<PredictionSignalContribution> SignalContributions { get; init; } = [];
+
     /// <summary>Expandable calculation detail — not shown by default in the board.</summary>
     public required IReadOnlyList<string> CalculationNotes { get; init; }
 
@@ -51,6 +54,12 @@ public sealed class Prediction
     public required DateTimeOffset LastUpdated { get; init; }
 
     public string? Bookmaker { get; init; }
+
+    /// <summary>Engine version that produced this prediction (e.g. 0.2).</summary>
+    public string EngineVersion { get; init; } = "0.1";
+
+    /// <summary>Composite ranking score (edge × confidence × probability lean).</summary>
+    public decimal OpportunityScore { get; init; }
 
     public string SubjectLabel =>
         !string.IsNullOrWhiteSpace(PlayerName) ? PlayerName! :
