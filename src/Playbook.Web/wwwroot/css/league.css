@@ -131,6 +131,100 @@
     border: 1px solid var(--pb-color-accent, #1f8a5b);
 }
 
+.league-source-badge--warn {
+    color: #7a4b00;
+    background: #fff4df;
+    border: 1px solid #e0a84a;
+}
+
+.league-switcher__my-team {
+    display: block;
+    margin-top: 0.15rem;
+    padding-left: var(--pb-space-2);
+    font-size: var(--pb-text-xs);
+    color: var(--pb-color-text-secondary);
+}
+
+.league-switcher__my-team--warn {
+    color: #7a4b00;
+}
+
+.league-switcher__team-step {
+    padding: var(--pb-space-3);
+}
+
+.league-switcher__team-hint {
+    margin: 0 0 var(--pb-space-3);
+    font-size: var(--pb-text-xs);
+    color: var(--pb-color-text-secondary);
+}
+
+.league-team-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--pb-space-2);
+    max-height: 16rem;
+    overflow-y: auto;
+}
+
+.league-team-list__option {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    width: 100%;
+    min-height: 2.75rem;
+    padding: var(--pb-space-3);
+    border: 1px solid var(--pb-color-border);
+    border-radius: var(--pb-radius-md);
+    text-align: left;
+    background: var(--pb-color-bg-elevated);
+    transition: background var(--pb-transition-fast), border-color var(--pb-transition-fast);
+}
+
+.league-team-list__option:hover {
+    background: var(--pb-color-surface-hover);
+}
+
+.league-team-list__option.is-selected,
+.league-team-list__option.is-mine {
+    border-color: var(--pb-color-accent, #1f8a5b);
+    background: var(--pb-color-accent-soft);
+}
+
+.league-team-list__name {
+    font-size: var(--pb-text-sm);
+    font-weight: var(--pb-weight-medium);
+    color: var(--pb-color-text);
+}
+
+.league-team-list__meta {
+    font-size: var(--pb-text-xs);
+    color: var(--pb-color-text-secondary);
+}
+
+.league-switcher__secondary-button {
+    padding: 0.4rem 0.75rem;
+    border-radius: var(--pb-radius-md);
+    border: 1px solid var(--pb-color-border-strong);
+    background: transparent;
+    color: var(--pb-color-text-secondary);
+    font-size: var(--pb-text-xs);
+    font-weight: var(--pb-weight-medium);
+    white-space: nowrap;
+}
+
+.my-team-card--mine {
+    border-color: var(--pb-color-accent, #1f8a5b);
+    box-shadow: 0 0 0 1px var(--pb-color-accent-soft);
+}
+
+.my-team-card--mine .pb-card__title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--pb-space-2);
+}
+
 .league-switcher__menu {
     min-width: 20rem;
 }

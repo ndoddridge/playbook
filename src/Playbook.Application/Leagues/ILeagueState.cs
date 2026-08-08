@@ -10,6 +10,8 @@ public interface ILeagueState
 {
     League? CurrentLeague { get; }
 
+    FantasyTeam? CurrentUserTeam { get; }
+
     event Action? Changed;
 
     IReadOnlyList<League> GetAllLeagues();
@@ -23,6 +25,12 @@ public interface ILeagueState
     IReadOnlyList<FantasyTeam> GetCurrentTeams();
 
     FantasyTeam? FindTeamForPlayer(Guid playerId);
+
+    FantasyTeam? GetUserTeam(Guid leagueId);
+
+    FantasyTeam? GetCurrentUserTeam();
+
+    bool SelectUserTeam(Guid leagueId, int rosterId);
 
     Task<LeagueConnectResult> ConnectSleeperLeagueAsync(
         string sleeperLeagueId,

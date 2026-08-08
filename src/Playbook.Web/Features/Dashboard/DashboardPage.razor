@@ -82,6 +82,23 @@
                     <span class="league-context__label">Week</span>
                     <span class="league-context__value">@current.CurrentWeek</span>
                 </div>
+                <div class="league-context__item">
+                    <span class="league-context__label">My Team</span>
+                    <span class="league-context__value">
+                        @if (LeagueState.CurrentUserTeam is { } myTeam)
+                        {
+                            @LeagueDisplay.TeamLabel(myTeam)
+                        }
+                        else if (!current.IsSetupComplete)
+                        {
+                            <text>Select your team</text>
+                        }
+                        else
+                        {
+                            <text>—</text>
+                        }
+                    </span>
+                </div>
             </div>
         }
     </header>

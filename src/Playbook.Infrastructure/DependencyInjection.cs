@@ -79,6 +79,7 @@ public static class DependencyInjection
         services.AddSingleton<LeagueSyncStatus>();
         services.AddSingleton<ILeagueSyncStatus>(sp => sp.GetRequiredService<LeagueSyncStatus>());
         services.AddSingleton<MockLeagueService>();
+        services.AddSingleton<ILeagueUserTeamStore, LeagueUserTeamStore>();
 
         services.AddHttpClient(SleeperLeagueClient.HttpClientName, (sp, client) =>
         {

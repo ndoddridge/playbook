@@ -128,18 +128,29 @@ The selected fantasy league is global application context. Projection, Intellige
 
 ### Contracts
 
-- `Playbook.Core.Leagues.League` — domain model with platform, type, scoring, week, season, `DataSource` (Mock / Sleeper), optional `ExternalId` / `ReceptionPoints`
-- `FantasyTeam` — roster/team inside a league with Playbook player ids
-- `ILeagueService` — catalog + selection + `ConnectSleeperLeagueAsync` + team/roster accessors
-- `ILeagueState` — process-lifetime selected league, teams, `Changed` notification, Sleeper connect
+- `Playbook.Core.Leagues.League` — domain model with platform, type, scoring, week, season, `DataSource` (Mock / Sleeper), optional `ExternalId` / `ReceptionPoints`, `SelectedRosterId`
+- `FantasyTeam` — roster/team inside a league with Playbook player ids (`RosterId` is the durable team key)
+- `ILeagueService` — catalog + selection + `ConnectSleeperLeagueAsync` + `SelectUserTeam` / `GetUserTeam`
+- `ILeagueState` — process-lifetime selected league, `CurrentUserTeam`, teams, `Changed`, Sleeper connect
+- `ILeagueUserTeamStore` — persists `externalLeagueId → rosterId` across restarts
 - `ISleeperLeagueClient` — fetches league settings, users, and rosters by Sleeper league id
 - `ILeagueSyncStatus` — connect/loading diagnostics for the Developer Monitor
 
 ### Providers
 
-- `MockLeagueService` — demo catalog (Friends / Dynasty / Work) kept as fallback
+- `MockLeagueService` — demo catalog (Friends / Dynasty / Work) kept as fallback; defaults `SelectedRosterId = 1`
 - `SleeperLeagueClient` — public Sleeper API (`/league/{id}`, `/rosters`, `/users`, `/state/nfl`)
 - `CompositeLeagueService` — merges mock + connected live leagues; scoring mapped from Sleeper `rec` (not hard-coded)
+- `LeagueUserTeamStore` — JSON file under `data/league-user-teams.json`
+
+### Connect + team setup
+
+1. User enters Sleeper league ID → league/rosters load  
+2. If a saved roster exists for that external id, restore and complete setup  
+3. Otherwise `NeedsTeamSelection` — previous current league stays active until the user picks a team  
+4. `SelectUserTeam` persists the choice and sets the league current  
+
+UI (`LeagueSwitcher`, Dashboard, My Teams, Player Overlay) shows **My team** and distinguishes the user's roster. Connect remains league-ID only (no Sleeper OAuth).
 
 ### Dependency Injection
 
@@ -147,13 +158,12 @@ Registered as singletons so selection survives navigation for the lifetime of th
 
 - `ILeagueService` → `CompositeLeagueService`
 - `ILeagueState` → `LeagueStateService`
+- `ILeagueUserTeamStore` → `LeagueUserTeamStore`
 - `ISleeperLeagueClient` → `SleeperLeagueClient`
-
-UI (`LeagueSwitcher`, Dashboard, My Teams, Player Overlay) injects `ILeagueState` and distinguishes **Live Sleeper** vs **Mock demo** badges. Connect flow is league-ID only (no Sleeper OAuth yet).
 
 ### Future
 
-Persist last-selected / connected league ids when accounts exist. Optional username→league discovery can come later without changing engine consumers.
+Optional username→league discovery and account-backed preferences can come later without changing engine consumers.
 
 ## Recommendation Model
 

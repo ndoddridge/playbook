@@ -62,6 +62,10 @@
                             @if (context.FantasyTeam is { } fantasyTeam)
                             {
                                 <text> · @(fantasyTeam.TeamName ?? fantasyTeam.DisplayName)</text>
+                                @if (context.League?.SelectedRosterId == fantasyTeam.RosterId)
+                                {
+                                    <span class="league-source-badge league-source-badge--live">My team</span>
+                                }
                             }
                         </p>
                     </div>

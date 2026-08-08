@@ -21,6 +21,10 @@
                     <span class="league-source-badge @(LeagueDisplay.IsLive(league) ? "league-source-badge--live" : "league-source-badge--mock")">
                         @LeagueDisplay.DataSource(league.DataSource)
                     </span>
+                    @if (userTeam is { } mine)
+                    {
+                        <text> · My team: @LeagueDisplay.TeamLabel(mine)</text>
+                    }
                 </text>
             }
             else
@@ -35,6 +39,14 @@
         <article class="pb-card">
             <div class="pb-card__body">
                 <p class="pb-empty">No league selected. Use the league switcher to pick a mock league or connect a Sleeper league by ID.</p>
+            </div>
+        </article>
+    }
+    else if (!current.IsSetupComplete)
+    {
+        <article class="pb-card">
+            <div class="pb-card__body">
+                <p class="pb-empty">This league still needs your team. Open the league switcher and select your roster to finish setup.</p>
             </div>
         </article>
     }
@@ -58,6 +70,11 @@
             <span>@current.NumberOfTeams teams</span>
             <span>·</span>
             <span>@current.Season · Week @current.CurrentWeek</span>
+            @if (userTeam is { } selected)
+            {
+                <span>·</span>
+                <span>My team: @LeagueDisplay.TeamLabel(selected)</span>
+            }
             @if (!string.IsNullOrWhiteSpace(current.ExternalId))
             {
                 <span>·</span>
@@ -73,10 +90,17 @@
         }
 
         <div class="my-teams-grid">
-            @foreach (var team in teams)
+            @foreach (var team in OrderedTeams)
             {
-                <article class="pb-card my-team-card">
-                    <h2 class="pb-card__title">@(team.TeamName ?? team.DisplayName)</h2>
+                var isMine = LeagueDisplay.IsUserTeam(current, team);
+                <article class="pb-card my-team-card @(isMine ? "my-team-card--mine" : null)">
+                    <h2 class="pb-card__title">
+                        @(team.TeamName ?? team.DisplayName)
+                        @if (isMine)
+                        {
+                            <span class="league-source-badge league-source-badge--live">My team</span>
+                        }
+                    </h2>
                     <div class="pb-card__body">
                         <p class="my-team-card__owner">@team.DisplayName · Roster #@team.RosterId</p>
                         @if (team.PlayerIds.Count == 0)
@@ -117,7 +141,12 @@
 
 @code {
     private League? current;
+    private FantasyTeam? userTeam;
     private IReadOnlyList<FantasyTeam> teams = [];
+
+    private IEnumerable<FantasyTeam> OrderedTeams =>
+        teams.OrderByDescending(t => LeagueDisplay.IsUserTeam(current, t))
+             .ThenBy(t => t.RosterId);
 
     protected override void OnInitialized()
     {
@@ -128,6 +157,7 @@
     private void Refresh()
     {
         current = LeagueState.CurrentLeague;
+        userTeam = LeagueState.GetCurrentUserTeam();
         teams = LeagueState.GetCurrentTeams();
     }
 

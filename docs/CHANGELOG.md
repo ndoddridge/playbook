@@ -2,6 +2,15 @@
 
 All notable project changes are recorded here.
 
+## [Unreleased] — Sleeper User Team Selection
+
+### Added
+
+- Required team-selection step after connecting a Sleeper league (setup incomplete until the user picks their roster)
+- `League.SelectedRosterId` + `ILeagueUserTeamStore` persistence (restore on reconnect)
+- `SelectUserTeam` / `CurrentUserTeam` on league service + state; change-my-team flow in the league switcher
+- UI: my-team label in switcher/dashboard, My Teams highlights the user's roster first
+
 ## [Unreleased] — Sleeper League Integration
 
 ### Added

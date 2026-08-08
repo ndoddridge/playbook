@@ -54,5 +54,21 @@ public class LeagueStateTests
 
         Assert.NotEmpty(teams);
         Assert.All(teams, t => Assert.Empty(t.PlayerIds));
+        Assert.NotNull(state.CurrentUserTeam);
+        Assert.Equal(1, state.CurrentUserTeam!.RosterId);
+    }
+
+    [Fact]
+    public void Mock_SelectUserTeam_Updates_Current_User_Team()
+    {
+        using var provider = TestServiceFactory.CreateProvider(PlayerDataProviderKind.Mock);
+        var state = provider.GetRequiredService<ILeagueState>();
+        var changed = 0;
+        state.Changed += () => changed++;
+
+        Assert.True(state.SelectUserTeam(state.CurrentLeague!.Id, 2));
+
+        Assert.Equal(2, state.CurrentUserTeam?.RosterId);
+        Assert.Equal(1, changed);
     }
 }

@@ -44,4 +44,18 @@ public static class LeagueDisplay
     };
 
     public static bool IsLive(Core.Leagues.League league) => league.DataSource == LeagueDataSource.Sleeper;
+
+    public static string TeamLabel(FantasyTeam team)
+    {
+        if (!string.IsNullOrWhiteSpace(team.TeamName) &&
+            !string.Equals(team.TeamName, team.DisplayName, StringComparison.OrdinalIgnoreCase))
+        {
+            return $"{team.TeamName} · {team.DisplayName}";
+        }
+
+        return string.IsNullOrWhiteSpace(team.TeamName) ? team.DisplayName : team.TeamName!;
+    }
+
+    public static bool IsUserTeam(Core.Leagues.League? league, FantasyTeam team) =>
+        league?.SelectedRosterId is int selected && selected == team.RosterId;
 }

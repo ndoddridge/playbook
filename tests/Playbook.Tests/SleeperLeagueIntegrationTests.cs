@@ -42,58 +42,76 @@ public class SleeperLeagueIntegrationTests
         Assert.Equal(3, leagues.GetAllLeagues().Count);
         Assert.All(leagues.GetAllLeagues(), l => Assert.Equal(LeagueDataSource.Mock, l.DataSource));
         Assert.Equal("Friends League", leagues.GetCurrentLeague()?.Name);
+        Assert.True(leagues.GetCurrentLeague()!.IsSetupComplete);
+        Assert.NotNull(leagues.GetCurrentUserTeam());
     }
 
     [Fact]
-    public async Task ConnectSleeperLeague_Loads_Settings_And_Rosters()
+    public async Task ConnectSleeperLeague_Requires_Team_Selection_Before_Current()
     {
-        var handler = new StubSleeperHandler();
-        var httpClient = new HttpClient(handler)
-        {
-            BaseAddress = new Uri("https://api.sleeper.app/v1/")
-        };
-        var factory = new FixedHttpClientFactory(httpClient);
-        var sync = new LeagueSyncStatus();
-        var service = new CompositeLeagueService(
-            new MockLeagueService(),
-            new SleeperLeagueClient(factory, NullLogger<SleeperLeagueClient>.Instance),
-            sync,
-            NullLogger<CompositeLeagueService>.Instance);
+        var service = CreateService(out var store);
 
         var result = await service.ConnectSleeperLeagueAsync("1185754400042356736");
 
         Assert.True(result.Succeeded, result.Error);
-        Assert.NotNull(result.League);
-        Assert.Equal(LeagueDataSource.Sleeper, result.League!.DataSource);
-        Assert.Equal("Survivor Dynasty League", result.League.Name);
-        Assert.Equal(2025, result.League.Season);
-        Assert.Equal(14, result.League.NumberOfTeams);
-        Assert.Equal(ScoringType.Ppr, result.League.ScoringType);
-        Assert.Equal(1.0m, result.League.ReceptionPoints);
-        Assert.Equal(LeagueType.Dynasty, result.League.LeagueType);
-        Assert.Equal("1185754400042356736", result.League.ExternalId);
+        Assert.True(result.NeedsTeamSelection);
+        Assert.False(result.IsSetupComplete);
+        Assert.Null(result.League!.SelectedRosterId);
         Assert.Equal(2, result.Teams.Count);
-        Assert.Contains(result.Teams, t => t.DisplayName == "Owner One");
-        Assert.True(result.Teams.All(t => t.PlayerIds.Count > 0));
+        Assert.Equal("Friends League", service.GetCurrentLeague()?.Name);
         Assert.Equal(4, service.GetAllLeagues().Count);
+
+        var confirmed = service.SelectUserTeam(result.League.Id, result.Teams[1].RosterId);
+        Assert.True(confirmed);
         Assert.Equal(result.League.Id, service.GetCurrentLeague()?.Id);
-        Assert.Equal(1, sync.LiveLeaguesLoaded);
-        Assert.Equal(2, sync.TeamsLoaded);
+        Assert.Equal(result.Teams[1].RosterId, service.GetCurrentLeague()?.SelectedRosterId);
+        Assert.Equal(result.Teams[1].RosterId, service.GetCurrentUserTeam()?.RosterId);
+        Assert.True(store.TryGetSelectedRosterId(
+            ILeagueUserTeamStore.KeyForExternalId("1185754400042356736"),
+            out var saved));
+        Assert.Equal(result.Teams[1].RosterId, saved);
+    }
+
+    [Fact]
+    public async Task ConnectSleeperLeague_Restores_Saved_Team_Automatically()
+    {
+        var store = new LeagueUserTeamStore(
+            NullLogger<LeagueUserTeamStore>.Instance,
+            $"league-user-teams-{Guid.NewGuid():N}.json");
+        store.SaveSelectedRosterId(
+            ILeagueUserTeamStore.KeyForExternalId("1185754400042356736"),
+            1);
+
+        var service = CreateService(store);
+
+        var result = await service.ConnectSleeperLeagueAsync("1185754400042356736");
+
+        Assert.True(result.Succeeded, result.Error);
+        Assert.False(result.NeedsTeamSelection);
+        Assert.True(result.IsSetupComplete);
+        Assert.Equal(1, result.League!.SelectedRosterId);
+        Assert.Equal(1, result.SelectedTeam?.RosterId);
+        Assert.Equal(result.League.Id, service.GetCurrentLeague()?.Id);
+        Assert.Equal("Owner One", service.GetCurrentUserTeam()?.DisplayName);
+    }
+
+    [Fact]
+    public async Task SelectUserTeam_Can_Change_Later()
+    {
+        var service = CreateService(out _);
+        var result = await service.ConnectSleeperLeagueAsync("1185754400042356736");
+        Assert.True(service.SelectUserTeam(result.League!.Id, 1));
+        Assert.Equal(1, service.GetCurrentUserTeam()?.RosterId);
+
+        Assert.True(service.SelectUserTeam(result.League.Id, 2));
+        Assert.Equal(2, service.GetCurrentUserTeam()?.RosterId);
+        Assert.Equal(2, service.GetCurrentLeague()?.SelectedRosterId);
     }
 
     [Fact]
     public async Task ConnectSleeperLeague_HalfPpr_Cityline_Fixture()
     {
-        var handler = new StubSleeperHandler(halfPpr: true);
-        var httpClient = new HttpClient(handler)
-        {
-            BaseAddress = new Uri("https://api.sleeper.app/v1/")
-        };
-        var service = new CompositeLeagueService(
-            new MockLeagueService(),
-            new SleeperLeagueClient(new FixedHttpClientFactory(httpClient), NullLogger<SleeperLeagueClient>.Instance),
-            new LeagueSyncStatus(),
-            NullLogger<CompositeLeagueService>.Instance);
+        var service = CreateService(out _, halfPpr: true);
 
         var result = await service.ConnectSleeperLeagueAsync("1255233337891504128");
 
@@ -101,6 +119,7 @@ public class SleeperLeagueIntegrationTests
         Assert.Equal(ScoringType.HalfPpr, result.League!.ScoringType);
         Assert.Equal(0.5m, result.League.ReceptionPoints);
         Assert.Equal(LeagueType.Redraft, result.League.LeagueType);
+        Assert.True(result.NeedsTeamSelection);
     }
 
     [Fact]
@@ -119,16 +138,7 @@ public class SleeperLeagueIntegrationTests
     [Fact]
     public async Task ConnectSleeperLeague_NotFound_Keeps_Mock_Fallback()
     {
-        var handler = new StubSleeperHandler(notFound: true);
-        var httpClient = new HttpClient(handler)
-        {
-            BaseAddress = new Uri("https://api.sleeper.app/v1/")
-        };
-        var service = new CompositeLeagueService(
-            new MockLeagueService(),
-            new SleeperLeagueClient(new FixedHttpClientFactory(httpClient), NullLogger<SleeperLeagueClient>.Instance),
-            new LeagueSyncStatus(),
-            NullLogger<CompositeLeagueService>.Instance);
+        var service = CreateService(out _, notFound: true);
 
         var result = await service.ConnectSleeperLeagueAsync("0000000000000000000");
 
@@ -138,30 +148,61 @@ public class SleeperLeagueIntegrationTests
     }
 
     [Fact]
-    public async Task LeagueState_Connect_Raises_Changed_And_Wires_Player_Context()
+    public async Task LeagueState_SelectUserTeam_Raises_Changed_And_Completes_Setup()
     {
-        var handler = new StubSleeperHandler();
-        var httpClient = new HttpClient(handler)
-        {
-            BaseAddress = new Uri("https://api.sleeper.app/v1/")
-        };
-        var leagueService = new CompositeLeagueService(
-            new MockLeagueService(),
-            new SleeperLeagueClient(new FixedHttpClientFactory(httpClient), NullLogger<SleeperLeagueClient>.Instance),
-            new LeagueSyncStatus(),
-            NullLogger<CompositeLeagueService>.Instance);
-        var state = new LeagueStateService(leagueService);
+        var service = CreateService(out _);
+        var state = new LeagueStateService(service);
         var changed = 0;
         state.Changed += () => changed++;
 
         var result = await state.ConnectSleeperLeagueAsync("1185754400042356736");
-        var ownedPlayerId = result.Teams[0].PlayerIds[0];
-        var team = state.FindTeamForPlayer(ownedPlayerId);
+        Assert.True(result.NeedsTeamSelection);
+        Assert.Equal("Friends League", state.CurrentLeague?.Name);
 
-        Assert.True(result.Succeeded);
-        Assert.Equal(1, changed);
-        Assert.NotNull(team);
-        Assert.Equal(ScoringType.Ppr, state.CurrentLeague?.ScoringType);
+        var beforeComplete = changed;
+        Assert.True(state.SelectUserTeam(result.League!.Id, result.Teams[0].RosterId));
+
+        Assert.True(changed > beforeComplete);
+        Assert.Equal(result.League.Id, state.CurrentLeague?.Id);
+        Assert.NotNull(state.CurrentUserTeam);
+        Assert.Equal(result.Teams[0].RosterId, state.CurrentUserTeam!.RosterId);
+    }
+
+    [Fact]
+    public void SelectUserTeam_Rejects_Unknown_Roster()
+    {
+        using var provider = TestServiceFactory.CreateProvider(PlayerDataProviderKind.Mock);
+        var state = provider.GetRequiredService<ILeagueState>();
+        var league = state.CurrentLeague!;
+
+        Assert.False(state.SelectUserTeam(league.Id, 999));
+        Assert.Equal(1, state.CurrentUserTeam?.RosterId);
+    }
+
+    private static CompositeLeagueService CreateService(out LeagueUserTeamStore store, bool halfPpr = false, bool notFound = false)
+    {
+        store = new LeagueUserTeamStore(
+            NullLogger<LeagueUserTeamStore>.Instance,
+            $"league-user-teams-{Guid.NewGuid():N}.json");
+        return CreateService(store, halfPpr, notFound);
+    }
+
+    private static CompositeLeagueService CreateService(
+        ILeagueUserTeamStore store,
+        bool halfPpr = false,
+        bool notFound = false)
+    {
+        var handler = new StubSleeperHandler(notFound: notFound, halfPpr: halfPpr);
+        var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://api.sleeper.app/v1/")
+        };
+        return new CompositeLeagueService(
+            new MockLeagueService(),
+            new SleeperLeagueClient(new FixedHttpClientFactory(httpClient), NullLogger<SleeperLeagueClient>.Instance),
+            store,
+            new LeagueSyncStatus(),
+            NullLogger<CompositeLeagueService>.Instance);
     }
 
     private sealed class FixedHttpClientFactory(HttpClient client) : IHttpClientFactory

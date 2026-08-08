@@ -23,65 +23,191 @@
                 }
                 <span class="league-switcher__caret" aria-hidden="true">▾</span>
             </span>
+            @if (LeagueState.CurrentUserTeam is { } myTeam)
+            {
+                <span class="league-switcher__my-team">My team: @LeagueDisplay.TeamLabel(myTeam)</span>
+            }
+            else if (LeagueState.CurrentLeague is { DataSource: LeagueDataSource.Sleeper, IsSetupComplete: false })
+            {
+                <span class="league-switcher__my-team league-switcher__my-team--warn">Pick your team to finish setup</span>
+            }
         </span>
     </button>
 
     @if (isOpen)
     {
         <div class="league-switcher__menu" role="listbox" aria-label="Select league">
-            @foreach (var league in LeagueState.GetAllLeagues())
+            @if (pendingLeague is not null)
             {
-                var isSelected = league.Id == LeagueState.CurrentLeague?.Id;
-                <button type="button"
-                        class="league-switcher__option @(isSelected ? "is-selected" : null)"
-                        role="option"
-                        aria-selected="@isSelected"
-                        @onclick="() => Select(league)">
-                    <span class="league-switcher__option-name">
-                        @league.Name
-                        <span class="league-source-badge @(LeagueDisplay.IsLive(league) ? "league-source-badge--live" : "league-source-badge--mock")">
-                            @(LeagueDisplay.IsLive(league) ? "Live" : "Mock")
-                        </span>
-                    </span>
-                    <span class="league-switcher__option-meta">
-                        @LeagueDisplay.Platform(league.Platform) · @LeagueDisplay.LeagueType(league.LeagueType) · @LeagueDisplay.ScoringDetailed(league)
-                        @if (!string.IsNullOrWhiteSpace(league.ExternalId))
-                        {
-                            <text> · @league.ExternalId</text>
-                        }
-                    </span>
-                </button>
-            }
+                <div class="league-switcher__team-step">
+                    <p class="league-switcher__connect-label">Select your team in @pendingLeague.Name</p>
+                    <p class="league-switcher__team-hint">Playbook needs your roster before this league is ready.</p>
 
-            <div class="league-switcher__connect">
-                <label class="league-switcher__connect-label" for="sleeper-league-id">Connect Sleeper league</label>
-                <div class="league-switcher__connect-row">
-                    <input id="sleeper-league-id"
-                           class="league-switcher__connect-input"
-                           type="text"
-                           inputmode="numeric"
-                           placeholder="Sleeper league ID"
-                           @bind="sleeperLeagueId"
-                           @bind:event="oninput"
-                           disabled="@isConnecting" />
-                    <button type="button"
-                            class="league-switcher__connect-button"
-                            disabled="@(isConnecting || string.IsNullOrWhiteSpace(sleeperLeagueId))"
-                            @onclick="ConnectAsync">
-                        @(isConnecting ? "Connecting…" : "Connect")
-                    </button>
+                    @if (isConnecting)
+                    {
+                        <p class="league-switcher__connect-message">Loading teams…</p>
+                    }
+                    else if (pendingTeams.Count == 0)
+                    {
+                        <p class="league-switcher__connect-message is-error">No teams found in this league.</p>
+                    }
+                    else
+                    {
+                        <div class="league-team-list" role="listbox" aria-label="Select your team">
+                            @foreach (var team in pendingTeams)
+                            {
+                                <button type="button"
+                                        class="league-team-list__option @(pendingSelectedRosterId == team.RosterId ? "is-selected" : null)"
+                                        @onclick="() => pendingSelectedRosterId = team.RosterId">
+                                    <span class="league-team-list__name">@LeagueDisplay.TeamLabel(team)</span>
+                                    <span class="league-team-list__meta">Roster #@team.RosterId · @team.PlayerIds.Count players</span>
+                                </button>
+                            }
+                        </div>
+                        <div class="league-switcher__connect-row" style="margin-top:0.75rem;">
+                            <button type="button"
+                                    class="league-switcher__connect-button"
+                                    disabled="@(pendingSelectedRosterId is null)"
+                                    @onclick="ConfirmPendingTeam">
+                                Use this team
+                            </button>
+                            <button type="button"
+                                    class="league-switcher__secondary-button"
+                                    @onclick="CancelPendingSetup">
+                                Cancel
+                            </button>
+                        </div>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(connectMessage) && !connectSucceeded)
+                    {
+                        <p class="league-switcher__connect-message is-error">@connectMessage</p>
+                    }
                 </div>
-                @if (!string.IsNullOrWhiteSpace(connectMessage))
+            }
+            else if (isChangingTeam && LeagueState.CurrentLeague is { } changeLeague)
+            {
+                <div class="league-switcher__team-step">
+                    <p class="league-switcher__connect-label">Change your team in @changeLeague.Name</p>
+                    @{
+                        var changeTeams = LeagueState.GetTeams(changeLeague.Id);
+                    }
+                    @if (changeTeams.Count == 0)
+                    {
+                        <p class="league-switcher__connect-message is-error">No teams available for this league.</p>
+                    }
+                    else
+                    {
+                        <div class="league-team-list" role="listbox" aria-label="Change your team">
+                            @foreach (var team in changeTeams)
+                            {
+                                var isMine = LeagueDisplay.IsUserTeam(changeLeague, team);
+                                <button type="button"
+                                        class="league-team-list__option @(pendingSelectedRosterId == team.RosterId || (pendingSelectedRosterId is null && isMine) ? "is-selected" : null) @(isMine ? "is-mine" : null)"
+                                        @onclick="() => pendingSelectedRosterId = team.RosterId">
+                                    <span class="league-team-list__name">
+                                        @LeagueDisplay.TeamLabel(team)
+                                        @if (isMine)
+                                        {
+                                            <span class="league-source-badge league-source-badge--live">My team</span>
+                                        }
+                                    </span>
+                                    <span class="league-team-list__meta">Roster #@team.RosterId · @team.PlayerIds.Count players</span>
+                                </button>
+                            }
+                        </div>
+                        <div class="league-switcher__connect-row" style="margin-top:0.75rem;">
+                            <button type="button"
+                                    class="league-switcher__connect-button"
+                                    disabled="@(ResolveChangeRosterId(changeLeague) is null)"
+                                    @onclick="() => ConfirmChangeTeam(changeLeague)">
+                                Save team
+                            </button>
+                            <button type="button"
+                                    class="league-switcher__secondary-button"
+                                    @onclick="CancelChangeTeam">
+                                Back
+                            </button>
+                        </div>
+                    }
+                </div>
+            }
+            else
+            {
+                @foreach (var league in LeagueState.GetAllLeagues())
                 {
-                    <p class="league-switcher__connect-message @(connectSucceeded ? "is-success" : "is-error")">
-                        @connectMessage
-                    </p>
+                    var isSelected = league.Id == LeagueState.CurrentLeague?.Id;
+                    var userTeam = LeagueState.GetUserTeam(league.Id);
+                    <button type="button"
+                            class="league-switcher__option @(isSelected ? "is-selected" : null)"
+                            role="option"
+                            aria-selected="@isSelected"
+                            @onclick="() => Select(league)">
+                        <span class="league-switcher__option-name">
+                            @league.Name
+                            <span class="league-source-badge @(LeagueDisplay.IsLive(league) ? "league-source-badge--live" : "league-source-badge--mock")">
+                                @(LeagueDisplay.IsLive(league) ? "Live" : "Mock")
+                            </span>
+                            @if (!league.IsSetupComplete)
+                            {
+                                <span class="league-source-badge league-source-badge--warn">Needs team</span>
+                            }
+                        </span>
+                        <span class="league-switcher__option-meta">
+                            @LeagueDisplay.Platform(league.Platform) · @LeagueDisplay.LeagueType(league.LeagueType) · @LeagueDisplay.ScoringDetailed(league)
+                            @if (userTeam is not null)
+                            {
+                                <text> · My team: @LeagueDisplay.TeamLabel(userTeam)</text>
+                            }
+                            else if (!string.IsNullOrWhiteSpace(league.ExternalId))
+                            {
+                                <text> · @league.ExternalId</text>
+                            }
+                        </span>
+                    </button>
                 }
-                else if (!string.IsNullOrWhiteSpace(LeagueSyncStatus.LastError) && !connectSucceeded)
+
+                @if (LeagueState.CurrentLeague is { } active && active.IsSetupComplete)
                 {
-                    <p class="league-switcher__connect-message is-error">@LeagueSyncStatus.LastError</p>
+                    <div class="league-switcher__connect">
+                        <button type="button"
+                                class="league-switcher__secondary-button"
+                                style="width:100%;"
+                                @onclick="BeginChangeTeam">
+                            Change my team…
+                        </button>
+                    </div>
                 }
-            </div>
+
+                <div class="league-switcher__connect">
+                    <label class="league-switcher__connect-label" for="sleeper-league-id">Connect Sleeper league</label>
+                    <div class="league-switcher__connect-row">
+                        <input id="sleeper-league-id"
+                               class="league-switcher__connect-input"
+                               type="text"
+                               inputmode="numeric"
+                               placeholder="Sleeper league ID"
+                               @bind="sleeperLeagueId"
+                               @bind:event="oninput"
+                               disabled="@isConnecting" />
+                        <button type="button"
+                                class="league-switcher__connect-button"
+                                disabled="@(isConnecting || string.IsNullOrWhiteSpace(sleeperLeagueId))"
+                                @onclick="ConnectAsync">
+                            @(isConnecting ? "Loading…" : "Connect")
+                        </button>
+                    </div>
+                    @if (!string.IsNullOrWhiteSpace(connectMessage))
+                    {
+                        <p class="league-switcher__connect-message @(connectSucceeded ? "is-success" : "is-error")">
+                            @connectMessage
+                        </p>
+                    }
+                    else if (!string.IsNullOrWhiteSpace(LeagueSyncStatus.LastError) && !connectSucceeded)
+                    {
+                        <p class="league-switcher__connect-message is-error">@LeagueSyncStatus.LastError</p>
+                    }
+                </div>
+            }
         </div>
     }
 </div>
@@ -90,8 +216,13 @@
     private bool isOpen;
     private bool isConnecting;
     private bool connectSucceeded;
+    private bool isChangingTeam;
     private string sleeperLeagueId = string.Empty;
     private string? connectMessage;
+
+    private League? pendingLeague;
+    private IReadOnlyList<FantasyTeam> pendingTeams = [];
+    private int? pendingSelectedRosterId;
 
     protected override void OnInitialized()
     {
@@ -102,6 +233,17 @@
 
     private void Select(League league)
     {
+        if (LeagueDisplay.IsLive(league) && !league.IsSetupComplete)
+        {
+            pendingLeague = league;
+            pendingTeams = LeagueState.GetTeams(league.Id);
+            pendingSelectedRosterId = null;
+            connectMessage = null;
+            connectSucceeded = false;
+            isChangingTeam = false;
+            return;
+        }
+
         LeagueState.SelectLeague(league.Id);
         isOpen = false;
     }
@@ -111,20 +253,40 @@
         isConnecting = true;
         connectMessage = null;
         connectSucceeded = false;
+        pendingLeague = null;
+        pendingTeams = [];
+        pendingSelectedRosterId = null;
+        isChangingTeam = false;
         try
         {
             var result = await LeagueState.ConnectSleeperLeagueAsync(sleeperLeagueId);
-            if (result.Succeeded && result.League is not null)
-            {
-                connectSucceeded = true;
-                connectMessage =
-                    $"Loaded {result.League.Name} ({result.Teams.Count} teams, {LeagueDisplay.ScoringDetailed(result.League)}).";
-                sleeperLeagueId = string.Empty;
-            }
-            else
+            if (!result.Succeeded || result.League is null)
             {
                 connectMessage = result.Error ?? "Could not connect to that Sleeper league.";
+                return;
             }
+
+            if (result.NeedsTeamSelection)
+            {
+                pendingLeague = result.League;
+                pendingTeams = result.Teams;
+                pendingSelectedRosterId = null;
+                connectMessage = result.Teams.Count == 0
+                    ? "No teams found in this league."
+                    : $"Loaded {result.League.Name}. Select your team to finish setup.";
+                connectSucceeded = false;
+                sleeperLeagueId = string.Empty;
+                return;
+            }
+
+            connectSucceeded = true;
+            connectMessage =
+                $"Connected {result.League.Name}" +
+                (result.SelectedTeam is { } team
+                    ? $" as {LeagueDisplay.TeamLabel(team)}."
+                    : ".");
+            sleeperLeagueId = string.Empty;
+            isOpen = false;
         }
         catch (Exception)
         {
@@ -134,6 +296,78 @@
         {
             isConnecting = false;
         }
+    }
+
+    private void ConfirmPendingTeam()
+    {
+        if (pendingLeague is null || pendingSelectedRosterId is not int rosterId)
+        {
+            connectMessage = "Select your team to continue.";
+            return;
+        }
+
+        if (!LeagueState.SelectUserTeam(pendingLeague.Id, rosterId))
+        {
+            connectMessage = "Could not save that team selection. Try another roster.";
+            return;
+        }
+
+        var team = LeagueState.GetUserTeam(pendingLeague.Id);
+        connectSucceeded = true;
+        connectMessage = team is null
+            ? "Your team was saved."
+            : $"You're set as {LeagueDisplay.TeamLabel(team)}.";
+        pendingLeague = null;
+        pendingTeams = [];
+        pendingSelectedRosterId = null;
+        isOpen = false;
+    }
+
+    private void CancelPendingSetup()
+    {
+        pendingLeague = null;
+        pendingTeams = [];
+        pendingSelectedRosterId = null;
+        connectMessage = null;
+    }
+
+    private void BeginChangeTeam()
+    {
+        isChangingTeam = true;
+        pendingSelectedRosterId = LeagueState.CurrentLeague?.SelectedRosterId;
+        connectMessage = null;
+    }
+
+    private void CancelChangeTeam()
+    {
+        isChangingTeam = false;
+        pendingSelectedRosterId = null;
+    }
+
+    private int? ResolveChangeRosterId(League league) =>
+        pendingSelectedRosterId ?? league.SelectedRosterId;
+
+    private void ConfirmChangeTeam(League league)
+    {
+        var rosterId = ResolveChangeRosterId(league);
+        if (rosterId is not int id)
+        {
+            return;
+        }
+
+        if (!LeagueState.SelectUserTeam(league.Id, id))
+        {
+            connectMessage = "Could not update your team.";
+            return;
+        }
+
+        isChangingTeam = false;
+        pendingSelectedRosterId = null;
+        connectSucceeded = true;
+        var team = LeagueState.GetCurrentUserTeam();
+        connectMessage = team is null
+            ? "Team updated."
+            : $"My team is now {LeagueDisplay.TeamLabel(team)}.";
     }
 
     private void OnLeagueChanged() => InvokeAsync(StateHasChanged);

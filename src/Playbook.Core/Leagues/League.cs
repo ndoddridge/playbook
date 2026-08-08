@@ -27,4 +27,15 @@ public sealed class League
 
     /// <summary>Reception points from platform scoring settings when known (0 / 0.5 / 1.0).</summary>
     public decimal? ReceptionPoints { get; init; }
+
+    /// <summary>
+    /// Sleeper/platform roster id for the user's own team in this league.
+    /// Null means setup is incomplete for live leagues.
+    /// </summary>
+    public int? SelectedRosterId { get; init; }
+
+    public bool HasSelectedTeam => SelectedRosterId is int;
+
+    public bool IsSetupComplete =>
+        DataSource == LeagueDataSource.Mock || HasSelectedTeam;
 }
