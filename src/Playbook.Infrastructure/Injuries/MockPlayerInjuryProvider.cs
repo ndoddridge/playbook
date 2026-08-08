@@ -5,7 +5,8 @@ using Playbook.Core.Injuries.Models;
 namespace Playbook.Infrastructure.Injuries;
 
 /// <summary>
-/// Deterministic mock injuries for selected catalog players. Does not invent records for unknowns.
+/// Deterministic mock CURRENT injury designations. Historical rows come from
+/// <see cref="MockHistoricalInjuryProvider"/> when configured.
 /// </summary>
 public sealed class MockPlayerInjuryProvider : IPlayerInjuryProvider
 {
@@ -13,40 +14,52 @@ public sealed class MockPlayerInjuryProvider : IPlayerInjuryProvider
 
     public string DisplayName => "Mock";
 
+    // History is supplied separately by MockHistoricalInjuryProvider — do not claim this feed returns career rows.
+    public InjuryProviderCapabilities Capabilities => InjuryProviderCapabilities.MockCurrentOnly;
+
     public Task<IReadOnlyList<PlayerInjuryRecord>> GetInjuriesAsync(
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var now = DateTimeOffset.UtcNow;
-        var rows = new List<PlayerInjuryRecord>();
+        var rows = new List<PlayerInjuryRecord>
+        {
+            // Jayden Daniels — current questionable
+            Record(
+                Guid.Parse("11111111-1111-1111-1111-111111111101"),
+                now.AddDays(-3),
+                "Questionable",
+                "Knee",
+                "Limited mid-week; game-time decision.",
+                "Limited Participant",
+                "Questionable",
+                now,
+                2025),
+            // CMC — returned / full participant (current)
+            Record(
+                Guid.Parse("11111111-1111-1111-1111-111111111106"),
+                now.AddDays(-5),
+                "Active",
+                "Achilles",
+                "Returned to full participant status.",
+                "Full Participant",
+                "Active",
+                now,
+                2025),
+            // Tyreek — Out
+            Record(
+                Guid.Parse("11111111-1111-1111-1111-111111111108"),
+                now.AddDays(-1),
+                "Out",
+                "Ankle",
+                "Ruled out for upcoming contest.",
+                "Out",
+                "Out",
+                now,
+                2025)
+        };
 
-        // Jayden Daniels — current questionable + prior history
-        var daniels = Guid.Parse("11111111-1111-1111-1111-111111111101");
-        rows.Add(Record(daniels, now.AddDays(-10), "Out", "Knee", "Missed prior week with knee soreness.", "Did Not Practice", "Out", true, now, 2025));
-        rows.Add(Record(daniels, now.AddDays(-3), "Questionable", "Knee", "Limited mid-week; game-time decision.", "Limited Participant", "Questionable", true, now, 2025));
-
-        // CMC — IR / return history
-        var cmc = Guid.Parse("11111111-1111-1111-1111-111111111106");
-        rows.Add(Record(cmc, now.AddDays(-40), "Injured Reserve", "Achilles", "Placed on IR.", null, "Out", false, now.AddDays(-20), 2025));
-        rows.Add(Record(cmc, now.AddDays(-5), "Active", "Achilles", "Returned to full participant status.", "Full Participant", "Active", true, now, 2025));
-
-        // Chase — no current injury (empty for this player intentionally omitted)
-
-        // Tyreek — Out
-        var tyreek = Guid.Parse("11111111-1111-1111-1111-111111111108");
-        rows.Add(Record(tyreek, now.AddDays(-1), "Out", "Ankle", "Ruled out for upcoming contest.", "Out", "Out", true, now, 2025));
-
-        // Mark current flags properly (latest per player)
-        return Task.FromResult<IReadOnlyList<PlayerInjuryRecord>>(MarkCurrent(rows));
-    }
-
-    private static List<PlayerInjuryRecord> MarkCurrent(List<PlayerInjuryRecord> rows)
-    {
-        var latest = rows
-            .GroupBy(r => r.PlayerId)
-            .ToDictionary(g => g.Key, g => g.OrderByDescending(r => r.Date).First().Date);
-
-        return rows.Select(r => r with { IsCurrent = latest[r.PlayerId] == r.Date }).ToList();
+        return Task.FromResult<IReadOnlyList<PlayerInjuryRecord>>(rows);
     }
 
     private static PlayerInjuryRecord Record(
@@ -57,7 +70,6 @@ public sealed class MockPlayerInjuryProvider : IPlayerInjuryProvider
         string description,
         string? practice,
         string? gameStatus,
-        bool isCurrent,
         DateTimeOffset updated,
         int season) =>
         new()
@@ -73,7 +85,7 @@ public sealed class MockPlayerInjuryProvider : IPlayerInjuryProvider
             SourceUrl = null,
             Season = season,
             LastUpdated = updated,
-            IsCurrent = isCurrent,
+            IsCurrent = true,
             ExternalId = $"{playerId:N}:{date:yyyyMMdd}:{status}"
         };
 }

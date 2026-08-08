@@ -18,92 +18,193 @@ namespace Playbook.Tests;
 
 public class PlayerInjuryServiceTests
 {
+    private static readonly Guid ChaseId = Guid.Parse("11111111-1111-1111-1111-111111111109");
+    private static readonly Guid TyreekId = Guid.Parse("11111111-1111-1111-1111-111111111108");
+    private static readonly Guid DanielsId = Guid.Parse("11111111-1111-1111-1111-111111111101");
+    private static readonly Guid CmcId = Guid.Parse("11111111-1111-1111-1111-111111111106");
+
     [Fact]
-    public void Player_With_No_Injury_History_Returns_Empty()
+    public void Current_Injury_Available()
     {
         using var provider = TestServiceFactory.CreateProvider();
         var injuries = provider.GetRequiredService<IPlayerInjuryService>();
-        var chaseId = Guid.Parse("11111111-1111-1111-1111-111111111109");
 
-        Assert.Empty(injuries.GetInjuriesForPlayer(chaseId));
-        Assert.Null(injuries.GetCurrentInjury(chaseId));
+        var profile = injuries.GetPlayerInjuryProfile(TyreekId);
+        Assert.Equal(CurrentInjuryDataStatus.Available, profile.CurrentDataStatus);
+        Assert.NotNull(profile.CurrentInjury);
+        Assert.Equal("Out", profile.CurrentInjury!.Status);
+        Assert.Equal("Ankle", profile.CurrentInjury.BodyPart);
+        Assert.True(profile.CurrentInjury.IsCurrent);
     }
 
     [Fact]
-    public void Player_With_One_Current_Injury()
+    public void Current_Injury_Unavailable_Means_No_Current_Designation()
     {
         using var provider = TestServiceFactory.CreateProvider();
         var injuries = provider.GetRequiredService<IPlayerInjuryService>();
-        var tyreekId = Guid.Parse("11111111-1111-1111-1111-111111111108");
 
-        var current = injuries.GetCurrentInjury(tyreekId);
-        Assert.NotNull(current);
-        Assert.Equal("Out", current!.Status);
-        Assert.True(current.IsCurrent);
-        Assert.Equal("Ankle", current.BodyPart);
+        var profile = injuries.GetPlayerInjuryProfile(ChaseId);
+        Assert.Equal(CurrentInjuryDataStatus.NoCurrentInjury, profile.CurrentDataStatus);
+        Assert.Null(profile.CurrentInjury);
+        Assert.DoesNotContain(injuries.GetInjuriesForPlayer(ChaseId), r => r.IsCurrent);
     }
 
     [Fact]
-    public void Player_With_Multiple_Historical_Injuries()
+    public void Historical_Data_Available_Via_Mock_Historical_Provider()
     {
         using var provider = TestServiceFactory.CreateProvider();
         var injuries = provider.GetRequiredService<IPlayerInjuryService>();
-        var danielsId = Guid.Parse("11111111-1111-1111-1111-111111111101");
 
-        var all = injuries.GetInjuriesForPlayer(danielsId);
-        Assert.True(all.Count >= 2);
-        Assert.Contains(all, r => r.IsCurrent);
-        Assert.Contains(all, r => !r.IsCurrent || all.Count(x => x.IsCurrent) == 1);
-        Assert.True(injuries.GetHistoricalInjuries(danielsId).Count >= 1);
+        var profile = injuries.GetPlayerInjuryProfile(DanielsId);
+        Assert.Equal(HistoricalDataStatus.Available, profile.HistoricalDataStatus);
+        Assert.NotEmpty(profile.HistoricalRecords);
+        Assert.All(profile.HistoricalRecords, r => Assert.False(r.IsCurrent));
+        Assert.True(injuries.GetHistoricalInjuries(DanielsId).Count >= 1);
     }
 
     [Fact]
-    public void Questionable_Status_Maps_To_Intelligence_Rule()
+    public async Task Historical_Data_Unavailable_When_Historical_Provider_Fails()
     {
-        var record = Current("Questionable", "Knee", practice: "Limited Participant");
-        Assert.Equal("injury-questionable", InjuryIntelligenceMapping.ResolveRuleId(record));
+        var status = new InjurySyncStatus();
+        var service = CreateService(
+            new StubCurrentInjuryProvider([Current(TyreekId, "Out", "Ankle")]),
+            new ThrowingHistoricalInjuryProvider(),
+            status,
+            InjuryProviderKind.Live);
+
+        await service.RefreshAsync();
+        var profile = service.GetPlayerInjuryProfile(TyreekId);
+
+        Assert.Equal(CurrentInjuryDataStatus.Available, profile.CurrentDataStatus);
+        Assert.Equal(HistoricalDataStatus.Unavailable, profile.HistoricalDataStatus);
+        Assert.Contains("temporarily unavailable", profile.HistoricalAvailabilityMessage!, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(HistoricalDataStatus.Unavailable.ToString(), status.HistoricalDataAvailability);
     }
 
     [Fact]
-    public void Out_Status_Maps_To_Intelligence_Rule()
+    public async Task Historical_No_Records_Found_When_Provider_Returns_Empty()
     {
-        var record = Current("Out", "Ankle");
-        Assert.Equal("injury-out", InjuryIntelligenceMapping.ResolveRuleId(record));
-        Assert.Equal(0.15m, InjuryIntelligenceMapping.ProjectionHealthMultiplier(record));
+        var status = new InjurySyncStatus();
+        var service = CreateService(
+            new StubCurrentInjuryProvider([Current(TyreekId, "Out", "Ankle")]),
+            new EmptyHistoricalInjuryProvider(),
+            status,
+            InjuryProviderKind.Live);
+
+        await service.RefreshAsync();
+        var profile = service.GetPlayerInjuryProfile(TyreekId);
+
+        Assert.Equal(HistoricalDataStatus.NoRecordsFound, profile.HistoricalDataStatus);
+        Assert.Empty(profile.HistoricalRecords);
+        Assert.Contains(
+            "No historical injury records were returned",
+            profile.HistoricalAvailabilityMessage!,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("never", profile.RiskSummary ?? string.Empty, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
-    public void Returned_Full_Participation_Maps_To_Positive_Rule()
+    public async Task Provider_Does_Not_Support_History()
     {
-        var record = Current("Active", "Achilles", practice: "Full Participant", description: "Returned to full practice.");
-        Assert.Equal("injury-positive", InjuryIntelligenceMapping.ResolveRuleId(record));
+        var status = new InjurySyncStatus();
+        var service = CreateService(
+            new StubCurrentInjuryProvider(
+                [Current(TyreekId, "Questionable", "Knee")],
+                InjuryProviderCapabilities.CurrentOnlyEspnSleeper),
+            new NullHistoricalInjuryProvider(),
+            status,
+            InjuryProviderKind.Live);
+
+        await service.RefreshAsync();
+
+        Assert.False(service.ActiveCapabilities.SupportsHistoricalInjuries);
+        Assert.Equal(HistoricalDataStatus.NotSupportedByProvider, service.GlobalHistoricalDataStatus);
+        Assert.Equal(
+            HistoricalDataStatus.NotSupportedByProvider.ToString(),
+            status.HistoricalDataAvailability);
+        Assert.False(status.SupportsHistoricalInjuries);
+
+        var profile = service.GetPlayerInjuryProfile(TyreekId);
+        Assert.Equal(HistoricalDataStatus.NotSupportedByProvider, profile.HistoricalDataStatus);
+        Assert.Equal(
+            "Historical injury data is not available from the current provider.",
+            profile.HistoricalAvailabilityMessage);
     }
 
     [Fact]
-    public void Injury_Information_Affects_Intelligence()
+    public async Task Player_Id_Mapping_Failure_Does_Not_Attach_To_Catalog_Player()
+    {
+        var unknownId = Guid.Parse("99999999-9999-9999-9999-999999999999");
+        var status = new InjurySyncStatus();
+        var service = CreateService(
+            new StubCurrentInjuryProvider([Current(unknownId, "Out", "Hamstring")]),
+            new NullHistoricalInjuryProvider(),
+            status,
+            InjuryProviderKind.Live);
+
+        await service.RefreshAsync();
+
+        var cmc = service.GetPlayerInjuryProfile(CmcId);
+        Assert.Equal(CurrentInjuryDataStatus.NoCurrentInjury, cmc.CurrentDataStatus);
+        Assert.Null(cmc.CurrentInjury);
+
+        // Orphan row is indexed by its own id only — never remapped onto CMC/Chase.
+        Assert.Empty(service.GetInjuriesForPlayer(CmcId));
+        Assert.Empty(service.GetInjuriesForPlayer(ChaseId));
+        Assert.NotNull(service.GetCurrentInjury(unknownId));
+
+        Assert.Equal(
+            "Mapping failed",
+            InjuryAvailabilityPresentation.CurrentStatusLabel(CurrentInjuryDataStatus.MappingFailed));
+    }
+
+    [Fact]
+    public async Task Intelligence_Does_Not_Treat_Unknown_Historical_As_Healthy()
+    {
+        var status = new InjurySyncStatus();
+        var service = CreateService(
+            new StubCurrentInjuryProvider([], InjuryProviderCapabilities.CurrentOnlyEspnSleeper),
+            new NullHistoricalInjuryProvider(),
+            status,
+            InjuryProviderKind.Live);
+
+        await service.RefreshAsync();
+        var profile = service.GetPlayerInjuryProfile(CmcId);
+
+        Assert.Equal(CurrentInjuryDataStatus.NoCurrentInjury, profile.CurrentDataStatus);
+        Assert.Equal(HistoricalDataStatus.NotSupportedByProvider, profile.HistoricalDataStatus);
+
+        var facts = InjuryFactBuilder.BuildForProfile(profile);
+        Assert.Empty(facts);
+        Assert.Contains("does not imply a clean injury history", profile.RiskSummary!, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("healthy", profile.RiskSummary!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Injury_Information_Affects_Intelligence_For_Current_Designation()
     {
         using var provider = TestServiceFactory.CreateProvider();
         var injuries = provider.GetRequiredService<IPlayerInjuryService>();
         var intelligence = provider.GetRequiredService<IIntelligenceService>();
-        var tyreekId = Guid.Parse("11111111-1111-1111-1111-111111111108");
 
-        _ = injuries.GetCurrentInjury(tyreekId);
-        var profile = intelligence.GetPlayerProfile(tyreekId);
+        _ = injuries.GetCurrentInjury(TyreekId);
+        var profile = intelligence.GetPlayerProfile(TyreekId);
         Assert.NotNull(profile);
         Assert.True(profile!.HealthScore < 50, $"Expected health drag from Out, got {profile.HealthScore}");
         Assert.Contains(
             profile.SupportingFacts,
             f => f.Category == IntelligenceCategory.Injury &&
-                 f.SupportingEvidence.Any(e => e.Contains("injury-out", StringComparison.OrdinalIgnoreCase)));
+                 f.SupportingEvidence.Any(e => e.Contains("injury-out", StringComparison.OrdinalIgnoreCase)) &&
+                 f.SupportingEvidence.Any(e => e.Contains("Scope: Current", StringComparison.OrdinalIgnoreCase)));
     }
 
     [Fact]
-    public void Injury_Information_Affects_Projection()
+    public void Projection_Handling_Current_Injury()
     {
         var engine = new ProjectionEngine(Options.Create(new Application.Projections.ProjectionRuleOptions()));
         var player = new Player
         {
-            Id = Guid.Parse("11111111-1111-1111-1111-111111111108"),
+            Id = TyreekId,
             FullName = "Tyreek Hill",
             FirstName = "Tyreek",
             LastName = "Hill",
@@ -141,7 +242,7 @@ public class PlayerInjuryServiceTests
             production,
             null,
             league,
-            Current("Out", "Ankle"));
+            Current(TyreekId, "Out", "Ankle"));
 
         Assert.True(
             injured.ProjectedFantasyPoints < healthy.ProjectedFantasyPoints,
@@ -150,10 +251,73 @@ public class PlayerInjuryServiceTests
     }
 
     [Fact]
+    public async Task Cmc_Style_Player_Reflects_Current_Only_Provider_Limitations()
+    {
+        // Mirrors Live ESPN/Sleeper: CMC may have no current designation, and history is not supported.
+        var status = new InjurySyncStatus();
+        var service = CreateService(
+            new StubCurrentInjuryProvider([], InjuryProviderCapabilities.CurrentOnlyEspnSleeper),
+            new NullHistoricalInjuryProvider(),
+            status,
+            InjuryProviderKind.Live);
+
+        await service.RefreshAsync();
+        var profile = service.GetPlayerInjuryProfile(CmcId);
+
+        Assert.Equal(CurrentInjuryDataStatus.NoCurrentInjury, profile.CurrentDataStatus);
+        Assert.Equal(HistoricalDataStatus.NotSupportedByProvider, profile.HistoricalDataStatus);
+        Assert.Empty(profile.HistoricalRecords);
+        Assert.Equal(
+            "Historical injury data is not available from the current provider.",
+            profile.HistoricalAvailabilityMessage);
+        Assert.DoesNotContain("No injury history available", profile.HistoricalAvailabilityMessage);
+        Assert.Contains("not supported by the configured provider", profile.RiskSummary!, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(InjuryFactBuilder.BuildForProfile(profile));
+        Assert.Equal(0, status.HistoricalInjuryRecords);
+        Assert.Equal(HistoricalDataStatus.NotSupportedByProvider.ToString(), status.HistoricalDataAvailability);
+    }
+
+    [Fact]
+    public void Questionable_Status_Maps_To_Intelligence_Rule()
+    {
+        var record = Current(Guid.NewGuid(), "Questionable", "Knee", practice: "Limited Participant");
+        Assert.Equal("injury-questionable", InjuryIntelligenceMapping.ResolveRuleId(record));
+    }
+
+    [Fact]
+    public void Out_Status_Maps_To_Intelligence_Rule()
+    {
+        var record = Current(Guid.NewGuid(), "Out", "Ankle");
+        Assert.Equal("injury-out", InjuryIntelligenceMapping.ResolveRuleId(record));
+        Assert.Equal(0.15m, InjuryIntelligenceMapping.ProjectionHealthMultiplier(record));
+    }
+
+    [Fact]
+    public void Returned_Full_Participation_Maps_To_Positive_Rule()
+    {
+        var record = Current(
+            Guid.NewGuid(),
+            "Active",
+            "Achilles",
+            practice: "Full Participant",
+            description: "Returned to full practice.");
+        Assert.Equal("injury-positive", InjuryIntelligenceMapping.ResolveRuleId(record));
+    }
+
+    [Fact]
+    public void Live_Capabilities_Declare_Current_Only()
+    {
+        Assert.True(InjuryProviderCapabilities.CurrentOnlyEspnSleeper.SupportsCurrentInjuries);
+        Assert.False(InjuryProviderCapabilities.CurrentOnlyEspnSleeper.SupportsHistoricalInjuries);
+        Assert.Contains(
+            "does not supply career historical",
+            InjuryProviderCapabilities.CurrentOnlyEspnSleeper.Notes!,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task Provider_Failure_Falls_Back_To_Mock()
     {
-        using var provider = TestServiceFactory.CreateProvider();
-        // Force live failure path by constructing service with a throwing primary.
         var status = new InjurySyncStatus();
         status.SetConfigured(InjuryProviderKind.Live);
         var cache = new InjuryCacheStore(
@@ -168,6 +332,7 @@ public class PlayerInjuryServiceTests
         var service = new PlayerInjuryService(
             [new ThrowingInjuryProvider()],
             new MockPlayerInjuryProvider(),
+            new MockHistoricalInjuryProvider(),
             cache,
             status,
             Options.Create(new InjuryOptions { Provider = InjuryProviderKind.Live }),
@@ -177,6 +342,7 @@ public class PlayerInjuryServiceTests
         Assert.Equal("Mock", status.ActiveProvider);
         Assert.True(status.UsedFallback);
         Assert.True(status.InjuryRecordsLoaded > 0);
+        Assert.True(status.SupportsHistoricalInjuries);
     }
 
     [Fact]
@@ -193,43 +359,54 @@ public class PlayerInjuryServiceTests
     }
 
     [Fact]
-    public void MergeHistory_Preserves_Prior_Records()
+    public void Availability_Presentation_Is_Explicit()
     {
-        var id = Guid.NewGuid();
-        var previous = new List<PlayerInjuryRecord>
-        {
-            Current("Out", "Knee", playerId: id) with
-            {
-                Date = DateTimeOffset.UtcNow.AddDays(-10),
-                ExternalId = "old-1",
-                IsCurrent = true
-            }
-        };
-        var incoming = new List<PlayerInjuryRecord>
-        {
-            Current("Questionable", "Knee", playerId: id) with
-            {
-                Date = DateTimeOffset.UtcNow.AddDays(-1),
-                ExternalId = "new-1",
-                IsCurrent = true
-            }
-        };
+        Assert.Equal(
+            "Historical injury data is not available from the current provider.",
+            InjuryAvailabilityPresentation.HistoricalMessage(HistoricalDataStatus.NotSupportedByProvider));
+        Assert.Equal(
+            "No historical injury records were returned for this player by the historical provider.",
+            InjuryAvailabilityPresentation.HistoricalMessage(HistoricalDataStatus.NoRecordsFound));
+        Assert.Equal(
+            "No current designation",
+            InjuryAvailabilityPresentation.CurrentStatusLabel(CurrentInjuryDataStatus.NoCurrentInjury));
+    }
 
-        var merged = PlayerInjuryService.MergeHistory(previous, incoming);
-        Assert.Equal(2, merged.Count);
-        Assert.Equal(1, merged.Count(r => r.IsCurrent));
-        Assert.Equal("Questionable", merged.First(r => r.IsCurrent).Status);
+    private static PlayerInjuryService CreateService(
+        IPlayerInjuryProvider current,
+        IHistoricalInjuryProvider historical,
+        InjurySyncStatus status,
+        InjuryProviderKind configured)
+    {
+        status.SetConfigured(configured);
+        var cache = new InjuryCacheStore(
+            Options.Create(new InjuryOptions
+            {
+                Provider = configured,
+                CacheFileName = $"injuries-test-{Guid.NewGuid():N}.json",
+                CacheTtlMinutes = 1
+            }),
+            NullLogger<InjuryCacheStore>.Instance);
+
+        return new PlayerInjuryService(
+            [current],
+            new MockPlayerInjuryProvider(),
+            historical,
+            cache,
+            status,
+            Options.Create(new InjuryOptions { Provider = configured }),
+            NullLogger<PlayerInjuryService>.Instance);
     }
 
     private static PlayerInjuryRecord Current(
+        Guid playerId,
         string status,
         string bodyPart,
         string? practice = null,
-        string? description = null,
-        Guid? playerId = null) =>
+        string? description = null) =>
         new()
         {
-            PlayerId = playerId ?? Guid.NewGuid(),
+            PlayerId = playerId,
             Date = DateTimeOffset.UtcNow,
             Status = status,
             BodyPart = bodyPart,
@@ -243,11 +420,65 @@ public class PlayerInjuryServiceTests
             ExternalId = Guid.NewGuid().ToString("N")
         };
 
+    private sealed class StubCurrentInjuryProvider : IPlayerInjuryProvider
+    {
+        private readonly IReadOnlyList<PlayerInjuryRecord> _rows;
+
+        public StubCurrentInjuryProvider(
+            IReadOnlyList<PlayerInjuryRecord> rows,
+            InjuryProviderCapabilities? capabilities = null)
+        {
+            _rows = rows;
+            Capabilities = capabilities ?? InjuryProviderCapabilities.CurrentOnlyEspnSleeper;
+        }
+
+        public InjuryProviderKind Kind => InjuryProviderKind.Live;
+
+        public string DisplayName => "Stub Current";
+
+        public InjuryProviderCapabilities Capabilities { get; }
+
+        public Task<IReadOnlyList<PlayerInjuryRecord>> GetInjuriesAsync(
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(_rows);
+    }
+
+    private sealed class EmptyHistoricalInjuryProvider : IHistoricalInjuryProvider
+    {
+        public HistoricalInjuryProviderKind Kind => HistoricalInjuryProviderKind.Mock;
+
+        public string DisplayName => "Empty Historical";
+
+        public bool IsConfigured => true;
+
+        public Task<IReadOnlyList<PlayerInjuryRecord>> GetHistoricalInjuriesAsync(
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<PlayerInjuryRecord>>([]);
+    }
+
+    private sealed class ThrowingHistoricalInjuryProvider : IHistoricalInjuryProvider
+    {
+        public HistoricalInjuryProviderKind Kind => HistoricalInjuryProviderKind.Mock;
+
+        public string DisplayName => "Throwing Historical";
+
+        public bool IsConfigured => true;
+
+        public Task<IReadOnlyList<PlayerInjuryRecord>> GetHistoricalInjuriesAsync(
+            CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("simulated historical failure");
+    }
+
     private sealed class ThrowingInjuryProvider : IPlayerInjuryProvider
     {
         public InjuryProviderKind Kind => InjuryProviderKind.Live;
+
         public string DisplayName => "Throwing";
-        public Task<IReadOnlyList<PlayerInjuryRecord>> GetInjuriesAsync(CancellationToken cancellationToken = default) =>
+
+        public InjuryProviderCapabilities Capabilities => InjuryProviderCapabilities.CurrentOnlyEspnSleeper;
+
+        public Task<IReadOnlyList<PlayerInjuryRecord>> GetInjuriesAsync(
+            CancellationToken cancellationToken = default) =>
             throw new InvalidOperationException("simulated live failure");
     }
 }

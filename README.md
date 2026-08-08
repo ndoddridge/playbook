@@ -100,7 +100,7 @@ Background refresh (`BackgroundRefresh`) periodically reloads players, news, int
 
 ## Player injuries
 
-Injury designations are loaded behind `IPlayerInjuryService` (Mock or Live).
+Injury designations are loaded behind `IPlayerInjuryService` (Mock or Live), exposed as `PlayerInjuryProfile`.
 
 ```json
 "Injuries": {
@@ -110,11 +110,12 @@ Injury designations are loaded behind `IPlayerInjuryService` (Mock or Live).
 }
 ```
 
-- Live source: ESPN NFL injuries feed, enriched with Sleeper `injury_status` / practice fields
-- Historical records are preserved in the local cache across syncs (never fabricated)
-- Intelligence maps Out / IR / Questionable / Limited / Returned into health signals
-- Projection applies a conservative availability factor for major current designations
-- Empty injury data means “no history available,” not an implied healthy clearance
+- Live **current** source: ESPN NFL injuries feed, enriched with Sleeper `injury_status` / practice fields
+- Live providers are **current-report only** — they do not supply career historical injury records
+- Historical data uses a separate `IHistoricalInjuryProvider` abstraction (`Null` for Live, `Mock` seeds when `Provider=Mock`)
+- `HistoricalDataStatus` is explicit (`Available` / `Unavailable` / `NotSupportedByProvider` / `NotSynced` / `NoRecordsFound`) — missing history never means “never injured”
+- Intelligence maps **current** Out / IR / Questionable / Limited / Returned into health signals; unknown history does not invent a healthy signal
+- Projection applies a conservative availability factor for major **current** designations
 
 ## Player statistics
 

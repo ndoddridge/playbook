@@ -194,6 +194,18 @@ public static class DependencyInjection
 
         services.AddSingleton<LivePlayerInjuryProvider>();
         services.AddSingleton<IPlayerInjuryProvider>(sp => sp.GetRequiredService<LivePlayerInjuryProvider>());
+
+        // Historical injury source is separate. Live ESPN/Sleeper are current-report only.
+        services.AddSingleton<NullHistoricalInjuryProvider>();
+        services.AddSingleton<MockHistoricalInjuryProvider>();
+        services.AddSingleton<IHistoricalInjuryProvider>(sp =>
+        {
+            var options = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<InjuryOptions>>().Value;
+            return options.Provider == InjuryProviderKind.Mock
+                ? sp.GetRequiredService<MockHistoricalInjuryProvider>()
+                : sp.GetRequiredService<NullHistoricalInjuryProvider>();
+        });
+
         services.AddSingleton<IPlayerInjuryService, PlayerInjuryService>();
     }
 

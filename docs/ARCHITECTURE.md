@@ -319,17 +319,29 @@ Projection, Prediction, and Decision engines should take `PlayerIntelligenceProf
 
 Structured injury designations for the Injuries tab, Intelligence health signals, and conservative Projection availability clamps.
 
+### Provider reality (inspected)
+
+| Capability | Live ESPN + Sleeper | Mock |
+| --- | --- | --- |
+| Current injuries | Yes (report-window snapshot) | Yes |
+| Historical / career injuries | **No** | Via `MockHistoricalInjuryProvider` only |
+| Practice participation | Sparse (Sleeper when set) | Seeded |
+| Game status | Derived from designation | Seeded |
+| Body part / notes / source URLs | Partial | Seeded (no URLs) |
+| Player ID mapping | Name + team (not stable ESPN ids) | Catalog GUIDs |
+
 ### Provider pattern
 
-- `IPlayerInjuryProvider` — `MockPlayerInjuryProvider` | `LivePlayerInjuryProvider`
-- `IPlayerInjuryService` — facade with mock fallback + historical merge cache
+- `IPlayerInjuryProvider` — current designations (`MockPlayerInjuryProvider` | `LivePlayerInjuryProvider`)
+- `IHistoricalInjuryProvider` — optional history (`NullHistoricalInjuryProvider` for Live | `MockHistoricalInjuryProvider` for Mock)
+- `IPlayerInjuryService` — facade returning `PlayerInjuryProfile` with explicit `CurrentInjuryDataStatus` + `HistoricalDataStatus`
 - Live sources: ESPN `site/v2/sports/football/nfl/injuries` (primary) + Sleeper injury/practice fields (enrichment / gap-fill)
 - `PlayerInjuryRecord` — PlayerId, Date, Status, BodyPart, Description, PracticeStatus, GameStatus, Source, SourceUrl, Season, LastUpdated, IsCurrent
-- History: prior cache rows are preserved across syncs; only the latest designation per player is marked current. Missing data is never fabricated and does not imply healthy clearance.
+- History is never fabricated from current-report snapshots. `NotSupportedByProvider` / `Unavailable` / `NoRecordsFound` are distinct from “never injured.”
 
 ### Engine integration
 
-- Intelligence: `InjuryFactBuilder` emits `IntelligenceSource.InjuryReport` facts using existing rule ids (`injury-out`, `injury-ir`, `injury-questionable`, `injury-limited`, `injury-positive`)
+- Intelligence: `InjuryFactBuilder` emits scored facts only for **current** designations (`injury-out`, `injury-ir`, `injury-questionable`, `injury-limited`, `injury-positive`). Missing history does not emit a healthy (or unhealthy) fact.
 - Projection: `InjuryIntelligenceMapping.ProjectionHealthMultiplier` applies conservative × factors (e.g. Out 0.15, IR 0.10, Questionable 0.85) on top of intelligence health/risk adjustments
 
 ## Player Statistics Layer

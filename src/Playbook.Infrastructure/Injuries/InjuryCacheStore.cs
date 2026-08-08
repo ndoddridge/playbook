@@ -90,4 +90,9 @@ public sealed class InjuryCacheDocument
     public string Provider { get; set; } = string.Empty;
 
     public List<PlayerInjuryRecord> Records { get; set; } = [];
+
+    public string HistoricalDataStatus { get; set; } =
+        nameof(Playbook.Core.Injuries.Models.HistoricalDataStatus.NotSynced);
+
+    public bool SupportsHistorical { get; set; }
 }

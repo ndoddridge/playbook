@@ -14,8 +14,8 @@ using Playbook.Infrastructure.Players;
 namespace Playbook.Infrastructure.Injuries;
 
 /// <summary>
-/// Live injuries from ESPN team injury reports, enriched with Sleeper practice/status fields when matched.
-/// Does not fabricate missing history — only emits designations supplied by the sources.
+/// Live CURRENT injuries from ESPN team injury reports, enriched with Sleeper practice/status fields.
+/// Does NOT supply career historical injury records — ESPN feed is a current-report snapshot only.
 /// </summary>
 public sealed class LivePlayerInjuryProvider : IPlayerInjuryProvider
 {
@@ -77,6 +77,8 @@ public sealed class LivePlayerInjuryProvider : IPlayerInjuryProvider
     public InjuryProviderKind Kind => InjuryProviderKind.Live;
 
     public string DisplayName => "Live (ESPN + Sleeper)";
+
+    public InjuryProviderCapabilities Capabilities => InjuryProviderCapabilities.CurrentOnlyEspnSleeper;
 
     public async Task<IReadOnlyList<PlayerInjuryRecord>> GetInjuriesAsync(
         CancellationToken cancellationToken = default)

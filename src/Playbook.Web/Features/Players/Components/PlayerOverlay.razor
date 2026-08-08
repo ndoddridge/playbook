@@ -2,6 +2,7 @@
 @using Playbook.Application.News
 @using Playbook.Application.Players
 @using Playbook.Application.Projections.Interfaces
+@using Playbook.Application.Injuries
 @using Playbook.Application.Injuries.Interfaces
 @using Playbook.Application.Stats
 @using Playbook.Application.Stats.Interfaces
@@ -411,68 +412,86 @@
                 {
                     <section class="player-section">
                         <h3 class="player-section__title">Injuries</h3>
-                        @if (playerInjuries.Count == 0)
+                        @if (injuryProfile is null)
                         {
-                            <p class="player-section__muted">No injury history available.</p>
+                            <p class="player-section__muted">Injury data has not been synced yet.</p>
                         }
                         else
                         {
                             <div class="player-profile__grid" style="margin-bottom:1rem;">
                                 <div class="player-stat">
                                     <span class="player-stat__label">Current Status</span>
-                                    <span class="player-stat__value">@(currentInjury?.Status ?? "—")</span>
+                                    <span class="player-stat__value">@(injuryProfile.CurrentStatus ?? InjuryAvailabilityPresentation.CurrentStatusLabel(injuryProfile.CurrentDataStatus))</span>
                                 </div>
                                 <div class="player-stat">
                                     <span class="player-stat__label">Current Injury</span>
-                                    <span class="player-stat__value">@(currentInjury?.BodyPart ?? "—")</span>
+                                    <span class="player-stat__value">@(injuryProfile.CurrentInjury?.BodyPart ?? "—")</span>
                                 </div>
                                 <div class="player-stat">
                                     <span class="player-stat__label">Practice Status</span>
-                                    <span class="player-stat__value">@(currentInjury?.PracticeStatus ?? "—")</span>
+                                    <span class="player-stat__value">@(injuryProfile.PracticeStatus ?? "—")</span>
                                 </div>
                                 <div class="player-stat">
                                     <span class="player-stat__label">Game Status</span>
-                                    <span class="player-stat__value">@(currentInjury?.GameStatus ?? "—")</span>
+                                    <span class="player-stat__value">@(injuryProfile.GameStatus ?? "—")</span>
                                 </div>
                                 <div class="player-stat">
                                     <span class="player-stat__label">Last Updated</span>
-                                    <span class="player-stat__value">@(currentInjury?.LastUpdated.ToLocalTime().ToString("MMM d, h:mm tt") ?? "—")</span>
+                                    <span class="player-stat__value">@(injuryProfile.LastUpdated?.ToLocalTime().ToString("MMM d, h:mm tt") ?? "—")</span>
                                 </div>
                                 <div class="player-stat">
-                                    <span class="player-stat__label">Source</span>
-                                    <span class="player-stat__value">@(currentInjury?.Source ?? "—")</span>
+                                    <span class="player-stat__label">Data Source</span>
+                                    <span class="player-stat__value">@(injuryProfile.SupportingSources.Count > 0 ? string.Join(", ", injuryProfile.SupportingSources) : "—")</span>
                                 </div>
                             </div>
 
-                            @if (!string.IsNullOrWhiteSpace(currentInjury?.Description))
+                            @if (!string.IsNullOrWhiteSpace(injuryProfile.RiskSummary))
                             {
-                                <p class="player-section__text" style="margin-bottom:1rem;">@currentInjury!.Description</p>
+                                <p class="player-section__text" style="margin-bottom:1rem;">@injuryProfile.RiskSummary</p>
                             }
 
-                            <h3 class="player-section__title">Recent Injury History</h3>
-                            <ul class="player-injury-list">
-                                @foreach (var injury in playerInjuries.Take(3))
-                                {
-                                    <li>
-                                        <strong>@injury.Date.ToLocalTime().ToString("MMM d, yyyy")</strong>
-                                        — @injury.Status
-                                        @if (!string.IsNullOrWhiteSpace(injury.BodyPart))
-                                        {
-                                            <text> (@injury.BodyPart)</text>
-                                        }
-                                        @if (!string.IsNullOrWhiteSpace(injury.Description))
-                                        {
-                                            <text> · @injury.Description</text>
-                                        }
-                                    </li>
-                                }
-                            </ul>
-
-                            @if (playerInjuries.Count > 3)
+                            @if (injuryProfile.CurrentDataStatus == CurrentInjuryDataStatus.Available &&
+                                 injuryProfile.CurrentInjury is { } current)
                             {
-                                <h3 class="player-section__title" style="margin-top:1.25rem;">Historical Injury History</h3>
+                                <h3 class="player-section__title">Current Injury</h3>
+                                <p class="player-section__text" style="margin-bottom:1rem;">
+                                    <strong>@current.Status</strong>
+                                    @if (!string.IsNullOrWhiteSpace(current.BodyPart))
+                                    {
+                                        <text> — @current.BodyPart</text>
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(current.Description))
+                                    {
+                                        <text>. @current.Description</text>
+                                    }
+                                </p>
+                            }
+                            else if (injuryProfile.CurrentDataStatus == CurrentInjuryDataStatus.NoCurrentInjury)
+                            {
+                                <p class="player-section__muted" style="margin-bottom:1rem;">
+                                    No current injury designation from the provider.
+                                </p>
+                            }
+                            else if (injuryProfile.CurrentDataStatus == CurrentInjuryDataStatus.MappingFailed)
+                            {
+                                <p class="player-section__muted" style="margin-bottom:1rem;">
+                                    A provider designation could not be mapped to this player.
+                                </p>
+                            }
+                            else if (injuryProfile.CurrentDataStatus == CurrentInjuryDataStatus.Unavailable)
+                            {
+                                <p class="player-section__muted" style="margin-bottom:1rem;">
+                                    Current injury data is unavailable.
+                                </p>
+                            }
+
+                            <h3 class="player-section__title">Historical Injury Data</h3>
+                            @if (injuryProfile.HistoricalDataStatus == HistoricalDataStatus.Available &&
+                                 injuryProfile.HistoricalRecords.Count > 0)
+                            {
+                                <h4 class="player-section__muted" style="margin:0.75rem 0 0.35rem;">Recent History</h4>
                                 <ul class="player-injury-list">
-                                    @foreach (var injury in playerInjuries.Skip(3))
+                                    @foreach (var injury in injuryProfile.HistoricalRecords.Take(3))
                                     {
                                         <li>
                                             <strong>@injury.Date.ToLocalTime().ToString("MMM d, yyyy")</strong>
@@ -481,9 +500,38 @@
                                             {
                                                 <text> (@injury.BodyPart)</text>
                                             }
+                                            @if (!string.IsNullOrWhiteSpace(injury.Description))
+                                            {
+                                                <text> · @injury.Description</text>
+                                            }
                                         </li>
                                     }
                                 </ul>
+
+                                @if (injuryProfile.HistoricalRecords.Count > 3)
+                                {
+                                    <h4 class="player-section__muted" style="margin:1rem 0 0.35rem;">Historical History</h4>
+                                    <ul class="player-injury-list">
+                                        @foreach (var injury in injuryProfile.HistoricalRecords.Skip(3))
+                                        {
+                                            <li>
+                                                <strong>@injury.Date.ToLocalTime().ToString("MMM d, yyyy")</strong>
+                                                — @injury.Status
+                                                @if (!string.IsNullOrWhiteSpace(injury.BodyPart))
+                                                {
+                                                    <text> (@injury.BodyPart)</text>
+                                                }
+                                            </li>
+                                        }
+                                    </ul>
+                                }
+                            }
+                            else
+                            {
+                                <p class="player-section__muted">
+                                    @(injuryProfile.HistoricalAvailabilityMessage
+                                        ?? InjuryAvailabilityPresentation.HistoricalMessage(injuryProfile.HistoricalDataStatus))
+                                </p>
                             }
                         }
                     </section>
@@ -503,8 +551,7 @@
     private IReadOnlyList<PlayerSeasonStats> allPlayerSeasonStats = [];
     private IReadOnlyList<PlayerSeasonStats> careerSeasonStats = [];
     private IReadOnlyList<PlayerSeasonStats> collegeSeasonStats = [];
-    private IReadOnlyList<PlayerInjuryRecord> playerInjuries = [];
-    private PlayerInjuryRecord? currentInjury;
+    private PlayerInjuryProfile? injuryProfile;
     private PlayerSeasonStats? selectedSeasonStats;
     private PlayerSeasonStats? selectedCollegeStats;
     private string selectedStatsKey = string.Empty;
@@ -539,8 +586,7 @@
                 allPlayerSeasonStats = [];
                 careerSeasonStats = [];
                 collegeSeasonStats = [];
-                playerInjuries = [];
-                currentInjury = null;
+                injuryProfile = null;
                 selectedSeasonStats = null;
                 selectedCollegeStats = null;
                 selectedStatsKey = string.Empty;
@@ -695,10 +741,7 @@
             return;
         }
 
-        playerInjuries = PlayerInjuryService.GetInjuriesForPlayer(context.Player.Id)
-            .OrderByDescending(r => r.Date)
-            .ToList();
-        currentInjury = PlayerInjuryService.GetCurrentInjury(context.Player.Id);
+        injuryProfile = PlayerInjuryService.GetPlayerInjuryProfile(context.Player.Id);
         loadedInjuriesPlayerId = context.Player.Id;
     }
 

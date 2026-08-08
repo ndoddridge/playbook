@@ -155,8 +155,10 @@ public sealed class IntelligenceService : IIntelligenceService
             var articles = _news.GetLatest(50);
             var players = _players.GetAllPlayers();
             var newsFacts = _analyzer.Analyze(articles, players);
-            var injuryFacts = InjuryFactBuilder.BuildFacts(
-                _injuries.GetAllInjuries().Where(r => r.IsCurrent));
+            var injuryProfiles = players
+                .Select(p => _injuries.GetPlayerInjuryProfile(p.Id))
+                .ToList();
+            var injuryFacts = InjuryFactBuilder.BuildFacts(injuryProfiles);
             var facts = newsFacts.Concat(injuryFacts).ToList();
             analysisWatch.Stop();
             _facts = facts;

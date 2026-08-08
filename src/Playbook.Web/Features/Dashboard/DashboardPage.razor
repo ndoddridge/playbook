@@ -268,20 +268,24 @@
                     <span class="pb-meta-value pb-meta-value--live">@injuryProvider</span>
                 </div>
                 <div class="pb-meta-row">
-                    <span class="pb-meta-label">Players With Injury Data</span>
-                    <span class="pb-meta-value">@injuryPlayers</span>
-                </div>
-                <div class="pb-meta-row">
-                    <span class="pb-meta-label">Injury Records Loaded</span>
-                    <span class="pb-meta-value">@injuryRecords</span>
-                </div>
-                <div class="pb-meta-row">
                     <span class="pb-meta-label">Current Injury Records</span>
                     <span class="pb-meta-value">@injuryCurrent</span>
                 </div>
                 <div class="pb-meta-row">
                     <span class="pb-meta-label">Historical Injury Records</span>
                     <span class="pb-meta-value">@injuryHistorical</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Players With Current Injuries</span>
+                    <span class="pb-meta-value">@injuryPlayersCurrent</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Players With Historical Data</span>
+                    <span class="pb-meta-value">@injuryPlayersHistorical</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Historical Data Availability</span>
+                    <span class="pb-meta-value">@injuryHistoricalAvailability</span>
                 </div>
                 <div class="pb-meta-row">
                     <span class="pb-meta-label">Last Injury Sync</span>
@@ -432,10 +436,11 @@
     private string collegeLastSync = "—";
     private string collegeLastError = "None";
     private string injuryProvider = "—";
-    private string injuryPlayers = "—";
-    private string injuryRecords = "—";
     private string injuryCurrent = "—";
     private string injuryHistorical = "—";
+    private string injuryPlayersCurrent = "—";
+    private string injuryPlayersHistorical = "—";
+    private string injuryHistoricalAvailability = "—";
     private string injuryLastSync = "—";
     private string injuryRuntime = "—";
     private string injuryLastError = "None";
@@ -572,10 +577,11 @@
             : InjurySyncStatus.UsedCache
                 ? $"{InjurySyncStatus.ActiveProvider} (cache)"
                 : InjurySyncStatus.ActiveProvider;
-        injuryPlayers = InjurySyncStatus.PlayersWithInjuryData.ToString();
-        injuryRecords = InjurySyncStatus.InjuryRecordsLoaded.ToString();
         injuryCurrent = InjurySyncStatus.CurrentInjuryRecords.ToString();
         injuryHistorical = InjurySyncStatus.HistoricalInjuryRecords.ToString();
+        injuryPlayersCurrent = InjurySyncStatus.PlayersWithCurrentInjuries.ToString();
+        injuryPlayersHistorical = InjurySyncStatus.PlayersWithHistoricalData.ToString();
+        injuryHistoricalAvailability = InjurySyncStatus.HistoricalDataAvailability;
         injuryLastSync = InjurySyncStatus.LastInjurySync?.ToLocalTime().ToString("h:mm:ss tt") ?? "—";
         injuryRuntime = InjurySyncStatus.InjurySyncRuntime is { } injuryElapsed
             ? $"{injuryElapsed.TotalMilliseconds:0} ms"

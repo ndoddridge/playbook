@@ -2,13 +2,35 @@
 
 All notable project changes are recorded here.
 
+## [Unreleased] — Injury Profile Architecture (Current vs Historical)
+
+### Added
+
+- `PlayerInjuryProfile` with explicit `CurrentInjuryDataStatus` and `HistoricalDataStatus`
+- `IHistoricalInjuryProvider` abstraction (`Null` for Live; `Mock` seeds when `Injuries:Provider=Mock`)
+- `InjuryProviderCapabilities` documenting Live ESPN/Sleeper as current-report only
+- Injuries tab: honest historical availability copy; Data Source + Last Updated
+- Developer Monitor: Current/Historical records, players with current/historical data, historical availability, provider, last sync/error
+- Intelligence: scored injury facts only for current designations; unknown history does not invent a healthy signal
+
+### Changed
+
+- Live path no longer pretends cache snapshots are career injury history
+- Removed misleading “No injury history available” empty state for provider-limited history
+
+### Limitations
+
+- Live ESPN + Sleeper do **not** supply career historical injury records
+- Practice designations are sparse on Sleeper outside active report weeks
+- Player mapping for Live is name + team (not stable ESPN athlete ids)
+
 ## [Unreleased] — Injury Data + Modal Top Bar Fix
 
 ### Added
 
 - Dedicated `IPlayerInjuryProvider` / `IPlayerInjuryService` with Mock + Live (ESPN injuries + Sleeper practice/status enrichment)
-- Normalized `PlayerInjuryRecord` with current + historical preservation via JSON cache
-- Injuries tab: current status/injury/practice/game status, recent + historical history, source/last updated
+- Normalized `PlayerInjuryRecord`
+- Injuries tab: current status/injury/practice/game status, source/last updated
 - Intelligence consumes structured injury facts (`InjuryReport` source) via existing rule ids
 - Projection Engine applies conservative availability multipliers for Out / IR / Doubtful / Questionable / Limited
 - Developer Monitor injury sync metrics; background refresh includes injuries (isolated failure)
@@ -19,7 +41,7 @@ All notable project changes are recorded here.
 
 ### Limitations
 
-- ESPN feed is a current snapshot; history accumulates across syncs rather than providing lifelong medical records
+- ESPN feed is a current snapshot only (see Injury Profile Architecture above)
 - Practice designations are sparse on Sleeper outside active report weeks
 
 ## [Unreleased] — College Statistics + Player Modal Polish
