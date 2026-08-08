@@ -6,17 +6,20 @@ namespace Playbook.Application.Projections.Interfaces;
 
 /// <summary>
 /// Deterministic, explainable projection rules.
-/// Consumes intelligence + player + league context; does not make fantasy decisions.
+/// Consumes player-specific production + intelligence + league context.
+/// Does not make fantasy decisions.
 /// </summary>
 public interface IProjectionEngine
 {
     PlayerProjection Project(
         Player player,
+        PlayerProductionSnapshot production,
         PlayerIntelligenceProfile? intelligence,
         ProjectionLeagueContext leagueContext);
 
     IReadOnlyList<PlayerProjection> ProjectMany(
         IReadOnlyList<Player> players,
+        IReadOnlyDictionary<Guid, PlayerProductionSnapshot> productionByPlayer,
         IReadOnlyDictionary<Guid, PlayerIntelligenceProfile> intelligenceByPlayer,
         ProjectionLeagueContext leagueContext);
 }

@@ -100,15 +100,21 @@ Background refresh (`BackgroundRefresh`) periodically reloads players, news, int
 
 ## Projection Engine
 
-Projection Engine V1 consumes `PlayerIntelligenceProfile` + player + league context and produces numerical expected outcomes (`PlayerProjection`). It does **not** make start/sit, waiver, draft, or trade decisions.
+Projection Engine V1 produces numerical expected outcomes (`PlayerProjection`). It does **not** make start/sit, waiver, draft, or trade decisions.
 
-Weighted rules live in `Projection:Rules` (`appsettings.json`): position baselines, PPR boosts, health/opportunity/usage/risk weights, floor/ceiling spreads, and volatility from low confidence.
+**Inputs**
+
+1. Player-specific production (`IPlayerProductionProvider`) — curated season box scores when available; otherwise a documented attribute fallback (position + YearsPro + Age + Status)
+2. `PlayerIntelligenceProfile` — opportunity / usage / health / risk / trend adjustments
+3. League scoring (Standard / Half-PPR / PPR) — receptions change fantasy math
+
+Baselines are computed from passing/rushing/receiving components (position-specific), not a flat position constant. Intelligence then scales volume and downside. Rules live in `Projection:Rules`.
 
 UI surfaces:
 
-- Player Overlay **Projection** tab — points, floor/median/ceiling, confidence, volatility, reasoning, supporting intelligence
+- Player Overlay **Projection** tab — points, floor/median/ceiling, confidence, volatility, player-specific reasoning
 - Player Explorer — sortable **Projected Points** column
-- Developer Monitor — Players Projected, Projection Runtime, Average Projection Confidence
+- Developer Monitor — Players Projected, Unique Projection Values, Average Projection, Average Confidence, Projection Runtime
 
 ## Run the web app
 

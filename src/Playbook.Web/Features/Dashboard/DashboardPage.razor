@@ -187,12 +187,20 @@
                     <span class="pb-meta-value">@projectionPlayers</span>
                 </div>
                 <div class="pb-meta-row">
-                    <span class="pb-meta-label">Projection Runtime</span>
-                    <span class="pb-meta-value">@projectionRuntime</span>
+                    <span class="pb-meta-label">Unique Projection Values</span>
+                    <span class="pb-meta-value">@projectionUnique</span>
                 </div>
                 <div class="pb-meta-row">
-                    <span class="pb-meta-label">Average Projection Confidence</span>
+                    <span class="pb-meta-label">Average Projection</span>
+                    <span class="pb-meta-value">@projectionAverage</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Average Confidence</span>
                     <span class="pb-meta-value">@projectionAvgConfidence</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Projection Runtime</span>
+                    <span class="pb-meta-value">@projectionRuntime</span>
                 </div>
             </div>
         </article>
@@ -313,6 +321,8 @@
     private string intelAvgFacts = "—";
     private string intelAggRuntime = "—";
     private string projectionPlayers = "—";
+    private string projectionUnique = "—";
+    private string projectionAverage = "—";
     private string projectionRuntime = "—";
     private string projectionAvgConfidence = "—";
 
@@ -401,6 +411,10 @@
 
         _ = ProjectionService.GetAllProjections();
         projectionPlayers = ProjectionSyncStatus.PlayersProjected.ToString();
+        projectionUnique = ProjectionSyncStatus.UniqueProjectionValues.ToString();
+        projectionAverage = ProjectionSyncStatus.PlayersProjected > 0
+            ? ProjectionSyncStatus.AverageProjection.ToString("0.0")
+            : "—";
         projectionRuntime = ProjectionSyncStatus.ProjectionRuntime is { } projRuntime
             ? $"{projRuntime.TotalMilliseconds:0} ms"
             : "—";

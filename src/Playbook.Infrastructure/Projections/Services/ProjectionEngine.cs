@@ -9,8 +9,9 @@ using Playbook.Core.Projections.Models;
 namespace Playbook.Infrastructure.Projections.Services;
 
 /// <summary>
-/// Weighted, deterministic Projection Engine V1.
-/// Estimates expected fantasy outcomes only — never start/sit or roster advice.
+/// Player-specific Projection Engine.
+/// Baseline = production-derived weekly fantasy points (scoring-aware).
+/// Intelligence adjusts volume / downside / ceiling — never invents identical baselines.
 /// </summary>
 public sealed class ProjectionEngine : IProjectionEngine
 {
@@ -23,99 +24,134 @@ public sealed class ProjectionEngine : IProjectionEngine
 
     public PlayerProjection Project(
         Player player,
+        PlayerProductionSnapshot production,
         PlayerIntelligenceProfile? intelligence,
         ProjectionLeagueContext leagueContext)
     {
         var reasoning = new List<string>();
         var supporting = new List<string>();
 
-        var baseline = ResolveBaseline(player.Position);
-        var scoringBoost = ResolveScoringBoost(player.Position, leagueContext.ScoringType);
-        var basePoints = baseline + scoringBoost;
+        var scoring = leagueContext.ScoringType;
+        var weeklyBase = FantasyScoring.WeeklyFantasyPoints(production, scoring);
+        var seasonPoints = FantasyScoring.SeasonFantasyPoints(production, scoring);
 
         reasoning.Add(
-            $"Base {player.Position} projection {baseline:0.0} pts" +
-            (scoringBoost == 0
-                ? $" ({leagueContext.ScoringType} scoring)."
-                : $" + {scoringBoost:0.0} for {FormatScoring(leagueContext.ScoringType)}."));
+            $"Base projection: {weeklyBase:0.0} {FormatScoring(scoring)} points from {production.Season} production " +
+            $"({seasonPoints:0.0} season pts / {Math.Max(1, production.GamesPlayed)} games).");
+        reasoning.Add(production.SourceDescription);
+        reasoning.AddRange(FantasyScoring.DescribeComponents(production, scoring));
 
         var health = intelligence?.HealthScore ?? 50;
         var opportunity = intelligence?.OpportunityScore ?? 50;
         var usage = intelligence?.UsageScore ?? 50;
-        var risk = intelligence?.OverallRisk ?? 50;
-        var momentum = intelligence?.NewsMomentum ?? 50;
-        var intelConfidence = intelligence?.OverallConfidence ?? 40;
+        var risk = intelligence?.OverallRisk ?? 0;
+        var trend = intelligence?.TrendDirection ?? TrendDirection.Flat;
+        var intelConfidence = intelligence?.OverallConfidence ?? 45;
 
-        // Health / Opportunity / Usage are centered at 50 (neutral).
-        var healthAdj = ScoreDeltaFromNeutral(health, _rules.HealthWeight);
-        var opportunityAdj = ScoreDeltaFromNeutral(opportunity, _rules.OpportunityWeight);
-        var usageMedianAdj = ScoreDeltaFromNeutral(usage, _rules.UsageWeight) * 0.55m;
-        // Risk and momentum are 0-based (0 = none); they do not use a 50 baseline.
-        var riskAdj = -(risk / 100m) * _rules.RiskWeight;
-        var momentumAdj = (momentum / 100m) * _rules.MomentumWeight * 0.35m;
+        // Volume multipliers from opportunity / usage (centered at 50).
+        var opportunityFactor = 1m + ScoreDeltaFromNeutral(opportunity, _rules.OpportunityVolumeFactor);
+        var usageFactor = 1m + ScoreDeltaFromNeutral(usage, _rules.UsageVolumeFactor);
 
-        if (healthAdj != 0)
+        if (opportunity != 50)
         {
-            reasoning.Add(healthAdj > 0
-                ? $"Higher Health ({health}) raises projection by {healthAdj:0.0}."
-                : $"Negative injury / Health ({health}) lowers projection by {Math.Abs(healthAdj):0.0}.");
+            reasoning.Add(opportunity > 50
+                ? $"Opportunity score {opportunity} increased expected volume (×{opportunityFactor:0.00})."
+                : $"Opportunity score {opportunity} decreased expected volume (×{opportunityFactor:0.00}).");
         }
 
-        if (opportunityAdj != 0)
+        if (usage != 50)
         {
-            reasoning.Add(opportunityAdj > 0
-                ? $"Higher Opportunity ({opportunity}) increases projection by {opportunityAdj:0.0}."
-                : $"Lower Opportunity ({opportunity}) decreases projection by {Math.Abs(opportunityAdj):0.0}.");
+            reasoning.Add(usage > 50
+                ? $"Usage score {usage} increased expected involvement (×{usageFactor:0.00})."
+                : $"Usage score {usage} decreased expected involvement (×{usageFactor:0.00}).");
         }
 
-        if (usageMedianAdj != 0)
+        var volumeAdjusted = weeklyBase * opportunityFactor * usageFactor;
+
+        // Health: downside when poor; small upside when strong.
+        decimal healthFactor = 1m;
+        if (health < 50)
         {
-            reasoning.Add(usageMedianAdj > 0
-                ? $"Positive Usage ({usage}) lifts median by {usageMedianAdj:0.0}."
-                : $"Soft Usage ({usage}) trims median by {Math.Abs(usageMedianAdj):0.0}.");
+            healthFactor = 1m - ((50 - health) / 50m) * _rules.HealthDownsideFactor;
+            reasoning.Add(
+                $"Health score {health} produces downside adjustment (×{healthFactor:0.00}).");
+        }
+        else if (health > 50)
+        {
+            healthFactor = 1m + ((health - 50) / 50m) * _rules.HealthUpsideFactor;
+            reasoning.Add(
+                $"Health score {health} produces minimal downside / slight upside (×{healthFactor:0.00}).");
         }
 
-        if (riskAdj < 0)
+        var riskFactor = 1m - (risk / 100m) * _rules.RiskDownsideFactor;
+        if (risk > 0)
         {
-            reasoning.Add($"Elevated Risk ({risk}) reduces projection by {Math.Abs(riskAdj):0.0}.");
+            reasoning.Add($"Risk {risk} trims projection (×{riskFactor:0.00}).");
         }
 
-        if (Math.Abs(momentumAdj) >= 0.05m)
+        var trendFactor = trend switch
         {
-            reasoning.Add($"News Momentum ({momentum}) lifts median by {momentumAdj:0.0}.");
+            TrendDirection.Up => 1m + _rules.TrendFactor,
+            TrendDirection.Down => 1m - _rules.TrendFactor,
+            _ => 1m
+        };
+        if (trend == TrendDirection.Up)
+        {
+            reasoning.Add("Recent usage/opportunity trend increased projection and ceiling.");
+        }
+        else if (trend == TrendDirection.Down)
+        {
+            reasoning.Add("Negative usage/opportunity trend decreased projection.");
         }
 
         if (intelligence is null)
         {
-            reasoning.Add("No PlayerIntelligenceProfile — neutral intelligence assumptions (50).");
+            reasoning.Add("No PlayerIntelligenceProfile — neutral intelligence assumptions applied.");
         }
 
-        var medianRaw = basePoints + healthAdj + opportunityAdj + usageMedianAdj + riskAdj + momentumAdj;
+        var medianRaw = volumeAdjusted * healthFactor * riskFactor * trendFactor;
         var median = Clamp(Round1(medianRaw));
         var projected = median;
 
         var usageCeilingBonus = usage > 50
-            ? ScoreDeltaFromNeutral(usage, _rules.UsageCeilingBonus)
+            ? median * ScoreDeltaFromNeutral(usage, _rules.UsageCeilingFactor)
             : 0m;
-        if (usageCeilingBonus > 0)
+        if (usageCeilingBonus >= 0.05m)
         {
-            reasoning.Add($"Positive Usage raises ceiling by {usageCeilingBonus:0.0}.");
+            reasoning.Add($"Strong usage trend raised ceiling by {usageCeilingBonus:0.0}.");
         }
 
-        var volatility = ComputeVolatility(intelConfidence, health, risk, usage);
-        if (intelConfidence < 55)
+        var productionConfidence = production.Source switch
         {
-            reasoning.Add($"Low Confidence ({intelConfidence}%) increases volatility to {volatility}.");
+            ProductionDataSource.CuratedSeason => 78,
+            ProductionDataSource.ProfileSeason => 70,
+            _ => 48
+        };
+        var confidence = (int)Math.Round(
+            intelConfidence * _rules.IntelligenceConfidenceWeight +
+            productionConfidence * (1 - _rules.IntelligenceConfidenceWeight));
+        confidence = Math.Clamp(confidence, 0, 100);
+
+        var volatility = ComputeVolatility(confidence, health, risk, usage, production.Source);
+        if (intelConfidence < 55 || production.Source == ProductionDataSource.AttributeFallback)
+        {
+            reasoning.Add(
+                $"Low input confidence (intel {intelConfidence}%, production source {production.Source}) " +
+                $"increases volatility to {volatility}.");
         }
         else
         {
-            reasoning.Add($"Projection confidence {intelConfidence}% → volatility {volatility}.");
+            reasoning.Add($"High intelligence confidence {intelConfidence}% reduces projection uncertainty (volatility {volatility}).");
         }
 
         var volFactor = volatility / 100m;
-        var healthFloorPenalty = health < 50 ? ((50 - health) / 50m) * 1.5m : 0m;
-        var floorSpread = _rules.BaseFloorSpread + (volFactor * 5.0m) + healthFloorPenalty;
-        var ceilingSpread = _rules.BaseCeilingSpread + (volFactor * 4.0m) + usageCeilingBonus;
+        var healthFloorPenalty = health < 50 ? ((50m - health) / 50m) * 2.2m : 0m;
+        var floorSpread = _rules.BaseFloorSpread + (volFactor * 5.5m) + healthFloorPenalty;
+        var ceilingSpread = _rules.BaseCeilingSpread + (volFactor * 4.2m) + usageCeilingBonus;
+        if (trend == TrendDirection.Up)
+        {
+            ceilingSpread += median * (_rules.TrendFactor * 0.75m);
+        }
 
         var floor = Clamp(Round1(median - floorSpread));
         var ceiling = Clamp(Round1(median + ceilingSpread));
@@ -129,11 +165,21 @@ public sealed class ProjectionEngine : IProjectionEngine
             ceiling = median;
         }
 
-        reasoning.Add(
-            $"League context: {leagueContext.LeagueName}, Week {leagueContext.CurrentWeek}, " +
-            $"{leagueContext.NumberOfTeams}-team, {FormatScoring(leagueContext.ScoringType)}.");
+        // Guarantee strict ordering when spreads collapse on clamps.
+        if (floor >= median && median > _rules.MinProjection)
+        {
+            floor = Clamp(Round1(median - 0.1m));
+        }
 
-        AppendSupportingIntelligence(intelligence, supporting);
+        if (ceiling <= median && median < _rules.MaxProjection)
+        {
+            ceiling = Clamp(Round1(median + 0.1m));
+        }
+
+        reasoning.Add(
+            $"League scoring: {FormatScoring(scoring)} · {leagueContext.LeagueName} · Week {leagueContext.CurrentWeek}.");
+
+        AppendSupportingIntelligence(intelligence, production, supporting);
 
         return new PlayerProjection
         {
@@ -142,7 +188,7 @@ public sealed class ProjectionEngine : IProjectionEngine
             Floor = floor,
             Median = median,
             Ceiling = ceiling,
-            Confidence = Math.Clamp(intelConfidence, 0, 100),
+            Confidence = confidence,
             Volatility = volatility,
             ProjectionReasoning = reasoning,
             SupportingIntelligence = supporting,
@@ -152,48 +198,38 @@ public sealed class ProjectionEngine : IProjectionEngine
 
     public IReadOnlyList<PlayerProjection> ProjectMany(
         IReadOnlyList<Player> players,
+        IReadOnlyDictionary<Guid, PlayerProductionSnapshot> productionByPlayer,
         IReadOnlyDictionary<Guid, PlayerIntelligenceProfile> intelligenceByPlayer,
         ProjectionLeagueContext leagueContext)
     {
         var results = new List<PlayerProjection>(players.Count);
         foreach (var player in players.OrderBy(p => p.Id))
         {
+            if (!productionByPlayer.TryGetValue(player.Id, out var production))
+            {
+                continue;
+            }
+
             intelligenceByPlayer.TryGetValue(player.Id, out var profile);
-            results.Add(Project(player, profile, leagueContext));
+            results.Add(Project(player, production, profile, leagueContext));
         }
 
         return results;
     }
 
-    private decimal ResolveBaseline(Position position)
-    {
-        var key = position.ToString();
-        if (_rules.PositionBaselines.TryGetValue(key, out var value))
-        {
-            return value;
-        }
-
-        return 8.0m;
-    }
-
-    private decimal ResolveScoringBoost(Position position, ScoringType scoring)
-    {
-        var key = position.ToString();
-        return scoring switch
-        {
-            ScoringType.HalfPpr => _rules.HalfPprBoosts.TryGetValue(key, out var half) ? half : 0m,
-            ScoringType.Ppr => _rules.PprBoosts.TryGetValue(key, out var ppr) ? ppr : 0m,
-            _ => 0m
-        };
-    }
-
-    private int ComputeVolatility(int confidence, int health, int risk, int usage)
+    private int ComputeVolatility(
+        int confidence,
+        int health,
+        int risk,
+        int usage,
+        ProductionDataSource source)
     {
         var fromConfidence = (100 - confidence) * _rules.VolatilityFromLowConfidence;
-        var fromHealth = Math.Abs(health - 50) * 0.25;
-        var fromRisk = Math.Max(0, risk - 50) * 0.35;
-        var fromUsageSwing = Math.Abs(usage - 50) * 0.15;
-        var raw = _rules.BaselineVolatility + fromConfidence + fromHealth + fromRisk + fromUsageSwing;
+        var fromHealth = Math.Max(0, 50 - health) * 0.35;
+        var fromRisk = risk * 0.20;
+        var fromUsageSwing = Math.Abs(usage - 50) * 0.12;
+        var fromSource = source == ProductionDataSource.AttributeFallback ? 12 : 0;
+        var raw = _rules.BaselineVolatility + fromConfidence + fromHealth + fromRisk + fromUsageSwing + fromSource;
         return Math.Clamp((int)Math.Round(raw), 5, 95);
     }
 
@@ -208,8 +244,16 @@ public sealed class ProjectionEngine : IProjectionEngine
 
     private static void AppendSupportingIntelligence(
         PlayerIntelligenceProfile? intelligence,
+        PlayerProductionSnapshot production,
         List<string> supporting)
     {
+        supporting.Add(
+            $"Production[{production.Source}] {production.Season}: " +
+            $"Pass {production.PassingYards}/{production.PassingTouchdowns}TD/{production.Interceptions}INT · " +
+            $"Rush {production.RushingYards}/{production.RushingTouchdowns}TD · " +
+            $"Rec {production.Receptions}/{production.ReceivingYards}/{production.ReceivingTouchdowns}TD · " +
+            $"Tgt {production.Targets}");
+
         if (intelligence is null)
         {
             supporting.Add("Neutral intelligence defaults (no profile).");
@@ -225,7 +269,7 @@ public sealed class ProjectionEngine : IProjectionEngine
         foreach (var fact in intelligence.SupportingFacts
                      .OrderByDescending(f => f.Importance)
                      .ThenByDescending(f => f.Confidence)
-                     .Take(6))
+                     .Take(5))
         {
             supporting.Add($"{fact.Category}: {fact.Title} ({fact.Confidence}%)");
         }

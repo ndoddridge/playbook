@@ -71,6 +71,7 @@ public static class DependencyInjection
     {
         services.AddSingleton<ProjectionSyncStatus>();
         services.AddSingleton<IProjectionSyncStatus>(sp => sp.GetRequiredService<ProjectionSyncStatus>());
+        services.AddSingleton<IPlayerProductionProvider, PlayerProductionProvider>();
         services.AddSingleton<IProjectionEngine, ProjectionEngine>();
         services.AddSingleton<IProjectionService, ProjectionService>();
     }

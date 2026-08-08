@@ -319,13 +319,27 @@ Projection, Prediction, and Decision engines should take `PlayerIntelligenceProf
 
 Estimates **numerical expected outcomes** only. It must not encode start/sit, waiver, draft, or trade decisions. Downstream engines consume `PlayerProjection`.
 
+### Projection inputs
+
+| Input | Role |
+| --- | --- |
+| `PlayerProductionSnapshot` | Player-specific historical/season box scores (or documented fallback) |
+| `PlayerIntelligenceProfile` | Opportunity / usage / health / risk / trend modifiers |
+| `Player` + position | Routes which production components matter |
+| League scoring | Standard / Half-PPR / PPR fantasy math from components |
+
 ### Projection pipeline
 
 ```
-PlayerIntelligenceProfile + Player + League context
+Player + IPlayerProductionProvider
         │
         ▼
- ProjectionEngine (weighted, deterministic rules)
+ PlayerProductionSnapshot  (curated → profile → attribute fallback)
+        │
+        +── PlayerIntelligenceProfile
+        +── League scoring context
+        ▼
+ ProjectionEngine (production baseline + intelligence volume/downside)
         │
         ▼
  PlayerProjection
@@ -338,34 +352,61 @@ PlayerIntelligenceProfile + Player + League context
  Future: Decision · Quick Picks · Draft · Waiver · Trade
 ```
 
-### Weighted projection rules
+### Position-specific baselines
 
-Rules are centralized in `Projection:Rules` (`ProjectionRuleOptions`):
+Weekly fantasy points are computed from season production ÷ games:
+
+| Position | Components |
+| --- | --- |
+| QB | Passing volume/efficiency (yds, TD, INT) + rushing contribution |
+| RB | Carries / rush yds / rush TD + targets / receptions / receiving yds / TD |
+| WR | Targets / receptions / receiving yds / TD (+ rare rush) |
+| TE | Targets / receptions / receiving yds / TD |
+| K / DST | Specialist weekly prior |
+
+Fantasy math (`FantasyScoring`): pass yds/25, pass TD×4, INT×−2, rush/rec yds/10, rush/rec TD×6, receptions × 0 / 0.5 / 1.0 by scoring type.
+
+### Intelligence adjustments
+
+Centralized in `Projection:Rules`:
 
 | Signal | Effect |
 | --- | --- |
-| Higher Health | Raises median / projected points |
-| Higher Opportunity | Raises median / projected points |
-| Negative injury (low Health) | Lowers projection; widens floor |
-| Positive Usage | Raises median modestly; raises **ceiling** more |
-| Elevated Risk | Lowers projection |
-| Low Confidence | Increases **volatility** (wider floor–ceiling) |
-| Scoring type (Half-PPR / PPR) | Position-specific boosts on the baseline |
+| High Opportunity | Increases expected volume (× factor) |
+| Low Opportunity | Decreases expected volume |
+| Health concern | Reduces projection; widens downside (floor) |
+| Strong usage / trend up | Raises median and ceiling |
+| Negative usage / trend down | Decreases projection |
+| Elevated Risk | Trims projection |
+| High intel confidence | Reduces volatility |
+| Low intel confidence | Increases volatility |
 
-Position baselines (QB/RB/WR/TE/K/DST) plus scoring boosts form the starting estimate. Each intelligence score (relative to neutral 50) applies an explainable delta. Reasoning strings and supporting intelligence (headline, scores, top facts) ship with every projection.
+### Fallback behavior
+
+`IPlayerProductionProvider` resolution order:
+
+1. **CuratedSeason** — player-specific catalog keyed by normalized name (works for mock + live ids)
+2. **ProfileSeason** — `SeasonStats` from `PlayerProfile` when populated by a future live stats path
+3. **AttributeFallback** — position shell scaled by YearsPro, Age, and Status (explicitly labeled in reasoning)
+
+Live Sleeper currently supplies identity only (no box scores). Unknown live players therefore use attribute fallback until a stats provider implements `IPlayerProductionProvider`.
+
+### Validation tests
+
+`ProjectionEngineTests` covers: same-position differentiation, opportunity↑ ⇒ projection↑, health concern downside, stronger production ⇒ higher baseline, PPR ≠ Half-PPR for receivers, Floor &lt; Median &lt; Ceiling, confidence 0–100, league scoring refresh.
 
 ### Contracts
 
-- `PlayerProjection`, `ProjectionLeagueContext` — `Playbook.Core.Projections.Models`
-- `IProjectionEngine`, `IProjectionService` — `Playbook.Application.Projections.Interfaces`
-- `ProjectionEngine`, `ProjectionService` — `Playbook.Infrastructure.Projections.Services`
-- UI feature folder — `Playbook.Web.Features.Projections` (Models / Services / Interfaces markers)
+- `PlayerProjection`, `ProjectionLeagueContext`, `PlayerProductionSnapshot` — `Playbook.Core.Projections.Models`
+- `IProjectionEngine`, `IProjectionService`, `IPlayerProductionProvider` — `Playbook.Application.Projections.Interfaces`
+- `ProjectionEngine`, `ProjectionService`, `PlayerProductionProvider` — `Playbook.Infrastructure.Projections.Services`
+- UI feature folder — `Playbook.Web.Features.Projections`
 
 ### UI surfaces
 
-- Player Overlay **Projection** tab
+- Player Overlay **Projection** tab (player-specific reasoning)
 - Player Explorer sortable **Projected Points**
-- Developer Monitor: Players Projected, Projection Runtime, Average Projection Confidence
+- Developer Monitor: Players Projected, Unique Projection Values, Average Projection, Average Confidence, Projection Runtime
 
 ## Player Overlay
 

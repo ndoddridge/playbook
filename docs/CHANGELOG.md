@@ -2,6 +2,25 @@
 
 All notable project changes are recorded here.
 
+## [Unreleased] — Player-Specific Projection Fix
+
+### Fixed
+
+- Projection baselines are now player-specific production (curated season box scores), not flat position constants
+- Elite QBs/RBs/WRs/TEs (Mahomes, Allen, Daniels, Barkley, Bijan, Chase, Kelce, …) produce differentiated projections and reasoning
+- Intelligence adjusts volume/downside/ceiling on top of production; league scoring recalculates fantasy points from components
+
+### Added
+
+- `PlayerProductionSnapshot` + `IPlayerProductionProvider` (curated catalog → profile stats → attribute fallback)
+- `FantasyScoring` helper (Standard / Half-PPR / PPR from box-score components)
+- Differentiation validation tests (same-position variance, opportunity, health, production, scoring, floor/median/ceiling)
+- Developer Monitor: Unique Projection Values, Average Projection (plus existing Players Projected / Runtime / Confidence)
+
+### Limitations
+
+- Live Sleeper provider still does not supply season stats; unknown players use attribute fallback until a live stats provider is wired behind `IPlayerProductionProvider`
+
 ## [Unreleased] — Projection Engine V1
 
 ### Added
@@ -9,17 +28,17 @@ All notable project changes are recorded here.
 - `PlayerProjection` — expected fantasy points, floor, median, ceiling, confidence, volatility, reasoning, supporting intelligence
 - `IProjectionEngine` / `ProjectionEngine` — deterministic weighted rules over `PlayerIntelligenceProfile` + player + league context
 - `IProjectionService` / `ProjectionService` — cached projections with league-aware refresh
-- Configurable rules via `Projection:Rules` (position baselines, scoring boosts, health/opportunity/usage/risk weights)
+- Configurable rules via `Projection:Rules`
 - Player Overlay **Projection** tab
 - Player Explorer sortable **Projected Points** column
-- Developer Monitor: Players Projected, Projection Runtime, Average Projection Confidence
+- Developer Monitor projection telemetry
 - Background refresh re-runs projections after intelligence
 
 ### Architecture notes
 
 - Projection estimates outcomes only — never start/sit, waiver, draft, or trade advice
 - Future Decision / Quick Picks / Draft Assistant / Waiver Assistant / Trade Analyzer must consume `PlayerProjection`
-- Rules are centralized and explainable; same intelligence + league ⇒ same projection
+- Rules are centralized and explainable; same production + intelligence + league ⇒ same projection
 
 ## [Unreleased] — Intelligence Aggregation (Player Profiles)
 

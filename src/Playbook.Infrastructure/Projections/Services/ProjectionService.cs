@@ -10,11 +10,13 @@ using Playbook.Core.Projections.Models;
 namespace Playbook.Infrastructure.Projections.Services;
 
 /// <summary>
-/// Builds and caches <see cref="PlayerProjection"/> values from intelligence + league context.
+/// Builds and caches <see cref="PlayerProjection"/> values from
+/// player-specific production + intelligence + league context.
 /// </summary>
 public sealed class ProjectionService : IProjectionService
 {
     private readonly IProjectionEngine _engine;
+    private readonly IPlayerProductionProvider _production;
     private readonly IIntelligenceService _intelligence;
     private readonly IPlayerService _players;
     private readonly ILeagueState _leagueState;
@@ -30,6 +32,7 @@ public sealed class ProjectionService : IProjectionService
 
     public ProjectionService(
         IProjectionEngine engine,
+        IPlayerProductionProvider production,
         IIntelligenceService intelligence,
         IPlayerService players,
         ILeagueState leagueState,
@@ -37,6 +40,7 @@ public sealed class ProjectionService : IProjectionService
         ILogger<ProjectionService> logger)
     {
         _engine = engine;
+        _production = production;
         _intelligence = intelligence;
         _players = players;
         _leagueState = leagueState;
@@ -117,7 +121,11 @@ public sealed class ProjectionService : IProjectionService
             var profiles = _intelligence.GetAllProfiles()
                 .ToDictionary(p => p.PlayerId);
 
-            var projections = _engine.ProjectMany(players, profiles, context);
+            var production = players.ToDictionary(
+                p => p.Id,
+                p => _production.GetProduction(p));
+
+            var projections = _engine.ProjectMany(players, production, profiles, context);
             watch.Stop();
 
             _projections = projections;
@@ -128,12 +136,26 @@ public sealed class ProjectionService : IProjectionService
             var avgConfidence = projections.Count == 0
                 ? 0
                 : projections.Average(p => p.Confidence);
+            var avgProjection = projections.Count == 0
+                ? 0
+                : (double)projections.Average(p => p.ProjectedFantasyPoints);
+            var uniqueValues = projections
+                .Select(p => p.ProjectedFantasyPoints)
+                .Distinct()
+                .Count();
 
-            _status.RecordSuccess(projections.Count, avgConfidence, watch.Elapsed);
+            _status.RecordSuccess(
+                projections.Count,
+                uniqueValues,
+                avgProjection,
+                avgConfidence,
+                watch.Elapsed);
 
             _logger.LogInformation(
-                "Projection pipeline: {Players} players projected in {Ms} ms (avg confidence {Avg:0.0})",
+                "Projection pipeline: {Players} players, {Unique} unique values, avg {Avg:0.0} pts in {Ms} ms (avg confidence {Conf:0.0})",
                 projections.Count,
+                uniqueValues,
+                avgProjection,
                 watch.ElapsedMilliseconds,
                 avgConfidence);
         }
