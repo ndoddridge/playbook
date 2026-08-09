@@ -111,6 +111,8 @@ public sealed class StartSitOutcomeEvaluator : IDecisionOutcomeEvaluator
                 Position = playerState?.Position ?? Position.WR,
                 Recommendation = decision.Recommendation,
                 Confidence = decision.Confidence,
+                CalibratedConfidence = decision.CalibratedConfidence
+                    ?? FrozenDecisionConfidenceCalibrationV2.Apply(decision.Confidence),
                 ExpectedValue = decision.ExpectedValue,
                 ActualFantasyPoints = actualPts,
                 ProjectionAbsoluteError = absErr,

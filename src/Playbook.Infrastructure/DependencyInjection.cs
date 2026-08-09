@@ -143,6 +143,7 @@ public static class DependencyInjection
         services.AddSingleton<HistoricalProjectionExperimentState>();
         services.AddSingleton<IHistoricalExpectationService, HistoricalExpectationService>();
         services.AddSingleton<ProjectionCalibrationExperimentRunner>();
+        services.AddSingleton<ConfidenceCalibrationExperimentRunner>();
         services.AddSingleton<NflverseCsvCache>();
         services.AddHttpClient(NflverseCsvCache.HttpClientName, client =>
         {

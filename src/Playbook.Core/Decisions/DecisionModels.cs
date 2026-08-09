@@ -116,10 +116,16 @@ public sealed class DecisionResult
     public required DecisionRecommendation Recommendation { get; init; }
 
     /// <summary>
-    /// v1 evidence-quality confidence (0–100). Not statistically calibrated.
+    /// Raw evidence-quality confidence (0–100). Not statistically calibrated.
     /// See DecisionEngine confidence methodology comments.
     /// </summary>
     public required int Confidence { get; init; }
+
+    /// <summary>
+    /// Experiment 2: empirically calibrated confidence (0–100), informational only.
+    /// Does not affect recommendation selection.
+    /// </summary>
+    public int? CalibratedConfidence { get; init; }
 
     public required ValueAssessment Values { get; init; }
 
@@ -165,6 +171,9 @@ public sealed class DecisionRecord
     public required DecisionRecommendation Recommendation { get; init; }
 
     public required int Confidence { get; init; }
+
+    /// <summary>Experiment 2 calibrated confidence (informational).</summary>
+    public int? CalibratedConfidence { get; init; }
 
     public required Guid? LeagueId { get; init; }
 

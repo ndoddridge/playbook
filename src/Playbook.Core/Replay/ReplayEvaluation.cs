@@ -28,6 +28,9 @@ public sealed class ReplayDecisionGrade
 
     public required int Confidence { get; init; }
 
+    /// <summary>Experiment 2 calibrated confidence (informational; recommendations unchanged).</summary>
+    public int? CalibratedConfidence { get; init; }
+
     public required double ExpectedValue { get; init; }
 
     public required double? ActualFantasyPoints { get; init; }
