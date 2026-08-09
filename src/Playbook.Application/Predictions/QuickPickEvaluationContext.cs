@@ -1,5 +1,6 @@
 using Playbook.Core.Injuries.Models;
 using Playbook.Core.Intelligence.Models;
+using Playbook.Core.Knowledge;
 using Playbook.Core.Predictions;
 using Playbook.Core.Projections.Models;
 using Playbook.Core.Stats.Models;
@@ -38,4 +39,10 @@ public sealed class QuickPickEvaluationContext
     public bool UsingPriorRegularSeasonProduction { get; init; }
 
     public PlayerProductionSnapshot? Production { get; init; }
+
+    /// <summary>
+    /// Shared knowledge / PredictionContext substrate for this evaluation.
+    /// Attached by the knowledge layer — does not replace Quick Pick scoring.
+    /// </summary>
+    public PredictionContext? PredictionContext { get; init; }
 }

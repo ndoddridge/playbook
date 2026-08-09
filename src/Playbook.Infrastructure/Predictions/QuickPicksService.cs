@@ -4,6 +4,7 @@ using Microsoft.Extensions.Options;
 using Playbook.Application.Injuries;
 using Playbook.Application.Injuries.Interfaces;
 using Playbook.Application.Intelligence.Interfaces;
+using Playbook.Application.Knowledge;
 using Playbook.Application.Players;
 using Playbook.Application.Predictions;
 using Playbook.Application.Predictions.Interfaces;
@@ -11,6 +12,7 @@ using Playbook.Application.Projections.Interfaces;
 using Playbook.Application.Stats.Interfaces;
 using Playbook.Core.Injuries.Models;
 using Playbook.Core.Intelligence.Models;
+using Playbook.Core.Knowledge;
 using Playbook.Core.Predictions;
 using Playbook.Core.Projections.Models;
 
@@ -31,6 +33,7 @@ public sealed class QuickPicksService : IQuickPicksService
     private readonly IIntelligenceService _intelligence;
     private readonly IPlayerStatisticalContextService _stats;
     private readonly IPlayerInjuryService _injuries;
+    private readonly ISharedKnowledgeModel _sharedKnowledge;
     private readonly PropLineOptions _options;
     private readonly QuickPicksSyncStatus _status;
     private readonly ILogger<QuickPicksService> _logger;
@@ -56,6 +59,7 @@ public sealed class QuickPicksService : IQuickPicksService
         IIntelligenceService intelligence,
         IPlayerStatisticalContextService stats,
         IPlayerInjuryService injuries,
+        ISharedKnowledgeModel sharedKnowledge,
         IOptions<PropLineOptions> options,
         QuickPicksSyncStatus status,
         ILogger<QuickPicksService> logger)
@@ -68,6 +72,7 @@ public sealed class QuickPicksService : IQuickPicksService
         _intelligence = intelligence;
         _stats = stats;
         _injuries = injuries;
+        _sharedKnowledge = sharedKnowledge;
         _options = options.Value;
         _status = status;
         _logger = logger;
@@ -376,7 +381,7 @@ public sealed class QuickPicksService : IQuickPicksService
                 volatility = Math.Clamp(volatility + (injuryMult < 0.5m ? 12 : 6), 10, 95);
             }
 
-            var prediction = _engine.Evaluate(new QuickPickEvaluationContext
+            var evaluation = new QuickPickEvaluationContext
             {
                 Line = line,
                 PlaybookProjection = projection,
@@ -389,7 +394,30 @@ public sealed class QuickPicksService : IQuickPicksService
                 SeasonPhase = line.Event.Phase,
                 UsingPriorRegularSeasonProduction = usingPrior,
                 Production = production
-            });
+            };
+
+            // Shared knowledge substrate — first-class consumer; scoring unchanged.
+            var predictionContext = _sharedKnowledge.BuildQuickPickPredictionContext(evaluation);
+            KnowledgeTemporalGuard.AssertNoFutureLeak(
+                predictionContext.Knowledge,
+                predictionContext.InformationCutoff);
+            evaluation = new QuickPickEvaluationContext
+            {
+                Line = evaluation.Line,
+                PlaybookProjection = evaluation.PlaybookProjection,
+                ProjectionConfidence = evaluation.ProjectionConfidence,
+                Volatility = evaluation.Volatility,
+                Intelligence = evaluation.Intelligence,
+                StatisticalContext = evaluation.StatisticalContext,
+                InjuryProfile = evaluation.InjuryProfile,
+                RecentFacts = evaluation.RecentFacts,
+                SeasonPhase = evaluation.SeasonPhase,
+                UsingPriorRegularSeasonProduction = evaluation.UsingPriorRegularSeasonProduction,
+                Production = evaluation.Production,
+                PredictionContext = predictionContext
+            };
+
+            var prediction = _engine.Evaluate(evaluation);
             if (prediction is not null)
             {
                 predictions.Add(prediction);
