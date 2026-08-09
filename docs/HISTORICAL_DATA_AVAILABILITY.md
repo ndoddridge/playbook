@@ -29,12 +29,14 @@ Replay Engine v1 proves the **pipeline** (snapshot → knowledge → decision �
 
 **Real-data status (2018 Week 7):** nflverse-backed `IHistoricalDataProvider` can load one real week end-to-end. See `docs/REAL_HISTORICAL_DATA_COVERAGE_2018_W7.md`.
 
-Before expanding to multi-season runs, still need:
+**Multi-week measurement (2018 W1–17):** `IMultiWeekHistoricalReplayRunner` replays inclusive week ranges with independent cutoffs, season scorecard, confidence buckets, and failure ledger. See `docs/SEASON_SCORECARD_2018.md`.
 
-1. As-of projection archives (currently **UNAVAILABLE** — honestly null)
+Before expanding to multi-season / ~20-year runs, still need:
+
+1. As-of projection archives (currently **UNAVAILABLE** — reconstructed baselines used instead)
 2. Week-by-week historical fantasy league ownership (lab roster is reconstructed, not historical)
 3. Stronger cutoff-safe injury/news reconstruction
 4. Durable decision/outcome storage
-5. Broader season coverage automation (runner API already accepts arbitrary season/week)
+5. Model improvements driven by measured failure patterns (do not tune to a single season yet)
 
 Until those exist, mark missing domains **UNAVAILABLE** inside snapshots rather than inventing them.
