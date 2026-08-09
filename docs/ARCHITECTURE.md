@@ -440,22 +440,20 @@ Independent football prediction surface (player/game props). **Not fantasy** —
 ```
 Real Football Data
         ↓
-INflCalendarService (season / phase / week)
+The Odds API (preseason sport + regular sport) or Mock
         ↓
-Prop lines (The Odds API or Mock) → enrich + filter to selected week
+INflCalendarService → NflSlate[] from kickoff clusters
         ↓
-Intelligence + Injury services (existing)
+Select next incomplete slate (or navigator selection)
         ↓
-PropStatProjector (phase-aware counting-stat estimates)
+Intelligence + Injury + PropStatProjector (phase-aware)
         ↓
-QuickPicksEngine v0.3 (weighted signals → edge / probability / confidence)
-        ↓
-Quick Picks board (ranked by OpportunityScore)
+QuickPicksEngine v0.3 → board / filters / cards
 ```
 
-Each `FootballEvent` / `Prediction` carries season, phase, week, event id, kickoff, and teams. The board evaluates **one week slate** at a time (`SelectedWeek` / `AvailableWeeks` / `TrySelectWeek` ready for a future selector).
+`NflSlate` / `NflWeekRef` is the shared slate identity (season, phase, week/round). Preseason is exactly weeks 1–3; postseason rounds are Wild Card / Divisional / Conference / Super Bowl. Default view is the next incomplete slate with real markets — never an invented week, never mixed slates.
 
-Preseason: regular-season production is a prior only (confidence tempered). Current injury, unconfirmed buzz (labeled), usage/opportunity, and news remain active signals. When regular season begins, calendar state flips automatically — no hardcoded “today is preseason” path.
+Preseason: regular-season production is a prior only (confidence tempered). Current injury, unconfirmed buzz (labeled), usage/opportunity, and news remain active signals.
 
 Engine inputs (`QuickPickEvaluationContext`): projection, player intelligence, injury profile, statistical usage, recent facts, season phase, live/mock line.
 Weights: `QuickPicks:Scoring`. Structured `PredictionSignalContribution` rows support later tuning without UI rewrites.
