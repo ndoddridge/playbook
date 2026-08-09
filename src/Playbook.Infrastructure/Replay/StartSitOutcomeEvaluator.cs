@@ -1,5 +1,6 @@
 using Playbook.Application.Replay;
 using Playbook.Core.Decisions;
+using Playbook.Core.Players;
 using Playbook.Core.Replay;
 
 namespace Playbook.Infrastructure.Replay;
@@ -92,12 +93,22 @@ public sealed class StartSitOutcomeEvaluator : IDecisionOutcomeEvaluator
             double? baseB = playerState?.BaselineOpportunityAwarePoints;
             double? baseAErr = actualPts is null || baseA is null ? null : Math.Abs(actualPts.Value - baseA.Value);
             double? baseBErr = actualPts is null || baseB is null ? null : Math.Abs(actualPts.Value - baseB.Value);
+            double? recMargin = altExpected is null
+                ? null
+                : Math.Abs(decision.ExpectedValue - altExpected.Value);
 
             grades.Add(new ReplayDecisionGrade
             {
                 DecisionId = decision.DecisionId,
+                Season = decision.Season,
+                Week = decision.Week,
+                InformationCutoff = decision.InformationCutoff
+                    ?? snapshot?.InformationCutoff
+                    ?? throw new InvalidOperationException(
+                        $"Missing information cutoff for decision {decision.DecisionId}."),
                 PlayerId = decision.PlayerId,
                 PlayerName = decision.PlayerName,
+                Position = playerState?.Position ?? Position.WR,
                 Recommendation = decision.Recommendation,
                 Confidence = decision.Confidence,
                 ExpectedValue = decision.ExpectedValue,
@@ -111,6 +122,10 @@ public sealed class StartSitOutcomeEvaluator : IDecisionOutcomeEvaluator
                 BaselineOpportunityAwarePoints = baseB,
                 BaselineRecentAbsoluteError = baseAErr,
                 BaselineOpportunityAbsoluteError = baseBErr,
+                OpportunityScore = playerState?.OpportunityScore,
+                UsageScore = playerState?.UsageScore,
+                RecentProductionScore = playerState?.RecentProductionScore,
+                RecommendationMargin = recMargin,
                 AlternativePlayerId = altId,
                 AlternativePlayerName = altName,
                 AlternativeExpectedValue = altExpected,

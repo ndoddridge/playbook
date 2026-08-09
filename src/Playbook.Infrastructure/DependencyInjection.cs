@@ -154,6 +154,7 @@ public static class DependencyInjection
         services.AddSingleton<IHistoricalKnowledgeFactory, HistoricalKnowledgeFactory>();
         services.AddSingleton<IDecisionOutcomeEvaluator, StartSitOutcomeEvaluator>();
         services.AddSingleton<IHistoricalReplayRunner, HistoricalReplayRunner>();
+        services.AddSingleton<IMultiWeekHistoricalReplayRunner, MultiWeekHistoricalReplayRunner>();
     }
 
     private static void RegisterProjections(IServiceCollection services)

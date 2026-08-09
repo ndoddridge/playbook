@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.IO.Compression;
 using Microsoft.Extensions.Logging;
 
@@ -11,6 +12,7 @@ public sealed class NflverseCsvCache
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<NflverseCsvCache> _logger;
     private readonly string _cacheRoot;
+    private readonly ConcurrentDictionary<string, IReadOnlyList<string>> _lineCache = new(StringComparer.Ordinal);
 
     public NflverseCsvCache(IHttpClientFactory httpClientFactory, ILogger<NflverseCsvCache> logger)
     {
@@ -61,5 +63,33 @@ public sealed class NflverseCsvCache
         }
 
         return Task.FromResult(new StreamReader(stream));
+    }
+
+    /// <summary>
+    /// Returns all CSV lines for a cached asset. Parsed once per process to avoid
+    /// re-reading large season files on every week of a multi-week replay.
+    /// </summary>
+    public async Task<IReadOnlyList<string>> GetLinesAsync(string path, CancellationToken cancellationToken)
+    {
+        if (_lineCache.TryGetValue(path, out var cached))
+        {
+            return cached;
+        }
+
+        using var reader = await OpenTextAsync(path, cancellationToken).ConfigureAwait(false);
+        var lines = new List<string>(capacity: 65_536);
+        while (!reader.EndOfStream)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+            if (line is not null)
+            {
+                lines.Add(line);
+            }
+        }
+
+        var frozen = (IReadOnlyList<string>)lines;
+        _lineCache[path] = frozen;
+        return frozen;
     }
 }

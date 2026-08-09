@@ -1,5 +1,6 @@
 using Playbook.Core.Decisions;
 using Playbook.Core.Leagues;
+using Playbook.Core.Players;
 
 namespace Playbook.Core.Replay;
 
@@ -11,9 +12,17 @@ public sealed class ReplayDecisionGrade
 {
     public required Guid DecisionId { get; init; }
 
+    public required int Season { get; init; }
+
+    public required int Week { get; init; }
+
+    public required DateTimeOffset InformationCutoff { get; init; }
+
     public required Guid PlayerId { get; init; }
 
     public required string PlayerName { get; init; }
+
+    public required Position Position { get; init; }
 
     public required DecisionRecommendation Recommendation { get; init; }
 
@@ -40,6 +49,15 @@ public sealed class ReplayDecisionGrade
     public double? BaselineRecentAbsoluteError { get; init; }
 
     public double? BaselineOpportunityAbsoluteError { get; init; }
+
+    public int? OpportunityScore { get; init; }
+
+    public int? UsageScore { get; init; }
+
+    public int? RecentProductionScore { get; init; }
+
+    /// <summary>|Expected − alternative expected| when an alternative exists.</summary>
+    public double? RecommendationMargin { get; init; }
 
     public Guid? AlternativePlayerId { get; init; }
 
@@ -111,6 +129,19 @@ public sealed class HistoricalReplayReport
     public required IReadOnlyList<ReplayDecisionGrade> Grades { get; init; }
 
     public required IReadOnlyList<DecisionRecord> DecisionRecords { get; init; }
+
+    /// <summary>All roster players with a valid pre-week projection and revealed actual.</summary>
+    public IReadOnlyList<PlayerProjectionEvaluation> ProjectionEvaluations { get; init; } = [];
+
+    public int PlayersEvaluated { get; init; }
+
+    public int PlayersWithValidProjection { get; init; }
+
+    public int PlayersWithInjurySignal { get; init; }
+
+    public int PlayersWithUsageSignal { get; init; }
+
+    public int PlayersWithRoleSignal { get; init; }
 
     public required IReadOnlyList<string> UnavailableSources { get; init; }
 
