@@ -26,6 +26,9 @@ public class FantasyTeamIntelligenceTests
         Assert.Equal(team.RosterId, report.SelectedRosterId);
         Assert.True(report.HasRosterPlayers);
         Assert.NotEmpty(report.RosterIntelligence);
+        Assert.DoesNotContain(
+            report.UnavailableSignals,
+            s => s.Contains("unavailable in catalog", StringComparison.OrdinalIgnoreCase));
         Assert.All(report.RosterIntelligence, r => Assert.Contains(r.PlayerId, team.PlayerIds));
     }
 

@@ -1,22 +1,29 @@
-using Playbook.Application.Leagues;
+using Playbook.Application.Players;
 using Playbook.Core.Leagues;
+using Playbook.Core.Players;
 
 namespace Playbook.Infrastructure.Leagues;
 
 /// <summary>
 /// In-memory mock league catalog. Used as the demo fallback when no Sleeper league is connected.
 /// Demo leagues default to the first roster as the user's team so the app stays usable without Sleeper.
+/// Rosters are resolved from the active player catalog by name so mock leagues work with live or mock IDs.
 /// </summary>
 public sealed class MockLeagueService
 {
+    private readonly IPlayerService _players;
     private readonly List<League> _leagues;
-    private readonly Dictionary<Guid, IReadOnlyList<FantasyTeam>> _teamsByLeague;
+    private readonly Dictionary<Guid, IReadOnlyList<FantasyTeam>> _teamsByLeague = new();
+    private readonly object _gate = new();
     private League? _currentLeague;
+    private int _seededCatalogCount = -1;
+    private Guid? _seededCatalogProbeId;
 
-    public MockLeagueService()
+    public MockLeagueService(IPlayerService players)
     {
-        var seeds = new List<League>
-        {
+        _players = players;
+        _leagues =
+        [
             new()
             {
                 Id = Guid.Parse("11111111-1111-1111-1111-111111111111"),
@@ -62,12 +69,7 @@ public sealed class MockLeagueService
                 ReceptionPoints = 0m,
                 SelectedRosterId = 1
             }
-        };
-
-        _leagues = seeds;
-        _teamsByLeague = _leagues.ToDictionary(
-            league => league.Id,
-            league => (IReadOnlyList<FantasyTeam>)CreateDemoTeams(league));
+        ];
 
         _currentLeague = _leagues[0];
     }
@@ -85,8 +87,11 @@ public sealed class MockLeagueService
         }
     }
 
-    public IReadOnlyList<FantasyTeam> GetTeams(Guid leagueId) =>
-        _teamsByLeague.TryGetValue(leagueId, out var teams) ? teams : [];
+    public IReadOnlyList<FantasyTeam> GetTeams(Guid leagueId)
+    {
+        EnsureRostersSeeded();
+        return _teamsByLeague.TryGetValue(leagueId, out var teams) ? teams : [];
+    }
 
     public FantasyTeam? FindTeamForPlayer(Guid leagueId, Guid playerId) =>
         GetTeams(leagueId).FirstOrDefault(team => team.PlayerIds.Contains(playerId));
@@ -127,6 +132,38 @@ public sealed class MockLeagueService
         return true;
     }
 
+    private void EnsureRostersSeeded()
+    {
+        var catalog = _players.GetAllPlayers();
+        var probeId = catalog.FirstOrDefault()?.Id;
+        if (_seededCatalogCount == catalog.Count &&
+            _seededCatalogProbeId == probeId &&
+            _teamsByLeague.Count == _leagues.Count)
+        {
+            return;
+        }
+
+        lock (_gate)
+        {
+            catalog = _players.GetAllPlayers();
+            probeId = catalog.FirstOrDefault()?.Id;
+            if (_seededCatalogCount == catalog.Count &&
+                _seededCatalogProbeId == probeId &&
+                _teamsByLeague.Count == _leagues.Count)
+            {
+                return;
+            }
+
+            foreach (var league in _leagues)
+            {
+                _teamsByLeague[league.Id] = CreateDemoTeams(league, catalog);
+            }
+
+            _seededCatalogCount = catalog.Count;
+            _seededCatalogProbeId = probeId;
+        }
+    }
+
     private static League CloneWithSelectedRoster(League league, int rosterId) =>
         new()
         {
@@ -146,44 +183,47 @@ public sealed class MockLeagueService
         };
 
     /// <summary>
-    /// Stable mock player catalog ids (see MockPlayerDataProvider) used to seed demo rosters
-    /// so Fantasy Team Intelligence can be exercised without a live Sleeper connection.
+    /// Preferred demo roster identities — resolved against whatever catalog is active (live or mock).
     /// </summary>
-    private static readonly Guid[] DemoPlayerCatalog =
+    private static readonly string[] DemoPlayerNames =
     [
-        Guid.Parse("11111111-1111-1111-1111-111111111101"), // Jayden Daniels
-        Guid.Parse("11111111-1111-1111-1111-111111111102"), // Jordan Love
-        Guid.Parse("11111111-1111-1111-1111-111111111103"), // Patrick Mahomes
-        Guid.Parse("11111111-1111-1111-1111-111111111104"), // Bucky Irving
-        Guid.Parse("11111111-1111-1111-1111-111111111105"), // Bijan Robinson
-        Guid.Parse("11111111-1111-1111-1111-111111111106"), // Saquon Barkley
-        Guid.Parse("11111111-1111-1111-1111-111111111107"), // Jahmyr Gibbs
-        Guid.Parse("11111111-1111-1111-1111-111111111108"), // Brian Thomas Jr.
-        Guid.Parse("11111111-1111-1111-1111-111111111109"), // Ja'Marr Chase
-        Guid.Parse("11111111-1111-1111-1111-111111111110"), // CeeDee Lamb
-        Guid.Parse("11111111-1111-1111-1111-111111111111"), // Amon-Ra St. Brown
-        Guid.Parse("11111111-1111-1111-1111-111111111112"), // Puka Nacua
-        Guid.Parse("11111111-1111-1111-1111-111111111113"), // Travis Kelce
-        Guid.Parse("11111111-1111-1111-1111-111111111114"), // Brock Bowers
-        Guid.Parse("11111111-1111-1111-1111-111111111115"), // Trey McBride
-        Guid.Parse("11111111-1111-1111-1111-111111111116"), // Justin Tucker
-        Guid.Parse("11111111-1111-1111-1111-111111111117"), // Harrison Butker
-        Guid.Parse("11111111-1111-1111-1111-111111111118"), // Buffalo Bills
-        Guid.Parse("11111111-1111-1111-1111-111111111119"), // San Francisco 49ers
-        Guid.Parse("11111111-1111-1111-1111-111111111120")  // Philadelphia Eagles
+        "Jayden Daniels",
+        "Jordan Love",
+        "Patrick Mahomes",
+        "Bucky Irving",
+        "Bijan Robinson",
+        "Saquon Barkley",
+        "Jahmyr Gibbs",
+        "Brian Thomas",
+        "Ja'Marr Chase",
+        "CeeDee Lamb",
+        "Amon-Ra St. Brown",
+        "Puka Nacua",
+        "Travis Kelce",
+        "Brock Bowers",
+        "Trey McBride",
+        "Justin Tucker",
+        "Harrison Butker",
+        "Buffalo Bills",
+        "San Francisco 49ers",
+        "Philadelphia Eagles"
     ];
 
-    private static List<FantasyTeam> CreateDemoTeams(League league)
+    private static List<FantasyTeam> CreateDemoTeams(League league, IReadOnlyList<Player> catalog)
     {
-        var leagueOffset = Math.Abs(league.Id.GetHashCode()) % DemoPlayerCatalog.Length;
+        var resolvedPool = ResolveDemoPool(catalog);
+        var leagueOffset = Math.Abs(league.Id.GetHashCode()) % Math.Max(1, resolvedPool.Count);
+
         return Enumerable.Range(1, Math.Min(league.NumberOfTeams, 4))
             .Select(i =>
             {
-                var offset = (leagueOffset + (i - 1) * 4) % DemoPlayerCatalog.Length;
-                var playerIds = Enumerable.Range(0, 8)
-                    .Select(k => DemoPlayerCatalog[(offset + k) % DemoPlayerCatalog.Length])
-                    .Distinct()
-                    .ToList();
+                var offset = (leagueOffset + (i - 1) * 4) % Math.Max(1, resolvedPool.Count);
+                var playerIds = resolvedPool.Count == 0
+                    ? new List<Guid>()
+                    : Enumerable.Range(0, Math.Min(8, resolvedPool.Count))
+                        .Select(k => resolvedPool[(offset + k) % resolvedPool.Count])
+                        .Distinct()
+                        .ToList();
                 var starters = playerIds.Take(Math.Min(6, playerIds.Count)).ToList();
                 return new FantasyTeam
                 {
@@ -197,5 +237,59 @@ public sealed class MockLeagueService
                 };
             })
             .ToList();
+    }
+
+    private static IReadOnlyList<Guid> ResolveDemoPool(IReadOnlyList<Player> catalog)
+    {
+        if (catalog.Count == 0)
+        {
+            return [];
+        }
+
+        var byName = new List<Guid>();
+        foreach (var name in DemoPlayerNames)
+        {
+            var match = catalog.FirstOrDefault(p =>
+                string.Equals(p.FullName, name, StringComparison.OrdinalIgnoreCase) ||
+                p.FullName.Contains(name, StringComparison.OrdinalIgnoreCase) ||
+                name.Contains(p.FullName, StringComparison.OrdinalIgnoreCase));
+            if (match is not null && byName.All(id => id != match.Id))
+            {
+                byName.Add(match.Id);
+            }
+        }
+
+        if (byName.Count >= 8)
+        {
+            return byName;
+        }
+
+        // Position-balanced fallback when live catalog naming differs.
+        var fallback = new List<Guid>(byName);
+        foreach (var position in new[] { Position.QB, Position.RB, Position.WR, Position.TE, Position.K, Position.DST })
+        {
+            foreach (var player in catalog.Where(p => p.Position == position).Take(4))
+            {
+                if (fallback.All(id => id != player.Id))
+                {
+                    fallback.Add(player.Id);
+                }
+            }
+        }
+
+        foreach (var player in catalog)
+        {
+            if (fallback.Count >= 24)
+            {
+                break;
+            }
+
+            if (fallback.All(id => id != player.Id))
+            {
+                fallback.Add(player.Id);
+            }
+        }
+
+        return fallback;
     }
 }

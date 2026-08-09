@@ -1,4 +1,5 @@
 using Playbook.Application.Leagues;
+using Playbook.Application.Players;
 using Playbook.Application.Players.Data;
 using Playbook.Core.Leagues;
 using Playbook.Infrastructure.Leagues;
@@ -36,7 +37,8 @@ public class LeagueStateTests
     [Fact]
     public void MockLeagueService_SelectLeague_Is_Reflected_By_GetCurrentLeague()
     {
-        var service = new MockLeagueService();
+        using var provider = TestServiceFactory.CreateProvider(PlayerDataProviderKind.Mock);
+        var service = new MockLeagueService(provider.GetRequiredService<IPlayerService>());
         var work = service.GetAllLeagues().Single(l => l.Name == "Work League");
 
         service.SelectLeague(work.Id);
@@ -50,6 +52,7 @@ public class LeagueStateTests
     {
         using var provider = TestServiceFactory.CreateProvider(PlayerDataProviderKind.Mock);
         var state = provider.GetRequiredService<ILeagueState>();
+        var players = provider.GetRequiredService<IPlayerService>();
         var teams = state.GetCurrentTeams();
 
         Assert.NotEmpty(teams);
@@ -57,6 +60,11 @@ public class LeagueStateTests
         Assert.NotNull(state.CurrentUserTeam);
         Assert.Equal(1, state.CurrentUserTeam!.RosterId);
         Assert.NotEmpty(state.CurrentUserTeam.StarterIds);
+
+        // Demo roster ids must resolve in the active catalog (mock or live), not use orphan GUIDs.
+        Assert.All(
+            state.CurrentUserTeam.PlayerIds,
+            id => Assert.NotNull(players.GetPlayer(id)));
     }
 
     [Fact]

@@ -4,8 +4,10 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Playbook.Application.Leagues;
 using Playbook.Application.Leagues.Sleeper;
+using Playbook.Application.Players;
 using Playbook.Application.Players.Data;
 using Playbook.Core.Leagues;
+using Playbook.Core.Players;
 using Playbook.Infrastructure.Leagues;
 
 namespace Playbook.Tests;
@@ -198,11 +200,20 @@ public class SleeperLeagueIntegrationTests
             BaseAddress = new Uri("https://api.sleeper.app/v1/")
         };
         return new CompositeLeagueService(
-            new MockLeagueService(),
+            new MockLeagueService(new EmptyPlayerService()),
             new SleeperLeagueClient(new FixedHttpClientFactory(httpClient), NullLogger<SleeperLeagueClient>.Instance),
             store,
             new LeagueSyncStatus(),
             NullLogger<CompositeLeagueService>.Instance);
+    }
+
+    private sealed class EmptyPlayerService : IPlayerService
+    {
+        public IReadOnlyList<Player> GetAllPlayers() => [];
+        public Player? GetPlayer(Guid playerId) => null;
+        public PlayerProfile? GetPlayerProfile(Guid playerId) => null;
+        public IReadOnlyList<Player> SearchPlayers(string? query) => [];
+        public void Refresh() { }
     }
 
     private sealed class FixedHttpClientFactory(HttpClient client) : IHttpClientFactory

@@ -275,7 +275,8 @@
         min-height: var(--pb-topbar-height);
         padding: 0.4rem var(--pb-space-3);
         gap: var(--pb-space-2);
-        overflow: hidden;
+        /* Must stay visible so the league switcher dropdown is not clipped. */
+        overflow: visible;
     }
 
     .app-topbar__left,

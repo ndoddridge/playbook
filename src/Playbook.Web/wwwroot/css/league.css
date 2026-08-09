@@ -2,6 +2,8 @@
 
 .league-switcher {
     position: relative;
+    z-index: 95;
+    min-width: 0;
 }
 
 .league-switcher__trigger {
@@ -36,13 +38,20 @@
     position: absolute;
     top: calc(100% + var(--pb-space-2));
     left: 0;
-    min-width: 16.5rem;
+    right: auto;
+    min-width: min(18rem, calc(100vw - 1.5rem));
+    max-width: calc(100vw - 1.5rem);
+    max-height: min(70dvh, 28rem);
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
     padding: var(--pb-space-2);
     border: 1px solid var(--pb-color-border-strong);
     border-radius: var(--pb-radius-lg);
     background: var(--pb-color-surface);
     box-shadow: var(--pb-shadow-md);
-    z-index: 40;
+    z-index: 96;
     animation: pb-fade-up var(--pb-transition-fast) both;
 }
 
