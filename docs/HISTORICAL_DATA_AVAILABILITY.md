@@ -33,6 +33,8 @@ Replay Engine v1 proves the **pipeline** (snapshot → knowledge → decision �
 
 **Multi-season frozen benchmark (2015/2018/2021/2024):** `IMultiSeasonHistoricalBenchmarkRunner` runs identical frozen-model evaluation across diverse eras with OOS roles (Development / FrozenBenchmark / HoldoutTest). See `docs/MULTI_SEASON_BENCHMARK.md`.
 
+**Experiment 1 (Projection V2):** piecewise scale calibration fitted on development seasons only; official 2024 holdout accepted as IMPROVEMENT. Default primary remains V1 for frozen locks. See `docs/PROJECTION_CALIBRATION_V2.md`.
+
 Before expanding to ~20-year runs, still need:
 
 1. As-of projection archives (currently **UNAVAILABLE** — reconstructed baselines used instead)
