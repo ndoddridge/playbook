@@ -14,6 +14,8 @@ All notable project changes are recorded here.
 ### Fixed
 
 - Player overlay paints above the shell top bar (full-viewport mobile sheet + safe-area on chrome) so player identity never sits underneath sticky header
+- Mock demo rosters resolve against the active player catalog by name (works with live Sleeper IDs, not orphan mock GUIDs)
+- League switcher dropdown no longer clipped by mobile top-bar `overflow: hidden`
 
 ## [Unreleased] — Player Intelligence structural refinement
 
