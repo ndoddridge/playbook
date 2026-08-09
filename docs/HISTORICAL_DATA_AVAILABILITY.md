@@ -31,7 +31,9 @@ Replay Engine v1 proves the **pipeline** (snapshot → knowledge → decision �
 
 **Multi-week measurement (2018 W1–17):** `IMultiWeekHistoricalReplayRunner` replays inclusive week ranges with independent cutoffs, season scorecard, confidence buckets, and failure ledger. See `docs/SEASON_SCORECARD_2018.md`.
 
-Before expanding to multi-season / ~20-year runs, still need:
+**Multi-season frozen benchmark (2015/2018/2021/2024):** `IMultiSeasonHistoricalBenchmarkRunner` runs identical frozen-model evaluation across diverse eras with OOS roles (Development / FrozenBenchmark / HoldoutTest). See `docs/MULTI_SEASON_BENCHMARK.md`.
+
+Before expanding to ~20-year runs, still need:
 
 1. As-of projection archives (currently **UNAVAILABLE** — reconstructed baselines used instead)
 2. Week-by-week historical fantasy league ownership (lab roster is reconstructed, not historical)

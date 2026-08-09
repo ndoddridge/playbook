@@ -10,6 +10,7 @@ namespace Playbook.Infrastructure.Replay;
 /// <code>
 /// await HistoricalReplayCommands.RunAsync(services, season: 2018, week: 7);
 /// await HistoricalReplayCommands.RunSeasonAsync(services, season: 2018, startWeek: 1, endWeek: 17);
+/// await HistoricalReplayCommands.RunDefaultMultiSeasonBenchmarkAsync(services);
 /// // or
 /// await HistoricalReplayCommands.RunControlled2018Week7Async(services);
 /// </code>
