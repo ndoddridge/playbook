@@ -27,6 +27,7 @@ public sealed class FantasyTeamIntelligenceService : IFantasyTeamIntelligenceSer
     private readonly IProjectionService _projections;
     private readonly IPlayerKnowledgeComposer _knowledgeComposer;
     private readonly ISharedKnowledgeModel _sharedKnowledge;
+    private readonly IKnowledgeImpactApplicator _knowledgeImpact;
     private readonly IDecisionEngine _decisionEngine;
     private readonly object _gate = new();
 
@@ -40,6 +41,7 @@ public sealed class FantasyTeamIntelligenceService : IFantasyTeamIntelligenceSer
         IProjectionService projections,
         IPlayerKnowledgeComposer knowledgeComposer,
         ISharedKnowledgeModel sharedKnowledge,
+        IKnowledgeImpactApplicator knowledgeImpact,
         IDecisionEngine decisionEngine)
     {
         _leagueState = leagueState;
@@ -48,6 +50,7 @@ public sealed class FantasyTeamIntelligenceService : IFantasyTeamIntelligenceSer
         _projections = projections;
         _knowledgeComposer = knowledgeComposer;
         _sharedKnowledge = sharedKnowledge;
+        _knowledgeImpact = knowledgeImpact;
         _decisionEngine = decisionEngine;
         _leagueState.Changed += OnLeagueContextChanged;
     }
@@ -245,11 +248,12 @@ public sealed class FantasyTeamIntelligenceService : IFantasyTeamIntelligenceSer
             KnowledgeTemporalGuard.AssertNoFutureLeak(ctx.Knowledge, decisionContext.InformationCutoff);
         }
 
-        var knowledge = predictionContexts
+        var assembled = predictionContexts
             .Select(c => c.PlayerKnowledge
                 ?? throw new InvalidOperationException(
                     $"Shared knowledge missing DecisionPlayerKnowledge for {c.PlayerName}."))
             .ToList();
+        var knowledge = _knowledgeImpact.ApplyToPlayerKnowledgeBatch(assembled);
 
         var candidates = rows
             .Select(r => new StartSitCandidate

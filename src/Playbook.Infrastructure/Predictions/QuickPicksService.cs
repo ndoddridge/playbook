@@ -34,6 +34,7 @@ public sealed class QuickPicksService : IQuickPicksService
     private readonly IPlayerStatisticalContextService _stats;
     private readonly IPlayerInjuryService _injuries;
     private readonly ISharedKnowledgeModel _sharedKnowledge;
+    private readonly IKnowledgeImpactApplicator _knowledgeImpact;
     private readonly PropLineOptions _options;
     private readonly QuickPicksSyncStatus _status;
     private readonly ILogger<QuickPicksService> _logger;
@@ -60,6 +61,7 @@ public sealed class QuickPicksService : IQuickPicksService
         IPlayerStatisticalContextService stats,
         IPlayerInjuryService injuries,
         ISharedKnowledgeModel sharedKnowledge,
+        IKnowledgeImpactApplicator knowledgeImpact,
         IOptions<PropLineOptions> options,
         QuickPicksSyncStatus status,
         ILogger<QuickPicksService> logger)
@@ -73,6 +75,7 @@ public sealed class QuickPicksService : IQuickPicksService
         _stats = stats;
         _injuries = injuries;
         _sharedKnowledge = sharedKnowledge;
+        _knowledgeImpact = knowledgeImpact;
         _options = options.Value;
         _status = status;
         _logger = logger;
@@ -420,7 +423,10 @@ public sealed class QuickPicksService : IQuickPicksService
             var prediction = _engine.Evaluate(evaluation);
             if (prediction is not null)
             {
-                predictions.Add(prediction);
+                // Knowledge Impact: bounded ranking adjustment (Baseline = no-op).
+                predictions.Add(_knowledgeImpact.ApplyToQuickPickPrediction(
+                    prediction,
+                    evaluation.PredictionContext));
             }
         }
 

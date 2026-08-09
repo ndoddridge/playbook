@@ -1,7 +1,9 @@
 using Microsoft.Extensions.DependencyInjection;
 using Playbook.Application.Replay;
+using Playbook.Core.Knowledge;
 using Playbook.Core.Leagues;
 using Playbook.Core.Replay;
+using Playbook.Infrastructure.Knowledge;
 
 namespace Playbook.Infrastructure.Replay;
 
@@ -197,6 +199,18 @@ public static class HistoricalReplayCommands
         CancellationToken cancellationToken = default)
     {
         var runner = services.GetRequiredService<Calibration.ConfidenceAwareDecisionPolicyExperimentRunner>();
+        return runner.RunOfficialExperimentAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Knowledge Impact Experiment V1: ablation of knowledge groups under Projection V2.
+    /// Fits on development seasons only, then ONE 2024 holdout.
+    /// </summary>
+    public static Task<KnowledgeImpactExperimentReport> RunKnowledgeImpactExperimentAsync(
+        IServiceProvider services,
+        CancellationToken cancellationToken = default)
+    {
+        var runner = services.GetRequiredService<Knowledge.KnowledgeImpactExperimentRunner>();
         return runner.RunOfficialExperimentAsync(cancellationToken);
     }
 }
