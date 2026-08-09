@@ -37,81 +37,73 @@
         <div class="player-overlay__backdrop" @onclick="Close"></div>
 
         <div class="player-overlay__panel" @onclick:stopPropagation="true">
-            <header class="player-overlay__header">
-                <div class="player-overlay__identity">
-                    <div class="player-avatar player-avatar--lg" aria-hidden="true">
-                        @PlayerPresentation.Initials(player)
-                    </div>
-                    <div>
-                        <h2 class="player-overlay__name">@player.FullName</h2>
-                        <p class="player-overlay__meta">
-                            @PlayerPresentation.PositionLabel(player.Position) · @player.Team
-                            @if (player.JerseyNumber is int number)
-                            {
-                                <text> · #@number</text>
-                            }
-                            · @PlayerPresentation.StatusLabel(player.Status)
-                        </p>
-                        <p class="player-overlay__league">
-                            @(context.League?.Name ?? "No League Selected")
-                            · @FormatScoring(context.ScoringType)
-                            @if (context.League is { } ctxLeague)
-                            {
-                                <span class="league-source-badge @(ctxLeague.DataSource == LeagueDataSource.Sleeper ? "league-source-badge--live" : "league-source-badge--mock")">
-                                    @(ctxLeague.DataSource == LeagueDataSource.Sleeper ? "Live" : "Mock")
-                                </span>
-                            }
-                            @if (context.FantasyTeam is { } fantasyTeam)
-                            {
-                                <text> · @(fantasyTeam.TeamName ?? fantasyTeam.DisplayName)</text>
-                                @if (context.League?.SelectedRosterId == fantasyTeam.RosterId)
+            <div class="player-overlay__chrome">
+                <header class="player-overlay__header">
+                    <div class="player-overlay__identity">
+                        <div class="player-avatar player-avatar--lg" aria-hidden="true">
+                            @PlayerPresentation.Initials(player)
+                        </div>
+                        <div>
+                            <h2 class="player-overlay__name">@player.FullName</h2>
+                            <p class="player-overlay__meta">
+                                @PlayerPresentation.PositionLabel(player.Position) · @player.Team
+                                @if (player.JerseyNumber is int number)
                                 {
-                                    <span class="league-source-badge league-source-badge--live">My team</span>
+                                    <text> · #@number</text>
                                 }
-                            }
-                        </p>
+                                · @PlayerPresentation.StatusLabel(player.Status)
+                                @if (player.YearsPro is int yearsPro)
+                                {
+                                    <text> · @yearsPro yr</text>
+                                }
+                                @if (player.ByeWeek is int bye)
+                                {
+                                    <text> · Bye @bye</text>
+                                }
+                            </p>
+                            <p class="player-overlay__league">
+                                @(context.League?.Name ?? "No League Selected")
+                                · @FormatScoring(context.ScoringType)
+                                @if (context.League is { } ctxLeague)
+                                {
+                                    <span class="league-source-badge @(ctxLeague.DataSource == LeagueDataSource.Sleeper ? "league-source-badge--live" : "league-source-badge--mock")">
+                                        @(ctxLeague.DataSource == LeagueDataSource.Sleeper ? "Live" : "Mock")
+                                    </span>
+                                }
+                                @if (context.FantasyTeam is { } fantasyTeam)
+                                {
+                                    <text> · @(fantasyTeam.TeamName ?? fantasyTeam.DisplayName)</text>
+                                    @if (context.League?.SelectedRosterId == fantasyTeam.RosterId)
+                                    {
+                                        <span class="league-source-badge league-source-badge--live">My team</span>
+                                    }
+                                }
+                            </p>
+                        </div>
                     </div>
-                </div>
 
-                <button type="button" class="player-overlay__close" aria-label="Close player overlay" @onclick="Close">
-                    ✕
-                </button>
-            </header>
-
-            <nav class="player-overlay__tabs" aria-label="Player sections">
-                @foreach (var tab in Tabs)
-                {
-                    <button type="button"
-                            class="player-overlay__tab @(activeTab == tab ? "is-active" : null)"
-                            @onclick="() => SelectTab(tab)">
-                        @tab
+                    <button type="button" class="player-overlay__close" aria-label="Close player overlay" @onclick="Close">
+                        ✕
                     </button>
-                }
-            </nav>
+                </header>
+
+                <nav class="player-overlay__tabs" aria-label="Player sections">
+                    @foreach (var tab in Tabs)
+                    {
+                        <button type="button"
+                                class="player-overlay__tab @(activeTab == tab ? "is-active" : null)"
+                                @onclick="() => SelectTab(tab)">
+                            @tab
+                        </button>
+                    }
+                </nav>
+            </div>
 
             <div class="player-overlay__body">
                 @if (activeTab == "Overview")
                 {
                     <section class="player-section">
-                        <div class="player-profile__grid player-profile__grid--compact">
-                            <div class="player-stat">
-                                <span class="player-stat__label">Years Pro</span>
-                                <span class="player-stat__value">@(player.YearsPro?.ToString() ?? "—")</span>
-                            </div>
-                            <div class="player-stat">
-                                <span class="player-stat__label">College</span>
-                                <span class="player-stat__value">@(player.College ?? "—")</span>
-                            </div>
-                            <div class="player-stat">
-                                <span class="player-stat__label">Age</span>
-                                <span class="player-stat__value">@(player.Age?.ToString() ?? "—")</span>
-                            </div>
-                            <div class="player-stat">
-                                <span class="player-stat__label">Bye</span>
-                                <span class="player-stat__value">@(player.ByeWeek?.ToString() ?? "—")</span>
-                            </div>
-                        </div>
-                        <PlayerIntelligencePanel Assessment="assessment" />
+                        <PlayerIntelligencePanel Assessment="assessment" Mode="PlayerIntelligencePanelMode.Overview" />
                     </section>
                 }
                 else if (activeTab == "Fantasy")
@@ -234,7 +226,7 @@
                 else if (activeTab == "Intelligence")
                 {
                     <section class="player-section">
-                        <PlayerIntelligencePanel Assessment="assessment" />
+                        <PlayerIntelligencePanel Assessment="assessment" Mode="PlayerIntelligencePanelMode.Intelligence" />
                     </section>
                 }
                 else if (activeTab == "Career")

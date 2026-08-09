@@ -16,6 +16,7 @@ public sealed class PlayerIntelligenceAssessment
 
     public required string OutlookLabel { get; init; }
 
+    /// <summary>Short explanation of the canonical outlook — never a competing outlook label.</summary>
     public required string Headline { get; init; }
 
     public required int AssessmentConfidence { get; init; }
@@ -32,9 +33,14 @@ public sealed class PlayerIntelligenceAssessment
 
     public required string? ProjectionSummary { get; init; }
 
+    public required int? ProjectionConfidence { get; init; }
+
     public required IReadOnlyList<IntelligenceFactor> PositiveFactors { get; init; }
 
     public required IReadOnlyList<IntelligenceFactor> NegativeFactors { get; init; }
+
+    /// <summary>2–4 most material factors for the Overview snapshot.</summary>
+    public required IReadOnlyList<IntelligenceFactor> KeyFactors { get; init; }
 
     public required IReadOnlyList<RecentIntelligenceItem> RecentIntelligence { get; init; }
 
@@ -69,6 +75,8 @@ public sealed class IntelligenceFactor
     public required string? Detail { get; init; }
 
     public required string Source { get; init; }
+
+    public required bool IsPositive { get; init; }
 }
 
 public sealed class RecentIntelligenceItem

@@ -35,8 +35,11 @@ public static class PlayerOverlayLayoutRules
             return false;
         }
 
-        return overlayCss.Contains("top: var(--pb-topbar-height)", StringComparison.Ordinal)
-               && overlayCss.Contains("calc(100dvh - var(--pb-topbar-height))", StringComparison.Ordinal);
+        // Must clear shell safe-area + top bar on mobile — never sit under sticky chrome.
+        return overlayCss.Contains("var(--pb-topbar-height)", StringComparison.Ordinal)
+               && overlayCss.Contains("safe-area-inset-top", StringComparison.Ordinal)
+               && overlayCss.Contains("100dvh", StringComparison.Ordinal)
+               && overlayCss.Contains("top: calc(", StringComparison.Ordinal);
     }
 
     public static bool TabStripFitsWithoutHorizontalPageOverflow(

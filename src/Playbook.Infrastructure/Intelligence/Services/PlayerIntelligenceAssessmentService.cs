@@ -76,10 +76,11 @@ public sealed class PlayerIntelligenceAssessmentService : IPlayerIntelligenceAss
             unavailable.Add("Statistical context unavailable");
         }
 
-        var positive = BuildPositiveFactors(profile, injury, projection, stats, facts);
-        var negative = BuildNegativeFactors(profile, injury, projection, stats, facts);
-        var recent = BuildRecentIntelligence(facts, news, injury);
-        var (outlook, outlookLabel) = DeriveOutlook(profile, injury, positive.Count, negative.Count);
+        var positive = DeduplicateFactors(BuildPositiveFactors(profile, injury, projection, stats, facts));
+        var negative = DeduplicateFactors(BuildNegativeFactors(profile, injury, projection, stats, facts));
+        var recent = DeduplicateRecent(BuildRecentIntelligence(facts, news, injury));
+        var (outlook, outlookLabel) = DeriveOutlook(profile, injury, positive, negative);
+        var headline = BuildHeadline(outlook, injury, profile, negative, positive);
         var confidence = DeriveConfidence(profile, unavailable.Count, facts.Count);
         var healthLabel = HealthLabel(injury, profile);
         var projectionSummary = projection is null
@@ -91,26 +92,26 @@ public sealed class PlayerIntelligenceAssessmentService : IPlayerIntelligenceAss
             PlayerId = playerId,
             Outlook = outlook,
             OutlookLabel = outlookLabel,
-            Headline = profile?.Headline
-                       ?? injury?.RiskSummary
-                       ?? (projection is null ? "Limited intelligence available" : "Projection available"),
+            Headline = headline,
             AssessmentConfidence = confidence,
             ConfidenceNote = confidence switch
             {
-                >= 70 => "Based on multiple supporting signals",
-                >= 45 => "Partial signal coverage — treat with caution",
-                _ => "Limited or incomplete intelligence"
+                >= 70 => "Intelligence confidence reflects multiple supporting signals",
+                >= 45 => "Intelligence confidence is limited by partial signal coverage",
+                _ => "Intelligence confidence is low — incomplete underlying data"
             },
             OpportunityScore = profile?.OpportunityScore,
             UsageScore = profile?.UsageScore,
             HealthScore = profile?.HealthScore,
             HealthStatusLabel = healthLabel,
             ProjectionSummary = projectionSummary,
+            ProjectionConfidence = projection?.Confidence,
             PositiveFactors = positive,
             NegativeFactors = negative,
+            KeyFactors = SelectKeyFactors(outlook, positive, negative),
             RecentIntelligence = recent,
             UnavailableSignals = unavailable.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
-            DetailSections = BuildDetailSections(profile, injury, projection, stats, unavailable),
+            DetailSections = BuildDetailSections(profile, injury, projection, stats, unavailable, confidence),
             Profile = profile,
             InjuryProfile = injury,
             Projection = projection,
@@ -132,51 +133,57 @@ public sealed class PlayerIntelligenceAssessmentService : IPlayerIntelligenceAss
         {
             if (profile.OpportunityScore >= 60)
             {
-                factors.Add(Factor("Increased opportunity", $"Opportunity score {profile.OpportunityScore}/100", "Intelligence"));
+                factors.Add(Factor("Increased opportunity", $"Opportunity score {profile.OpportunityScore}/100", "Intelligence", true));
             }
 
             if (profile.UsageScore >= 60)
             {
-                factors.Add(Factor("Strong usage", $"Usage score {profile.UsageScore}/100", "Intelligence"));
+                factors.Add(Factor("Strong usage", $"Usage score {profile.UsageScore}/100", "Intelligence", true));
             }
 
             if (profile.TrendDirection == Core.Players.TrendDirection.Up)
             {
-                factors.Add(Factor("Positive trend", profile.Headline, "Intelligence"));
+                factors.Add(Factor("Positive trend", DescribeProfileSignal(profile), "Intelligence", true));
             }
 
+            // Only claim healthy when injury data confirms no current injury AND health score supports it.
             if (profile.HealthScore >= 65 &&
-                injury?.CurrentDataStatus == CurrentInjuryDataStatus.NoCurrentInjury)
+                injury?.CurrentDataStatus == CurrentInjuryDataStatus.NoCurrentInjury &&
+                injury.UnconfirmedSignals.Count == 0)
             {
-                factors.Add(Factor("Healthy", $"Health score {profile.HealthScore}/100", "Intelligence"));
+                factors.Add(Factor(
+                    "No current designation",
+                    $"Health score {profile.HealthScore}/100 with no confirmed injury",
+                    "Intelligence",
+                    true));
             }
 
             if (profile.ChangeSignal is IntelligenceChangeSignal.OpportunityIncreasing
                 or IntelligenceChangeSignal.UsageIncreasing
                 or IntelligenceChangeSignal.HealthImproving)
             {
-                factors.Add(Factor(profile.ChangeSignal.ToString().Replace("Increasing", " increasing").Replace("Improving", " improving"),
-                    profile.Headline, "Change signal"));
+                factors.Add(Factor(ReadableSignal(profile.ChangeSignal), DescribeProfileSignal(profile), "Change signal", true));
             }
         }
 
         if (stats?.Usage?.WorkloadTrend is string workload &&
             workload.Contains("up", StringComparison.OrdinalIgnoreCase))
         {
-            factors.Add(Factor("Workload trending up", workload, "Statistics"));
+            factors.Add(Factor("Workload trending up", workload, "Statistics", true));
         }
 
         if (stats?.Trend == StatisticalTrendSignal.Increasing)
         {
-            factors.Add(Factor("Recent production improving", stats.RecentProduction?.Label, "Statistics"));
+            factors.Add(Factor("Strong recent production", stats.RecentProduction?.Label, "Statistics", true));
         }
 
         if (projection is not null && projection.Confidence >= 65 && projection.Volatility <= 45)
         {
             factors.Add(Factor(
-                "Stable projection",
-                $"Confidence {projection.Confidence}% · volatility {projection.Volatility}",
-                "Projection"));
+                "Low-volatility projection",
+                $"Projection confidence {projection.Confidence}% · volatility {projection.Volatility}",
+                "Projection",
+                true));
         }
 
         foreach (var fact in facts
@@ -190,13 +197,10 @@ public sealed class PlayerIntelligenceAssessmentService : IPlayerIntelligenceAss
                      .ThenByDescending(f => f.Confidence)
                      .Take(3))
         {
-            if (factors.All(x => !string.Equals(x.Text, fact.Title, StringComparison.OrdinalIgnoreCase)))
-            {
-                factors.Add(Factor(fact.Title, fact.Description, fact.Source.ToString()));
-            }
+            factors.Add(Factor(fact.Title, fact.Description, fact.Source.ToString(), true));
         }
 
-        return factors.Take(6).ToList();
+        return factors;
     }
 
     private static IReadOnlyList<IntelligenceFactor> BuildNegativeFactors(
@@ -214,7 +218,8 @@ public sealed class PlayerIntelligenceAssessmentService : IPlayerIntelligenceAss
                 "Current injury",
                 $"{current.Status}" +
                 (string.IsNullOrWhiteSpace(current.BodyPart) ? "" : $" — {current.BodyPart}"),
-                current.Source ?? "Injury report"));
+                current.Source ?? "Injury report",
+                false));
         }
 
         if (injury is { UnconfirmedSignals.Count: > 0 })
@@ -223,61 +228,58 @@ public sealed class PlayerIntelligenceAssessmentService : IPlayerIntelligenceAss
             factors.Add(Factor(
                 "Unconfirmed injury report",
                 signal.Headline,
-                signal.Source));
+                signal.Source,
+                false));
         }
 
         if (profile is not null)
         {
             if (profile.HealthScore <= 40)
             {
-                factors.Add(Factor("Health concern", $"Health score {profile.HealthScore}/100", "Intelligence"));
+                factors.Add(Factor("Health concern", $"Health score {profile.HealthScore}/100", "Intelligence", false));
             }
 
             if (profile.OpportunityScore <= 40)
             {
-                factors.Add(Factor("Reduced opportunity", $"Opportunity score {profile.OpportunityScore}/100", "Intelligence"));
+                factors.Add(Factor("Reduced opportunity", $"Opportunity score {profile.OpportunityScore}/100", "Intelligence", false));
             }
 
             if (profile.UsageScore <= 40)
             {
-                factors.Add(Factor("Reduced usage", $"Usage score {profile.UsageScore}/100", "Intelligence"));
+                factors.Add(Factor("Reduced usage", $"Usage score {profile.UsageScore}/100", "Intelligence", false));
             }
 
             if (profile.OverallRisk >= 65)
             {
-                factors.Add(Factor("Elevated risk", $"Risk {profile.OverallRisk}/100", "Intelligence"));
+                factors.Add(Factor("Elevated risk", $"Risk {profile.OverallRisk}/100", "Intelligence", false));
             }
 
             if (profile.ChangeSignal is IntelligenceChangeSignal.HealthConcern
                 or IntelligenceChangeSignal.OpportunityDecreasing
                 or IntelligenceChangeSignal.ElevatedRisk)
             {
-                factors.Add(Factor(ReadableSignal(profile.ChangeSignal), profile.Headline, "Change signal"));
+                factors.Add(Factor(ReadableSignal(profile.ChangeSignal), DescribeProfileSignal(profile), "Change signal", false));
             }
 
             if (profile.TrendDirection == Core.Players.TrendDirection.Down)
             {
-                factors.Add(Factor("Negative trend", profile.Headline, "Intelligence"));
+                factors.Add(Factor("Negative trend", DescribeProfileSignal(profile), "Intelligence", false));
             }
         }
 
-        foreach (var entry in injury?.RecentHistory.Where(e => e.Band is InjuryRelevanceBand.High or InjuryRelevanceBand.Moderate).Take(2)
-                     ?? [])
+        foreach (var summarized in SummarizeInjuryHistory(injury))
         {
-            factors.Add(Factor(
-                "Relevant injury history",
-                $"{entry.Record.BodyPart ?? entry.Record.Status} — {entry.RelevanceReason}",
-                entry.Record.Source ?? "Injury history"));
+            factors.Add(summarized);
         }
 
         if (stats?.Trend == StatisticalTrendSignal.Decreasing)
         {
-            factors.Add(Factor("Recent production declining", stats.RecentProduction?.Label, "Statistics"));
+            factors.Add(Factor("Recent production declining", stats.RecentProduction?.Label, "Statistics", false));
         }
 
         if (projection is not null && projection.Volatility >= 70)
         {
-            factors.Add(Factor("High projection volatility", $"Volatility {projection.Volatility}", "Projection"));
+            factors.Add(Factor("High projection volatility", $"Volatility {projection.Volatility}", "Projection", false));
         }
 
         foreach (var fact in facts
@@ -288,16 +290,51 @@ public sealed class PlayerIntelligenceAssessmentService : IPlayerIntelligenceAss
                      .OrderByDescending(f => f.Importance)
                      .Take(2))
         {
-            if (factors.All(x => !string.Equals(x.Text, fact.Title, StringComparison.OrdinalIgnoreCase)))
-            {
-                factors.Add(Factor(
-                    fact.Title + (IsUnconfirmed(fact) ? " (unconfirmed)" : ""),
-                    fact.Description,
-                    fact.Source.ToString()));
-            }
+            factors.Add(Factor(
+                fact.Title + (IsUnconfirmed(fact) ? " (unconfirmed)" : ""),
+                fact.Description,
+                fact.Source.ToString(),
+                false));
         }
 
-        return factors.Take(6).ToList();
+        return factors;
+    }
+
+    private static IEnumerable<IntelligenceFactor> SummarizeInjuryHistory(PlayerInjuryProfile? injury)
+    {
+        if (injury is null)
+        {
+            yield break;
+        }
+
+        var relevant = injury.RecentHistory
+            .Where(e => e.Band is InjuryRelevanceBand.High or InjuryRelevanceBand.Moderate)
+            .ToList();
+
+        foreach (var group in relevant
+                     .GroupBy(e => NormalizeInjuryKey(e.Record.BodyPart ?? e.Record.Status))
+                     .OrderByDescending(g => g.Max(x => x.RelevanceScore))
+                     .Take(3))
+        {
+            var sample = group.OrderByDescending(e => e.RelevanceScore).First();
+            var body = sample.Record.BodyPart ?? sample.Record.Status;
+            if (group.Count() > 1)
+            {
+                yield return Factor(
+                    $"Repeated {body} history — {group.Count()} recorded occurrences",
+                    sample.RelevanceReason,
+                    sample.Record.Source ?? "Injury history",
+                    false);
+            }
+            else
+            {
+                yield return Factor(
+                    $"Relevant injury history — {body}",
+                    sample.RelevanceReason,
+                    sample.Record.Source ?? "Injury history",
+                    false);
+            }
+        }
     }
 
     private static IReadOnlyList<RecentIntelligenceItem> BuildRecentIntelligence(
@@ -338,11 +375,6 @@ public sealed class PlayerIntelligenceAssessmentService : IPlayerIntelligenceAss
 
         foreach (var article in news.Take(4))
         {
-            if (items.Any(i => string.Equals(i.Title, article.Title, StringComparison.OrdinalIgnoreCase)))
-            {
-                continue;
-            }
-
             items.Add(new RecentIntelligenceItem
             {
                 Title = article.Title,
@@ -367,17 +399,18 @@ public sealed class PlayerIntelligenceAssessmentService : IPlayerIntelligenceAss
         PlayerInjuryProfile? injury,
         PlayerProjection? projection,
         PlayerStatisticalContext? stats,
-        IReadOnlyList<string> unavailable)
+        IReadOnlyList<string> unavailable,
+        int intelligenceConfidence)
     {
         var sections = new List<AssessmentDetailSection>();
 
         if (profile is not null)
         {
             sections.Add(new AssessmentDetailSection(
-                "Intelligence scores",
+                "Intelligence confidence & scores",
                 [
-                    $"Headline: {profile.Headline}",
-                    $"Confidence: {profile.OverallConfidence}%",
+                    $"Intelligence confidence: {intelligenceConfidence}%",
+                    $"Profile confidence: {profile.OverallConfidence}%",
                     $"Opportunity: {profile.OpportunityScore}",
                     $"Usage: {profile.UsageScore}",
                     $"Health: {profile.HealthScore}",
@@ -389,12 +422,12 @@ public sealed class PlayerIntelligenceAssessmentService : IPlayerIntelligenceAss
         if (projection is not null)
         {
             sections.Add(new AssessmentDetailSection(
-                "Projection",
+                "Projection reasoning",
                 [
+                    $"Projection confidence: {projection.Confidence}%",
                     $"Median: {projection.Median:0.0}",
                     $"Floor: {projection.Floor:0.0}",
                     $"Ceiling: {projection.Ceiling:0.0}",
-                    $"Confidence: {projection.Confidence}%",
                     $"Volatility: {projection.Volatility}",
                     $"Engine: {projection.ProjectionVersion}",
                     .. projection.ProjectionReasoning.Take(4)
@@ -424,14 +457,14 @@ public sealed class PlayerIntelligenceAssessmentService : IPlayerIntelligenceAss
                 injuryItems.Add(injury.RiskSummary);
             }
 
-            sections.Add(new AssessmentDetailSection("Health & injury", injuryItems));
+            sections.Add(new AssessmentDetailSection("Health & injury reasoning", injuryItems));
         }
 
         if (stats is not null)
         {
             var usage = stats.Usage;
             sections.Add(new AssessmentDetailSection(
-                "Usage & production",
+                "Usage & opportunity reasoning",
                 [
                     $"Trend: {stats.Trend}",
                     $"Game logs: {stats.GameLogsAvailable}",
@@ -444,7 +477,7 @@ public sealed class PlayerIntelligenceAssessmentService : IPlayerIntelligenceAss
 
         if (unavailable.Count > 0)
         {
-            sections.Add(new AssessmentDetailSection("Unavailable signals", unavailable.ToList()));
+            sections.Add(new AssessmentDetailSection("Data quality / unavailable", unavailable.ToList()));
         }
 
         return sections;
@@ -453,19 +486,15 @@ public sealed class PlayerIntelligenceAssessmentService : IPlayerIntelligenceAss
     private static (PlayerOutlook Outlook, string Label) DeriveOutlook(
         PlayerIntelligenceProfile? profile,
         PlayerInjuryProfile? injury,
-        int positiveCount,
-        int negativeCount)
+        IReadOnlyList<IntelligenceFactor> positive,
+        IReadOnlyList<IntelligenceFactor> negative)
     {
         if (profile is null && injury is null)
         {
             return (PlayerOutlook.Unknown, "Unknown");
         }
 
-        if (injury?.CurrentInjury is not null ||
-            profile?.ChangeSignal is IntelligenceChangeSignal.HealthConcern
-                or IntelligenceChangeSignal.ElevatedRisk ||
-            (profile?.OverallRisk ?? 0) >= 70 ||
-            (profile?.HealthScore is int hs && hs <= 35))
+        if (HasActiveConcern(profile, injury))
         {
             return (PlayerOutlook.Concerning, "Concerning");
         }
@@ -474,22 +503,91 @@ public sealed class PlayerIntelligenceAssessmentService : IPlayerIntelligenceAss
             profile.OpportunityScore >= 65 &&
             profile.HealthScore >= 60 &&
             profile.OverallConfidence >= 55 &&
-            negativeCount <= 1)
+            injury?.CurrentDataStatus == CurrentInjuryDataStatus.NoCurrentInjury &&
+            injury.UnconfirmedSignals.Count == 0 &&
+            negative.Count <= 1)
         {
             return (PlayerOutlook.Strong, "Strong");
         }
 
-        if (positiveCount > negativeCount && (profile?.OpportunityScore ?? 50) >= 55)
+        if (positive.Count > negative.Count && (profile?.OpportunityScore ?? 50) >= 55)
         {
             return (PlayerOutlook.Positive, "Positive");
         }
 
-        if (negativeCount > positiveCount)
+        // Historical or mild negatives without an active concern stay Stable — not Concerning.
+        return (PlayerOutlook.Neutral, "Stable");
+    }
+
+    private static bool HasActiveConcern(PlayerIntelligenceProfile? profile, PlayerInjuryProfile? injury) =>
+        injury?.CurrentInjury is not null ||
+        injury is { UnconfirmedSignals.Count: > 0 } ||
+        profile?.ChangeSignal is IntelligenceChangeSignal.HealthConcern
+            or IntelligenceChangeSignal.ElevatedRisk ||
+        (profile?.OverallRisk ?? 0) >= 70 ||
+        (profile?.HealthScore is int hs && hs <= 35);
+
+    private static string BuildHeadline(
+        PlayerOutlook outlook,
+        PlayerInjuryProfile? injury,
+        PlayerIntelligenceProfile? profile,
+        IReadOnlyList<IntelligenceFactor> negative,
+        IReadOnlyList<IntelligenceFactor> positive)
+    {
+        return outlook switch
         {
-            return (PlayerOutlook.Concerning, "Concerning");
+            PlayerOutlook.Concerning when injury?.CurrentInjury is { } current =>
+                string.IsNullOrWhiteSpace(current.BodyPart)
+                    ? $"Active injury designation: {current.Status}."
+                    : $"Active injury designation: {current.Status} ({current.BodyPart}).",
+            PlayerOutlook.Concerning when injury is { UnconfirmedSignals.Count: > 0 } =>
+                $"Unconfirmed reports are weighing on the outlook — {injury.UnconfirmedSignals[0].Headline}.",
+            PlayerOutlook.Concerning when negative.Count > 0 =>
+                negative[0].Detail is { Length: > 0 } detail
+                    ? $"{negative[0].Text}: {detail}"
+                    : negative[0].Text,
+            PlayerOutlook.Concerning =>
+                "Material concerns in current health or risk signals.",
+            PlayerOutlook.Strong =>
+                "Supportive opportunity, usage, and health signals.",
+            PlayerOutlook.Positive when positive.Count > 0 =>
+                positive[0].Detail is { Length: > 0 } detail
+                    ? $"{positive[0].Text}: {detail}"
+                    : positive[0].Text,
+            PlayerOutlook.Positive =>
+                "Favorable signals outweigh current concerns.",
+            PlayerOutlook.Unknown =>
+                "Limited intelligence available for a firm outlook.",
+            _ =>
+                "No strong directional change in current signals."
+        };
+    }
+
+    private static IReadOnlyList<IntelligenceFactor> SelectKeyFactors(
+        PlayerOutlook outlook,
+        IReadOnlyList<IntelligenceFactor> positive,
+        IReadOnlyList<IntelligenceFactor> negative)
+    {
+        var selected = new List<IntelligenceFactor>();
+
+        // Prefer the side that drives the outlook, then balance.
+        if (outlook is PlayerOutlook.Concerning)
+        {
+            selected.AddRange(negative.Take(3));
+            selected.AddRange(positive.Take(Math.Max(0, 4 - selected.Count)));
+        }
+        else if (outlook is PlayerOutlook.Strong or PlayerOutlook.Positive)
+        {
+            selected.AddRange(positive.Take(3));
+            selected.AddRange(negative.Take(Math.Max(0, 4 - selected.Count)));
+        }
+        else
+        {
+            selected.AddRange(negative.Take(2));
+            selected.AddRange(positive.Take(Math.Max(0, 4 - selected.Count)));
         }
 
-        return (PlayerOutlook.Neutral, "Neutral");
+        return DeduplicateFactors(selected).Take(4).ToList();
     }
 
     private static int DeriveConfidence(
@@ -511,37 +609,149 @@ public sealed class PlayerIntelligenceAssessmentService : IPlayerIntelligenceAss
     {
         if (injury is null)
         {
-            return "Unavailable";
+            return "Limited information";
         }
 
         if (injury.CurrentInjury is { } current)
         {
             return string.IsNullOrWhiteSpace(current.BodyPart)
-                ? current.Status.ToString()
-                : $"{current.Status} · {current.BodyPart}";
+                ? $"Current concern · {current.Status}"
+                : $"Current concern · {current.Status} · {current.BodyPart}";
         }
 
         if (injury.CurrentDataStatus == CurrentInjuryDataStatus.Unavailable)
         {
-            return "Unavailable";
+            return "Limited information";
         }
 
         if (injury.UnconfirmedSignals.Count > 0)
         {
-            return "No confirmed injury · unconfirmed reports";
+            return "No current designation · unconfirmed reports";
         }
 
         if (injury.CurrentDataStatus == CurrentInjuryDataStatus.NoCurrentInjury)
         {
-            return profile?.HealthScore is int score ? $"Healthy · {score}" : "No confirmed injury";
+            if (profile?.HealthScore is int score && score <= 40)
+            {
+                return "Current concern";
+            }
+
+            if (profile?.HealthScore is int healthy && healthy >= 65)
+            {
+                return "Healthy / No current designation";
+            }
+
+            // Confirmed no current injury, but incomplete health scoring — do not claim "Healthy".
+            return "No current designation";
         }
 
-        return InjuryAvailabilityPresentation.CurrentStatusLabel(injury.CurrentDataStatus);
+        return "Unknown";
     }
+
+    private static IReadOnlyList<IntelligenceFactor> DeduplicateFactors(IEnumerable<IntelligenceFactor> factors)
+    {
+        var result = new List<IntelligenceFactor>();
+        foreach (var factor in factors)
+        {
+            var key = NormalizeFactorKey(factor.Text);
+            if (result.Any(existing =>
+                    NormalizeFactorKey(existing.Text) == key ||
+                    AreEquivalentInjuryFactors(existing, factor)))
+            {
+                continue;
+            }
+
+            result.Add(factor);
+            if (result.Count >= 6)
+            {
+                break;
+            }
+        }
+
+        return result;
+    }
+
+    private static IReadOnlyList<RecentIntelligenceItem> DeduplicateRecent(IEnumerable<RecentIntelligenceItem> items)
+    {
+        var result = new List<RecentIntelligenceItem>();
+        foreach (var item in items)
+        {
+            var key = NormalizeFactorKey(item.Title);
+            if (result.Any(existing => NormalizeFactorKey(existing.Title) == key))
+            {
+                continue;
+            }
+
+            result.Add(item);
+            if (result.Count >= 8)
+            {
+                break;
+            }
+        }
+
+        return result;
+    }
+
+    private static bool AreEquivalentInjuryFactors(IntelligenceFactor a, IntelligenceFactor b)
+    {
+        var aInjury = a.Text.Contains("injury", StringComparison.OrdinalIgnoreCase) ||
+                      a.Text.Contains("history", StringComparison.OrdinalIgnoreCase);
+        var bInjury = b.Text.Contains("injury", StringComparison.OrdinalIgnoreCase) ||
+                      b.Text.Contains("history", StringComparison.OrdinalIgnoreCase);
+        if (!aInjury || !bInjury)
+        {
+            return false;
+        }
+
+        var aBody = ExtractBodyPartHint(a.Text) ?? ExtractBodyPartHint(a.Detail);
+        var bBody = ExtractBodyPartHint(b.Text) ?? ExtractBodyPartHint(b.Detail);
+        return aBody is not null &&
+               bBody is not null &&
+               string.Equals(aBody, bBody, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string? ExtractBodyPartHint(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return null;
+        }
+
+        foreach (var token in new[] { "Foot", "Ankle", "Knee", "Hamstring", "Shoulder", "Back", "Hip", "Wrist", "Hand", "Quad", "Groin", "Calf", "Concussion", "Rib" })
+        {
+            if (text.Contains(token, StringComparison.OrdinalIgnoreCase))
+            {
+                return token.ToLowerInvariant();
+            }
+        }
+
+        return null;
+    }
+
+    private static string NormalizeFactorKey(string text) =>
+        string.Join(' ', text
+            .ToLowerInvariant()
+            .Replace("(unconfirmed)", "", StringComparison.Ordinal)
+            .Split([' ', '—', '-', '·', ',', '.', '(', ')'], StringSplitOptions.RemoveEmptyEntries)
+            .Where(t => t is not ("the" or "a" or "an" or "of" or "and")));
+
+    private static string NormalizeInjuryKey(string value) =>
+        value.Trim().ToLowerInvariant();
 
     private static bool IsUnconfirmed(IntelligenceFact fact) =>
         fact.Tags.Any(t => t.Contains("unconfirmed", StringComparison.OrdinalIgnoreCase)) ||
         fact.SupportingEvidence.Any(e => e.Contains("Unconfirmed", StringComparison.OrdinalIgnoreCase));
+
+    private static string DescribeProfileSignal(PlayerIntelligenceProfile profile)
+    {
+        // Avoid reusing aggregator labels like "Stable Outlook" that compete with the canonical outlook.
+        if (profile.ChangeSignal is IntelligenceChangeSignal.Neutral)
+        {
+            return $"Opportunity {profile.OpportunityScore} · usage {profile.UsageScore} · health {profile.HealthScore}";
+        }
+
+        return ReadableSignal(profile.ChangeSignal);
+    }
 
     private static string ReadableSignal(IntelligenceChangeSignal signal) => signal switch
     {
@@ -551,14 +761,15 @@ public sealed class PlayerIntelligenceAssessmentService : IPlayerIntelligenceAss
         IntelligenceChangeSignal.OpportunityIncreasing => "Opportunity increasing",
         IntelligenceChangeSignal.UsageIncreasing => "Usage increasing",
         IntelligenceChangeSignal.HealthImproving => "Health improving",
-        _ => signal.ToString()
+        _ => "No directional change signal"
     };
 
-    private static IntelligenceFactor Factor(string text, string? detail, string source) =>
+    private static IntelligenceFactor Factor(string text, string? detail, string source, bool isPositive) =>
         new()
         {
             Text = text,
             Detail = string.IsNullOrWhiteSpace(detail) ? null : detail,
-            Source = source
+            Source = source,
+            IsPositive = isPositive
         };
 }

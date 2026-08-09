@@ -2,6 +2,17 @@
 
 All notable project changes are recorded here.
 
+## [Unreleased] — Player Intelligence structural refinement
+
+### Fixed / Changed
+
+- Mobile player overlay clears shell safe-area + top bar so sticky chrome never overlaps the player card
+- Overview vs Intelligence are distinct: Overview = concise decision snapshot; Intelligence = structured reasoning/evidence
+- One canonical outlook label (Stable replaces conflicting “Stable Outlook” headlines); explanation text cannot contradict it
+- Injury/history factors deduplicated and summarized (e.g. repeated foot history)
+- Health language: Healthy only when data supports it; otherwise No current designation / Limited information / Current concern
+- Intelligence confidence vs Projection confidence labeled separately
+
 ## [Unreleased] — Player Intelligence experience
 
 ### Added

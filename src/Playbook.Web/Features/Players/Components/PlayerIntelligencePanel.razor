@@ -7,9 +7,9 @@
 {
     <p class="player-section__muted">Player intelligence is still loading.</p>
 }
-else
+else if (Mode == PlayerIntelligencePanelMode.Overview)
 {
-    <section class="pi-panel" aria-label="Player intelligence">
+    <section class="pi-panel pi-panel--overview" aria-label="Player overview">
         <header class="pi-snapshot">
             <div class="pi-snapshot__outlook pi-snapshot__outlook--@Assessment.Outlook.ToString().ToLowerInvariant()">
                 <span class="pi-snapshot__eyebrow">Current outlook</span>
@@ -22,8 +22,92 @@ else
                     <span class="pi-metric__value">@(Assessment.ProjectionSummary ?? "Unavailable")</span>
                 </div>
                 <div class="pi-metric">
-                    <span class="pi-metric__label">Confidence</span>
+                    <span class="pi-metric__label">Intelligence confidence</span>
                     <span class="pi-metric__value">@Assessment.AssessmentConfidence%</span>
+                </div>
+                <div class="pi-metric">
+                    <span class="pi-metric__label">Opportunity</span>
+                    <span class="pi-metric__value">@(Assessment.OpportunityScore?.ToString() ?? "—")</span>
+                </div>
+                <div class="pi-metric">
+                    <span class="pi-metric__label">Usage</span>
+                    <span class="pi-metric__value">@(Assessment.UsageScore?.ToString() ?? "—")</span>
+                </div>
+                <div class="pi-metric pi-metric--wide">
+                    <span class="pi-metric__label">Health</span>
+                    <span class="pi-metric__value">@Assessment.HealthStatusLabel</span>
+                </div>
+            </div>
+        </header>
+
+        <section class="pi-section" aria-labelledby="pi-key-title">
+            <h3 id="pi-key-title" class="pi-section__title">Key factors</h3>
+            @if (Assessment.KeyFactors.Count == 0)
+            {
+                <p class="pi-empty">No material factors supported by current data.</p>
+            }
+            else
+            {
+                <ul class="pi-factor-list">
+                    @foreach (var factor in Assessment.KeyFactors)
+                    {
+                        <li class="@(factor.IsPositive ? "pi-factor--pos" : "pi-factor--neg")">
+                            <strong>@(factor.IsPositive ? "Positive" : "Negative") · @factor.Text</strong>
+                            @if (!string.IsNullOrWhiteSpace(factor.Detail))
+                            {
+                                <span>@factor.Detail</span>
+                            }
+                        </li>
+                    }
+                </ul>
+            }
+        </section>
+
+        <section class="pi-section" aria-labelledby="pi-recent-overview-title">
+            <h3 id="pi-recent-overview-title" class="pi-section__title">Recent intelligence</h3>
+            @if (OverviewIntel.Count == 0)
+            {
+                <p class="pi-empty">No recent intelligence items for this player.</p>
+            }
+            else
+            {
+                <ul class="pi-intel-list">
+                    @foreach (var item in OverviewIntel)
+                    {
+                        <li class="pi-intel @(item.IsConfirmed ? "pi-intel--confirmed" : "pi-intel--unconfirmed")">
+                            <div class="pi-intel__top">
+                                <span class="pi-intel__badge @(item.IsConfirmed ? "pi-intel__badge--confirmed" : "pi-intel__badge--unconfirmed")">
+                                    @item.VerificationLabel
+                                </span>
+                                <span class="pi-intel__when">@IntelligencePresentation.RelativeTime(item.Timestamp)</span>
+                            </div>
+                            <p class="pi-intel__title">@item.Title</p>
+                            <p class="pi-intel__meta">@item.Category · @item.Source</p>
+                        </li>
+                    }
+                </ul>
+            }
+            <p class="pi-snapshot__note">See Intelligence for full reasoning and sources.</p>
+        </section>
+    </section>
+}
+else
+{
+    <section class="pi-panel pi-panel--intelligence" aria-label="Player intelligence reasoning">
+        <header class="pi-snapshot">
+            <div class="pi-snapshot__outlook pi-snapshot__outlook--@Assessment.Outlook.ToString().ToLowerInvariant()">
+                <span class="pi-snapshot__eyebrow">Why Playbook believes this</span>
+                <strong class="pi-snapshot__outlook-label">@Assessment.OutlookLabel</strong>
+            </div>
+            <p class="pi-snapshot__headline">@Assessment.Headline</p>
+            <div class="pi-snapshot__metrics">
+                <div class="pi-metric">
+                    <span class="pi-metric__label">Intelligence confidence</span>
+                    <span class="pi-metric__value">@Assessment.AssessmentConfidence%</span>
+                </div>
+                <div class="pi-metric">
+                    <span class="pi-metric__label">Projection confidence</span>
+                    <span class="pi-metric__value">@(Assessment.ProjectionConfidence?.ToString() is string pc ? $"{pc}%" : "—")</span>
                 </div>
                 <div class="pi-metric">
                     <span class="pi-metric__label">Opportunity</span>
@@ -42,7 +126,7 @@ else
         </header>
 
         <section class="pi-section" aria-labelledby="pi-why-title">
-            <h3 id="pi-why-title" class="pi-section__title">Why Playbook thinks this</h3>
+            <h3 id="pi-why-title" class="pi-section__title">Detailed factors</h3>
             <div class="pi-factors">
                 <div class="pi-factors__col">
                     <h4 class="pi-factors__heading pi-factors__heading--pos">Positive</h4>
@@ -61,6 +145,7 @@ else
                                     {
                                         <span>@factor.Detail</span>
                                     }
+                                    <span class="pi-factor__source">@factor.Source</span>
                                 </li>
                             }
                         </ul>
@@ -83,6 +168,7 @@ else
                                     {
                                         <span>@factor.Detail</span>
                                     }
+                                    <span class="pi-factor__source">@factor.Source</span>
                                 </li>
                             }
                         </ul>
@@ -120,7 +206,7 @@ else
                                 }
                             </p>
                             <p class="pi-intel__summary">@item.Summary</p>
-                            <p class="pi-intel__meta">@item.Category · @item.Source</p>
+                            <p class="pi-intel__meta">@item.Category · @item.Source · @item.Timestamp.ToLocalTime().ToString("MMM d, h:mm tt")</p>
                         </li>
                     }
                 </ul>
@@ -128,7 +214,7 @@ else
         </section>
 
         <section class="pi-section" aria-labelledby="pi-health-title">
-            <h3 id="pi-health-title" class="pi-section__title">Health / injury</h3>
+            <h3 id="pi-health-title" class="pi-section__title">Health / injury reasoning</h3>
             @if (Assessment.InjuryProfile is null)
             {
                 <p class="pi-empty">Injury profile unavailable.</p>
@@ -141,7 +227,7 @@ else
                     @if (injury.CurrentInjury is { } current)
                     {
                         <p class="pi-health__line">
-                            <span class="pi-intel__badge pi-intel__badge--confirmed">Verified</span>
+                            <span class="pi-intel__badge pi-intel__badge--confirmed">Confirmed</span>
                             @current.Status
                             @if (!string.IsNullOrWhiteSpace(current.BodyPart))
                             {
@@ -160,13 +246,13 @@ else
 
                     @if (injury.UnconfirmedSignals.Count > 0)
                     {
-                        <p class="pi-health__sub">Unconfirmed reports</p>
+                        <p class="pi-health__sub">Unconfirmed / reported</p>
                         <ul class="pi-factor-list">
-                            @foreach (var signal in injury.UnconfirmedSignals.Take(3))
+                            @foreach (var signal in injury.UnconfirmedSignals.Take(4))
                             {
                                 <li>
                                     <strong>@signal.Headline</strong>
-                                    <span>@signal.Source · @signal.ConfidenceLabel</span>
+                                    <span>@signal.Source · @signal.ConfidenceLabel · @signal.LastUpdated.ToLocalTime().ToString("MMM d, h:mm tt")</span>
                                 </li>
                             }
                         </ul>
@@ -176,7 +262,7 @@ else
                     {
                         <p class="pi-health__sub">Relevant history</p>
                         <ul class="pi-history">
-                            @foreach (var entry in injury.RecentHistory.Take(4))
+                            @foreach (var entry in injury.RecentHistory.Take(5))
                             {
                                 <li class="@entry.EmphasisCssClass">
                                     <strong>@(entry.Record.BodyPart ?? entry.Record.Status)</strong>
@@ -194,7 +280,7 @@ else
         </section>
 
         <section class="pi-section" aria-labelledby="pi-proj-title">
-            <h3 id="pi-proj-title" class="pi-section__title">Projection</h3>
+            <h3 id="pi-proj-title" class="pi-section__title">Projection reasoning</h3>
             @if (Assessment.Projection is null)
             {
                 <p class="pi-empty">Projection unavailable.</p>
@@ -221,7 +307,7 @@ else
                             <span class="pi-metric__value">@ProjectionPresentation.Points(p.Ceiling)</span>
                         </div>
                         <div class="pi-metric">
-                            <span class="pi-metric__label">Confidence</span>
+                            <span class="pi-metric__label">Projection confidence</span>
                             <span class="pi-metric__value">@p.Confidence%</span>
                         </div>
                         <div class="pi-metric">
@@ -229,6 +315,15 @@ else
                             <span class="pi-metric__value">@p.Volatility</span>
                         </div>
                     </div>
+                    @if (p.ProjectionReasoning.Count > 0)
+                    {
+                        <ul class="pi-factor-list" style="margin-top:0.75rem;">
+                            @foreach (var reason in p.ProjectionReasoning.Take(4))
+                            {
+                                <li><span>@reason</span></li>
+                            }
+                        </ul>
+                    }
                 </div>
             }
         </section>
@@ -262,7 +357,7 @@ else
         @if (Assessment.UnavailableSignals.Count > 0)
         {
             <section class="pi-section pi-section--secondary">
-                <h3 class="pi-section__title">Unavailable</h3>
+                <h3 class="pi-section__title">Data quality</h3>
                 <ul class="pi-factor-list">
                     @foreach (var missing in Assessment.UnavailableSignals)
                     {
@@ -273,7 +368,7 @@ else
         }
 
         <button type="button" class="pi-expand" @onclick="Toggle" aria-expanded="@_expanded">
-            @(_expanded ? "Hide analysis details" : "Show analysis details")
+            @(_expanded ? "Hide source details" : "Show source details")
         </button>
 
         @if (_expanded)
@@ -291,6 +386,7 @@ else
                         </ul>
                     </div>
                 }
+                <p class="pi-snapshot__note">Generated @Assessment.GeneratedAt.ToLocalTime().ToString("MMM d, h:mm tt")</p>
             </div>
         }
     </section>
@@ -300,7 +396,18 @@ else
     [Parameter, EditorRequired]
     public PlayerIntelligenceAssessment? Assessment { get; set; }
 
+    [Parameter]
+    public PlayerIntelligencePanelMode Mode { get; set; } = PlayerIntelligencePanelMode.Overview;
+
     private bool _expanded;
+
+    private IReadOnlyList<RecentIntelligenceItem> OverviewIntel =>
+        Assessment?.RecentIntelligence
+            .OrderByDescending(i => i.IsConfirmed)
+            .ThenByDescending(i => i.Timestamp)
+            .Take(3)
+            .ToList()
+        ?? [];
 
     private void Toggle() => _expanded = !_expanded;
 }

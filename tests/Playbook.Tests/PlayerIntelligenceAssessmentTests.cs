@@ -4,6 +4,7 @@ using Playbook.Application.Intelligence.Interfaces;
 using Playbook.Application.Players;
 using Playbook.Application.Players.Data;
 using Playbook.Core.Injuries.Models;
+using Playbook.Core.Intelligence.Models;
 
 namespace Playbook.Tests;
 
@@ -25,6 +26,57 @@ public class PlayerIntelligenceAssessmentTests
         Assert.InRange(assessment.AssessmentConfidence, 5, 95);
         Assert.DoesNotContain(assessment.PositiveFactors, f => string.IsNullOrWhiteSpace(f.Text));
         Assert.DoesNotContain(assessment.NegativeFactors, f => string.IsNullOrWhiteSpace(f.Text));
+        Assert.True(assessment.KeyFactors.Count <= 4);
+    }
+
+    [Fact]
+    public void Assessment_Outlook_And_Headline_Are_Not_Contradictory()
+    {
+        using var provider = TestServiceFactory.CreateProvider(PlayerDataProviderKind.Mock);
+        var assessments = provider.GetRequiredService<IPlayerIntelligenceAssessmentService>();
+        var players = provider.GetRequiredService<IPlayerService>();
+
+        foreach (var player in players.GetAllPlayers().Take(40))
+        {
+            var assessment = assessments.GetAssessment(player.Id);
+
+            // Canonical outlook label must match the enum classification.
+            Assert.Equal(ExpectedOutlookLabel(assessment.Outlook), assessment.OutlookLabel);
+
+            // Competing aggregator phrases must never appear as the explanation.
+            Assert.DoesNotContain("Stable Outlook", assessment.Headline, StringComparison.OrdinalIgnoreCase);
+
+            if (assessment.Outlook == PlayerOutlook.Concerning)
+            {
+                Assert.DoesNotContain("Stable", assessment.Headline, StringComparison.OrdinalIgnoreCase);
+            }
+
+            if (assessment.Outlook == PlayerOutlook.Neutral)
+            {
+                Assert.Equal("Stable", assessment.OutlookLabel);
+            }
+        }
+    }
+
+    [Fact]
+    public void Assessment_Deduplicates_Equivalent_Injury_Factors()
+    {
+        using var provider = TestServiceFactory.CreateProvider(PlayerDataProviderKind.Mock);
+        var assessments = provider.GetRequiredService<IPlayerIntelligenceAssessmentService>();
+        var players = provider.GetRequiredService<IPlayerService>();
+
+        foreach (var player in players.GetAllPlayers().Take(40))
+        {
+            var assessment = assessments.GetAssessment(player.Id);
+            var texts = assessment.NegativeFactors.Select(f => f.Text).ToList();
+            Assert.Equal(texts.Count, texts.Distinct(StringComparer.OrdinalIgnoreCase).Count());
+
+            // Repeated body-part history should be summarized, not listed as identical lines.
+            var repeatedFoot = texts.Count(t =>
+                t.Contains("Foot", StringComparison.OrdinalIgnoreCase) &&
+                t.Contains("history", StringComparison.OrdinalIgnoreCase));
+            Assert.True(repeatedFoot <= 1);
+        }
     }
 
     [Fact]
@@ -47,12 +99,13 @@ public class PlayerIntelligenceAssessmentTests
                 Assert.Contains(
                     assessment.NegativeFactors,
                     f => f.Text.Contains("Unconfirmed", StringComparison.OrdinalIgnoreCase));
+                Assert.Contains("unconfirmed", assessment.HealthStatusLabel, StringComparison.OrdinalIgnoreCase);
             }
         }
     }
 
     [Fact]
-    public void Assessment_Does_Not_Treat_Missing_Injury_As_Positive_Fabrication()
+    public void Assessment_Does_Not_Treat_Missing_Injury_As_Healthy()
     {
         using var provider = TestServiceFactory.CreateProvider(PlayerDataProviderKind.Mock);
         var assessments = provider.GetRequiredService<IPlayerIntelligenceAssessmentService>();
@@ -74,10 +127,14 @@ public class PlayerIntelligenceAssessmentTests
         Assert.Contains(
             assessment.UnavailableSignals,
             s => s.Contains("unavailable", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain("Healthy", assessment.HealthStatusLabel, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(
+            assessment.HealthStatusLabel,
+            new[] { "Limited information", "Unknown", "No current designation" },
+            StringComparer.OrdinalIgnoreCase);
         Assert.DoesNotContain(
             assessment.PositiveFactors,
-            f => f.Text.Contains("Healthy", StringComparison.OrdinalIgnoreCase) &&
-                 assessment.HealthStatusLabel.Contains("Unavailable", StringComparison.OrdinalIgnoreCase));
+            f => f.Text.Contains("Healthy", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -93,6 +150,17 @@ public class PlayerIntelligenceAssessmentTests
 
         Assert.NotNull(withProjection);
         Assert.False(string.IsNullOrWhiteSpace(withProjection!.ProjectionSummary));
-        Assert.Contains(withProjection.DetailSections, s => s.Title == "Projection");
+        Assert.Equal(withProjection.Projection!.Confidence, withProjection.ProjectionConfidence);
+        Assert.Contains(withProjection.DetailSections, s => s.Title.Contains("Projection", StringComparison.OrdinalIgnoreCase));
     }
+
+    private static string ExpectedOutlookLabel(PlayerOutlook outlook) => outlook switch
+    {
+        PlayerOutlook.Strong => "Strong",
+        PlayerOutlook.Positive => "Positive",
+        PlayerOutlook.Neutral => "Stable",
+        PlayerOutlook.Concerning => "Concerning",
+        PlayerOutlook.Unknown => "Unknown",
+        _ => outlook.ToString()
+    };
 }

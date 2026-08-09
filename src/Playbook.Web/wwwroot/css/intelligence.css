@@ -120,6 +120,23 @@
     min-width: 0;
 }
 
+.pi-panel--overview {
+    gap: var(--pb-space-4);
+}
+
+.pi-factor--pos strong {
+    color: #7dffc0;
+}
+
+.pi-factor--neg strong {
+    color: #f0a0a0;
+}
+
+.pi-factor__source {
+    color: #8a93a0 !important;
+    font-size: 0.7rem !important;
+}
+
 .pi-snapshot {
     padding: var(--pb-space-4);
     border: 1px solid var(--pb-color-border);
