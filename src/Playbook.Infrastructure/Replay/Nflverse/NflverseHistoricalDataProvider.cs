@@ -19,15 +19,18 @@ public sealed class NflverseHistoricalDataProvider : IHistoricalDataProvider
 
     private readonly NflverseCsvCache _cache;
     private readonly IHistoricalPlayerIdentityNormalizer _identities;
+    private readonly IHistoricalExpectationService _expectations;
     private readonly ILogger<NflverseHistoricalDataProvider> _logger;
 
     public NflverseHistoricalDataProvider(
         NflverseCsvCache cache,
         IHistoricalPlayerIdentityNormalizer identities,
+        IHistoricalExpectationService expectations,
         ILogger<NflverseHistoricalDataProvider> logger)
     {
         _cache = cache;
         _identities = identities;
+        _expectations = expectations;
         _logger = logger;
     }
 
@@ -102,7 +105,7 @@ public sealed class NflverseHistoricalDataProvider : IHistoricalDataProvider
                 maxWeekInclusive: week,
                 cancellationToken)
             .ConfigureAwait(false);
-        var priorSnaps = await LoadPriorSnapAveragesAsync(snapsPath, week, cancellationToken)
+        var priorSnapsByWeek = await LoadPriorSnapsByWeekAsync(snapsPath, week, cancellationToken)
             .ConfigureAwait(false);
         var depthRoles = await LoadDepthRolesAsync(depthPath, week: Math.Max(1, week - 1), cancellationToken)
             .ConfigureAwait(false);
@@ -128,22 +131,64 @@ public sealed class NflverseHistoricalDataProvider : IHistoricalDataProvider
             weekOutcomes.TryGetValue(id.GsisId, out var outcomeWeeks);
             injuries.TryGetValue(id.GsisId, out var injury);
             depthRoles.TryGetValue(id.GsisId, out var role);
-            priorSnaps.TryGetValue(NormalizeName(id.FullName), out var snapPct);
 
-            var unavailable = new List<string>
+            // Build prior-game observations (weeks < target only). Week N actuals stay out.
+            var priorGames = new List<HistoricalGameObservation>();
+            foreach (var pw in priorWeeks ?? [])
             {
-                "Historical pre-week projection (unavailable — no as-of projection archive in nflverse)"
+                if (pw.Week >= week)
+                {
+                    throw new InvalidOperationException(
+                        $"Temporal leak: prior stats included week {pw.Week} for target week {week}.");
+                }
+
+                priorSnapsByWeek.TryGetValue((NormalizeName(id.FullName), pw.Week), out var snapPct);
+                priorGames.Add(new HistoricalGameObservation
+                {
+                    Season = season,
+                    Week = pw.Week,
+                    FantasyPoints = (double)LeagueFantasyScoring.Calculate(ToCounting(pw), scoringType),
+                    PassAttempts = pw.PassAttempts,
+                    PassYards = pw.PassYards,
+                    PassTouchdowns = pw.PassTouchdowns,
+                    RushAttempts = pw.RushAttempts,
+                    RushYards = pw.RushYards,
+                    RushTouchdowns = pw.RushTouchdowns,
+                    Targets = pw.Targets,
+                    Receptions = pw.Receptions,
+                    ReceivingYards = pw.ReceivingYards,
+                    ReceivingTouchdowns = pw.ReceivingTouchdowns,
+                    OffenseSnapPct = snapPct
+                });
+            }
+
+            // Guard: never include target-week outcome rows in expectation inputs.
+            if (outcomeWeeks is { Count: > 0 } &&
+                priorGames.Any(g => g.Week == week))
+            {
+                throw new InvalidOperationException("Target-week actuals leaked into priorGames.");
+            }
+
+            var bundle = _expectations.BuildExpectations(
+                id.PlaybookId,
+                id.FullName,
+                id.Position,
+                id.Team,
+                season,
+                week,
+                cutoff,
+                priorGames,
+                scoringType,
+                role);
+
+            var unavailable = new List<string>(bundle.Features.UnavailableFeatures)
+            {
+                "Historical news (unavailable — not fabricated)"
             };
 
-            var (opportunity, usage, recentProduction) = DerivePreGameSignals(
-                id.Position,
-                priorWeeks,
-                snapPct,
-                scoringType);
-
-            if (priorWeeks is null || priorWeeks.Count == 0)
+            if (!bundle.Primary.IsValid)
             {
-                unavailable.Add("Recent production (no weeks 1..N-1 stats)");
+                unavailable.Add("Historical baseline projection insufficient (no prior games)");
             }
 
             string? healthLabel;
@@ -163,19 +208,20 @@ public sealed class NflverseHistoricalDataProvider : IHistoricalDataProvider
                 unavailable.Add("Injury certainty beyond weekly report rows (partial)");
             }
 
+            var primary = bundle.Primary;
             players.Add(new HistoricalRawPlayerRecord
             {
                 PlayerId = id.PlaybookId,
                 PlayerName = id.FullName,
                 Position = id.Position,
                 Team = id.Team,
-                ProjectedPoints = null,
-                Floor = null,
-                Ceiling = null,
-                ProjectionConfidence = null,
-                ProjectionObservedAt = null,
-                OpportunityScore = opportunity,
-                UsageScore = usage,
+                ProjectedPoints = primary.IsValid ? (decimal)primary.ProjectedPoints : null,
+                Floor = primary.Floor is null ? null : (decimal)primary.Floor.Value,
+                Ceiling = primary.Ceiling is null ? null : (decimal)primary.Ceiling.Value,
+                ProjectionConfidence = primary.IsValid ? primary.ProjectionConfidence : null,
+                ProjectionObservedAt = primary.IsValid ? cutoff : null,
+                OpportunityScore = bundle.Features.OpportunityScore,
+                UsageScore = bundle.Features.UsageScore,
                 HealthLabel = healthLabel,
                 InjuryStatus = injuryStatus,
                 InjuryBodyPart = injuryBody,
@@ -184,8 +230,18 @@ public sealed class NflverseHistoricalDataProvider : IHistoricalDataProvider
                 RecentNewsObservedAt = null,
                 RecentNewsConfirmed = false,
                 RoleNote = role,
-                RecentProductionScore = recentProduction,
-                UnavailableSignals = unavailable
+                RecentProductionScore = bundle.Features.RecentProductionScore,
+                UnavailableSignals = unavailable.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
+                DataSufficiency = bundle.Features.Sufficiency,
+                ProjectionSourceWeeks = primary.SourceWeeks,
+                ProjectionModelId = primary.IsValid ? primary.ModelId : null,
+                ProjectionMethodology = primary.Methodology,
+                BaselineRecentAveragePoints = bundle.BaselineRecentAverage.IsValid
+                    ? bundle.BaselineRecentAverage.ProjectedPoints
+                    : null,
+                BaselineOpportunityAwarePoints = bundle.BaselineOpportunityAware.IsValid
+                    ? bundle.BaselineOpportunityAware.ProjectedPoints
+                    : null
             });
 
             rosterSlots.Add(new HistoricalRosterSlot
@@ -209,7 +265,7 @@ public sealed class NflverseHistoricalDataProvider : IHistoricalDataProvider
 
         var unavailableSources = new List<string>
         {
-            "Pre-week projections: UNAVAILABLE (not fabricated)",
+            "External as-of projection archive: UNAVAILABLE — using reconstructed historical baseline projections (pre-cutoff only)",
             "Historical fantasy league ownership: UNAVAILABLE — using reconstructed lab roster from weeks 1.." + (week - 1) + " production",
             "News archive: UNAVAILABLE",
             "Week " + week + " depth charts: unused for pre-game (no trustworthy cutoff) — week " + Math.Max(1, week - 1) + " depth used instead (PARTIAL)",
@@ -468,7 +524,7 @@ public sealed class NflverseHistoricalDataProvider : IHistoricalDataProvider
         return map;
     }
 
-    private async Task<Dictionary<string, double>> LoadPriorSnapAveragesAsync(
+    private async Task<Dictionary<(string Name, int Week), double>> LoadPriorSnapsByWeekAsync(
         string path,
         int week,
         CancellationToken cancellationToken)
@@ -477,7 +533,7 @@ public sealed class NflverseHistoricalDataProvider : IHistoricalDataProvider
         var header = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false)
                      ?? throw new InvalidOperationException("snap_counts CSV missing header.");
         var idx = Index(SplitCsv(header));
-        var sums = new Dictionary<string, (double Sum, int N)>(StringComparer.OrdinalIgnoreCase);
+        var map = new Dictionary<(string Name, int Week), double>();
 
         while (!reader.EndOfStream)
         {
@@ -506,19 +562,10 @@ public sealed class NflverseHistoricalDataProvider : IHistoricalDataProvider
             }
 
             // offense_pct in nflverse is 0-1 fraction.
-            var key = NormalizeName(name);
-            if (!sums.TryGetValue(key, out var acc))
-            {
-                acc = (0, 0);
-            }
-
-            sums[key] = (acc.Sum + pct, acc.N + 1);
+            map[(NormalizeName(name), w)] = pct;
         }
 
-        return sums.ToDictionary(
-            kv => kv.Key,
-            kv => kv.Value.N == 0 ? 0 : kv.Value.Sum / kv.Value.N,
-            StringComparer.OrdinalIgnoreCase);
+        return map;
     }
 
     private async Task<Dictionary<string, string>> LoadDepthRolesAsync(
@@ -662,10 +709,10 @@ public sealed class NflverseHistoricalDataProvider : IHistoricalDataProvider
             }
         }
 
-        Take(Position.QB, starters: 1, total: 2);
-        Take(Position.RB, starters: 2, total: 4);
-        Take(Position.WR, starters: 2, total: 5);
-        Take(Position.TE, starters: 1, total: 2);
+        Take(Position.QB, starters: 1, total: 3);
+        Take(Position.RB, starters: 2, total: 5);
+        Take(Position.WR, starters: 3, total: 6);
+        Take(Position.TE, starters: 1, total: 3);
         return selected
             .OrderBy(c => c.Identity.Position)
             .ThenByDescending(c => c.IsStarter)

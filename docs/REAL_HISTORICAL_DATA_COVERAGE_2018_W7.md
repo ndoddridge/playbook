@@ -18,7 +18,8 @@ Statuses: **AVAILABLE** · **PARTIAL** · **UNAVAILABLE**
 | Snap counts | PARTIAL | `snap_counts_{season}.csv.gz` | **Weeks 1–6 only** for usage proxies. Week 7 snaps are post-game and excluded from pre-game context. |
 | Fantasy opportunity/usage | PARTIAL | Derived from weeks 1–6 targets/carries/attempts + snaps | Transparent 0–100 heuristics — not official nflverse “opportunity” products. |
 | Historical fantasy league ownership | UNAVAILABLE | — | No week-by-week Sleeper/ESPN ownership archive. Replay uses a **reconstructed lab roster** from pre-week production (labeled, not historical ownership). |
-| Pre-week projections | UNAVAILABLE | — | No as-of projection archive in nflverse releases used here. Projection fields remain null. **Do not** use Week 7 actuals or future weeks as projections. |
+| Pre-week projections (external archive) | UNAVAILABLE | — | No vendor as-of projection archive. |
+| Pre-week projections (reconstructed baseline) | PARTIAL | Feature reconstructor + Baseline A/B | Built only from weeks 1..(N-1). Transparent baselines — not a trained model. |
 | News archive | UNAVAILABLE | — | Not integrated. |
 | Betting / matchup lines | UNAVAILABLE | — | Schedules contain some market columns; not used as pre-game intelligence in this step. |
 

@@ -128,7 +128,7 @@ public sealed class HistoricalReplayRunner : IHistoricalReplayRunner
         }
 
         // 8–10. Reveal outcomes, grade comparatively, attach to records.
-        var grades = _evaluator.EvaluateStartSit(records, batch.Decisions, outcomes);
+        var grades = _evaluator.EvaluateStartSit(records, batch.Decisions, outcomes, snapshot);
         foreach (var grade in grades)
         {
             if (grade.ActualFantasyPoints is null)
@@ -155,13 +155,37 @@ public sealed class HistoricalReplayRunner : IHistoricalReplayRunner
         var graded = correct + incorrect;
 
         var projErrors = grades
-            .Where(g => g.ProjectionAbsoluteError is not null)
+            .Where(g => g.ProjectionAbsoluteError is not null && g.ExpectedValue > 0)
             .Select(g => g.ProjectionAbsoluteError!.Value)
+            .ToList();
+        var projSq = grades
+            .Where(g => g.ProjectionSquaredError is not null && g.ExpectedValue > 0)
+            .Select(g => g.ProjectionSquaredError!.Value)
+            .ToList();
+        var baseA = grades
+            .Where(g => g.BaselineRecentAbsoluteError is not null)
+            .Select(g => g.BaselineRecentAbsoluteError!.Value)
+            .ToList();
+        var baseB = grades
+            .Where(g => g.BaselineOpportunityAbsoluteError is not null)
+            .Select(g => g.BaselineOpportunityAbsoluteError!.Value)
             .ToList();
         var differentials = grades
             .Where(g => g.ActualDecisionDifferential is not null)
             .Select(g => g.ActualDecisionDifferential!.Value)
             .ToList();
+
+        double? maeA = baseA.Count == 0 ? null : Math.Round(baseA.Average(), 2);
+        double? maeB = baseB.Count == 0 ? null : Math.Round(baseB.Average(), 2);
+        string? better = null;
+        if (maeA is not null && maeB is not null)
+        {
+            better = maeB < maeA
+                ? "Baseline B (opportunity-aware)"
+                : maeA < maeB
+                    ? "Baseline A (recent average)"
+                    : "Tie";
+        }
 
         return new HistoricalReplayReport
         {
@@ -176,6 +200,10 @@ public sealed class HistoricalReplayRunner : IHistoricalReplayRunner
             UngradedCount = ungraded,
             DecisionAccuracyPercent = graded == 0 ? null : Math.Round(100.0 * correct / graded, 1),
             AverageProjectionAbsoluteError = projErrors.Count == 0 ? null : Math.Round(projErrors.Average(), 2),
+            AverageProjectionSquaredError = projSq.Count == 0 ? null : Math.Round(projSq.Average(), 2),
+            BaselineRecentAverageMae = maeA,
+            BaselineOpportunityAwareMae = maeB,
+            BetterBaselineLabel = better,
             AverageDecisionDifferential = differentials.Count == 0 ? null : Math.Round(differentials.Average(), 2),
             AverageConfidence = grades.Count == 0 ? 0 : Math.Round(grades.Average(g => g.Confidence), 1),
             Grades = grades,

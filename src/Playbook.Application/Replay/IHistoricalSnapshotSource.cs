@@ -1,6 +1,8 @@
 using Playbook.Core.Leagues;
 using Playbook.Core.Replay;
 
+// DataSufficiency lives in Playbook.Core.Replay
+
 namespace Playbook.Application.Replay;
 
 /// <summary>
@@ -100,4 +102,17 @@ public sealed class HistoricalRawPlayerRecord
     public int? RecentProductionScore { get; init; }
 
     public IReadOnlyList<string> UnavailableSignals { get; init; } = [];
+
+    /// <summary>Cutoff-safe reconstructed projection metadata (null when not reconstructed).</summary>
+    public DataSufficiency? DataSufficiency { get; init; }
+
+    public IReadOnlyList<int> ProjectionSourceWeeks { get; init; } = [];
+
+    public string? ProjectionModelId { get; init; }
+
+    public string? ProjectionMethodology { get; init; }
+
+    public double? BaselineRecentAveragePoints { get; init; }
+
+    public double? BaselineOpportunityAwarePoints { get; init; }
 }

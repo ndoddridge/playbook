@@ -44,10 +44,13 @@ public class RealHistoricalDataTests
         Assert.StartsWith("nflverse", raw.SourceLabel, StringComparison.OrdinalIgnoreCase);
         Assert.NotEmpty(raw.Players);
         Assert.NotEmpty(raw.Outcomes);
-        Assert.Contains(raw.UnavailableSources, s => s.Contains("projection", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(raw.UnavailableSources, s => s.Contains("External as-of projection archive", StringComparison.OrdinalIgnoreCase));
 
-        // Projections must not be fabricated.
-        Assert.All(raw.Players, p => Assert.Null(p.ProjectedPoints));
+        // Reconstructed baselines exist for players with prior games; never use week-7 actuals as projection inputs.
+        Assert.Contains(raw.Players, p => p.ProjectedPoints is not null);
+        Assert.All(
+            raw.Players.Where(p => p.ProjectedPoints is not null),
+            p => Assert.All(p.ProjectionSourceWeeks, w => Assert.True(w < 7)));
 
         validator.ValidateOrThrow(raw);
         Assert.True(raw.InformationCutoff < new DateTimeOffset(2018, 10, 18, 20, 20, 0, TimeSpan.FromHours(-4)));
@@ -67,21 +70,22 @@ public class RealHistoricalDataTests
         var knowledge = knowledgeFactory.BuildKnowledge(snapshot, ReplayContext.FromSnapshot(snapshot).DecisionContext);
 
         Assert.NotEmpty(outcomes.ByPlayerId);
+        Assert.Contains(knowledge, k => k.ProjectedPoints is not null);
         Assert.All(knowledge, k =>
         {
-            Assert.Null(k.ProjectedPoints);
-            Assert.DoesNotContain(k.Facts, f => f.Statement.Contains("actual", StringComparison.OrdinalIgnoreCase));
+            Assert.DoesNotContain(k.Facts, f => f.Statement.Contains("actual fantasy", StringComparison.OrdinalIgnoreCase));
+            Assert.DoesNotContain(k.Signals, s => s.Explanation.Contains("revealed post-decision", StringComparison.OrdinalIgnoreCase));
             Assert.True(k.InformationCutoff is null || k.InformationCutoff <= snapshot.InformationCutoff);
         });
 
-        // Outcome points must not appear in pre-game signals.
-        foreach (var outcome in outcomes.ByPlayerId.Values)
-        {
-            var text = outcome.ActualFantasyPoints.ToString("0.0");
-            Assert.DoesNotContain(
-                knowledge.SelectMany(k => k.Signals.Select(s => s.Explanation)),
-                e => e.Contains(text, StringComparison.Ordinal));
-        }
+        // Projection source weeks must exclude the target week (outcomes stay segregated).
+        Assert.All(
+            snapshot.Players.Where(p => p.ProjectionSourceWeeks.Count > 0),
+            p =>
+            {
+                Assert.DoesNotContain(7, p.ProjectionSourceWeeks);
+                Assert.All(p.ProjectionSourceWeeks, w => Assert.True(w < 7));
+            });
     }
 
     [Fact]
@@ -164,11 +168,13 @@ public class RealHistoricalDataTests
     }
 
     [Fact]
-    public async Task Missing_Historical_Projection_Is_Represented_Honestly()
+    public async Task Reconstructed_Baseline_Projections_Are_Present_And_External_Archive_Marked_Unavailable()
     {
         using var provider = TestServiceFactory.CreateProvider(PlayerDataProviderKind.Mock);
         var report = await HistoricalReplayCommands.RunReal2018Week7Async(provider);
-        Assert.All(report.Grades, g => Assert.Equal(0, g.ExpectedValue));
-        Assert.Contains(report.UnavailableSources, s => s.Contains("UNAVAILABLE", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(report.Grades, g => g.ExpectedValue > 0);
+        Assert.Contains(report.UnavailableSources, s => s.Contains("External as-of projection archive", StringComparison.OrdinalIgnoreCase));
+        Assert.NotNull(report.BaselineRecentAverageMae);
+        Assert.NotNull(report.BaselineOpportunityAwareMae);
     }
 }
