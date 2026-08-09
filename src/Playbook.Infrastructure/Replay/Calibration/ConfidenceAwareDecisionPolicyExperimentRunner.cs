@@ -172,7 +172,7 @@ public sealed class ConfidenceAwareDecisionPolicyExperimentRunner
                 GeneratedAt = DateTimeOffset.UtcNow,
                 Hypothesis =
                     "Calibrated confidence can improve actual fantasy decision quality by acting as a " +
-                    "trust signal — suppressing low-trust marginal Starts without gaming abstention.",
+                    "trust signal — suppressing low-trust marginal recommendations without gaming abstention.",
                 ControlDescription =
                     "Projection V2 + Calibrated Confidence V2 + existing DecisionEngine Start/Sit rules (policy Off).",
                 ExperimentalPolicyDescription =
