@@ -7,6 +7,17 @@
     min-width: 0;
 }
 
+/* Keep the page title visually contained while app-main scrolls — no collision with sections. */
+.ti-page > .pb-page__header {
+    position: sticky;
+    top: 0;
+    z-index: 6;
+    margin: 0 calc(var(--pb-space-3) * -1);
+    padding: var(--pb-space-3);
+    background: color-mix(in srgb, var(--pb-color-bg) 92%, transparent);
+    backdrop-filter: blur(8px);
+}
+
 .ti-snapshot {
     padding: var(--pb-space-4);
     border: 1px solid var(--pb-color-border);

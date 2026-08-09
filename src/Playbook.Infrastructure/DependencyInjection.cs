@@ -118,6 +118,7 @@ public static class DependencyInjection
         services.AddSingleton<IIntelligenceService, IntelligenceService>();
         services.AddSingleton<IPlayerIntelligenceAssessmentService, PlayerIntelligenceAssessmentService>();
         services.AddSingleton<IFantasyTeamIntelligenceService, FantasyTeamIntelligenceService>();
+        services.AddSingleton<IWeeklyMatchupGamePlanService, WeeklyMatchupGamePlanService>();
     }
 
     private static void RegisterProjections(IServiceCollection services)

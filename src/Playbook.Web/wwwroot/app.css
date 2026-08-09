@@ -10,6 +10,7 @@
 @import url("css/news.css");
 @import url("css/quick-picks.css");
 @import url("css/team-intelligence.css");
+@import url("css/game-plan.css");
 
 h1:focus {
     outline: none;

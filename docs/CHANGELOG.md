@@ -2,6 +2,19 @@
 
 All notable project changes are recorded here.
 
+## [Unreleased] — Weekly Matchup Game Plan
+
+### Added
+
+- `WeeklyMatchupGamePlan` + `IWeeklyMatchupGamePlanService` composing league context, projections, and team intelligence
+- `/game-plan` experience: matchup overview, winning outlook, key swings, risks/advantages, lineup impact, opponent scout
+- Deterministic derived opponent pairing when a live H2H feed is unavailable (explicitly labeled)
+- Low-confidence / incomplete coverage communicated honestly without fabricated certainty
+
+### Fixed
+
+- My Team page header sticky containment while scrolling in `app-main`
+
 ## [Unreleased] — Fantasy Team Intelligence
 
 ### Added
