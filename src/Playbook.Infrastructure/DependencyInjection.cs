@@ -16,6 +16,7 @@ using Playbook.Application.Projections.Interfaces;
 using Playbook.Application.Recommendations;
 using Playbook.Application.Stats;
 using Playbook.Application.Stats.Interfaces;
+using Playbook.Core.Replay;
 using Playbook.Infrastructure.Decisions;
 using Playbook.Infrastructure.Replay;
 using Playbook.Infrastructure.Replay.Calibration;
@@ -126,6 +127,8 @@ public static class DependencyInjection
         services.AddSingleton<IPlayerIntelligenceAssessmentService, PlayerIntelligenceAssessmentService>();
         services.AddSingleton<IDecisionRecordStore, InMemoryDecisionRecordStore>();
         services.AddSingleton<IPlayerKnowledgeComposer, PlayerKnowledgeComposer>();
+        services.AddSingleton<ConfidenceAwareDecisionPolicyState>();
+        services.AddSingleton<IConfidenceAwareDecisionPolicy, ConfidenceAwareDecisionPolicyApplicator>();
         services.AddSingleton<IDecisionEngine, DecisionEngine>();
         services.AddSingleton<IFantasyTeamIntelligenceService, FantasyTeamIntelligenceService>();
         services.AddSingleton<IWeeklyMatchupGamePlanService, WeeklyMatchupGamePlanService>();
@@ -144,6 +147,7 @@ public static class DependencyInjection
         services.AddSingleton<IHistoricalExpectationService, HistoricalExpectationService>();
         services.AddSingleton<ProjectionCalibrationExperimentRunner>();
         services.AddSingleton<ConfidenceCalibrationExperimentRunner>();
+        services.AddSingleton<ConfidenceAwareDecisionPolicyExperimentRunner>();
         services.AddSingleton<NflverseCsvCache>();
         services.AddHttpClient(NflverseCsvCache.HttpClientName, client =>
         {

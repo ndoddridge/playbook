@@ -123,9 +123,14 @@ public sealed class DecisionResult
 
     /// <summary>
     /// Experiment 2: empirically calibrated confidence (0–100), informational only.
-    /// Does not affect recommendation selection.
+    /// Does not affect recommendation selection by itself (Experiment 3 policy may use it).
     /// </summary>
     public int? CalibratedConfidence { get; init; }
+
+    /// <summary>
+    /// DecisionValue margin vs next alternative at Start/Sit ranking time (when known).
+    /// </summary>
+    public double? ComparativeDecisionValueMargin { get; init; }
 
     public required ValueAssessment Values { get; init; }
 
@@ -174,6 +179,9 @@ public sealed class DecisionRecord
 
     /// <summary>Experiment 2 calibrated confidence (informational).</summary>
     public int? CalibratedConfidence { get; init; }
+
+    /// <summary>DecisionValue margin vs next alternative at ranking time (when known).</summary>
+    public double? ComparativeDecisionValueMargin { get; init; }
 
     public required Guid? LeagueId { get; init; }
 

@@ -1,4 +1,5 @@
 using Playbook.Application.Abstractions;
+using Playbook.Application.Replay;
 using Playbook.Core.Decisions;
 using Playbook.Core.Intelligence.Models;
 using Playbook.Core.Players;
@@ -24,10 +25,14 @@ namespace Playbook.Infrastructure.Decisions;
 public sealed class DecisionEngine : IDecisionEngine
 {
     private readonly IDecisionRecordStore _records;
+    private readonly IConfidenceAwareDecisionPolicy _decisionPolicy;
 
-    public DecisionEngine(IDecisionRecordStore records)
+    public DecisionEngine(
+        IDecisionRecordStore records,
+        IConfidenceAwareDecisionPolicy decisionPolicy)
     {
         _records = records;
+        _decisionPolicy = decisionPolicy;
     }
 
     public Task<DecisionResult> EvaluatePlayerAsync(
@@ -95,7 +100,6 @@ public sealed class DecisionEngine : IDecisionEngine
                 var alts = knowledgeRows.Where(k => k.PlayerId != knowledge.PlayerId).ToList();
                 var result = Synthesize(knowledge, context, alts, forceKind: DecisionKind.StartSit);
                 evaluated.Add((knowledge, result, result.Values.DecisionValue));
-                decisions.Add(result);
             }
 
             var ranked = evaluated
@@ -105,7 +109,17 @@ public sealed class DecisionEngine : IDecisionEngine
                 .ToList();
 
             var best = ranked[0];
-            recommendations.Add(ToStartSit(StartSitAction.Start, best.Result, best.Knowledge));
+            var startMargin = ranked.Count > 1
+                ? best.DecisionValue - ranked[1].DecisionValue
+                : best.DecisionValue;
+            var startResult = WithMargin(best.Result, startMargin);
+            decisions.Add(startResult);
+            foreach (var other in ranked.Skip(1))
+            {
+                decisions.Add(other.Result);
+            }
+
+            recommendations.Add(ToStartSit(StartSitAction.Start, startResult, best.Knowledge, startMargin));
 
             foreach (var sit in ranked.Skip(1).Take(2))
             {
@@ -119,8 +133,9 @@ public sealed class DecisionEngine : IDecisionEngine
                     continue;
                 }
 
-                var sitResult = withRecommendation(sit.Result, DecisionRecommendation.Sit);
-                recommendations.Add(ToStartSit(StartSitAction.Sit, sitResult, sit.Knowledge));
+                var sitMargin = best.DecisionValue - sit.DecisionValue;
+                var sitResult = WithRecommendation(WithMargin(sit.Result, sitMargin), DecisionRecommendation.Sit);
+                recommendations.Add(ToStartSit(StartSitAction.Sit, sitResult, sit.Knowledge, sitMargin));
             }
         }
 
@@ -162,7 +177,10 @@ public sealed class DecisionEngine : IDecisionEngine
                 context,
                 [betterBench.Knowledge],
                 DecisionKind.StartSit);
-            starterResult = withRecommendation(starterResult, DecisionRecommendation.Sit);
+            var sitMargin = Math.Max(
+                0,
+                betterBench.Result.Values.DecisionValue - starterResult.Values.DecisionValue);
+            starterResult = WithRecommendation(WithMargin(starterResult, sitMargin), DecisionRecommendation.Sit);
             var reasons = starterResult.Rationale.ToList();
             reasons.Insert(0, $"{betterBench.Knowledge.PlayerName} currently grades higher for this lineup decision.");
             recommendations.Add(new StartSitRecommendation
@@ -173,21 +191,31 @@ public sealed class DecisionEngine : IDecisionEngine
                 PositionLabel = starterKnowledge.PositionLabel,
                 ProjectionSummary = FormatProjection(starterKnowledge),
                 Confidence = starterResult.Confidence,
+                CalibratedConfidence = starterResult.CalibratedConfidence,
+                DecisionValue = starterResult.Values.DecisionValue,
+                DecisionValueMargin = sitMargin,
                 Reasons = reasons.Distinct(StringComparer.OrdinalIgnoreCase).Take(3).ToList(),
                 InsufficientData = starterResult.IsProvisional
             });
             decisions.Add(starterResult);
         }
 
+        // Experiment 3: separate confidence-aware policy layer (ON/OFF via state).
+        var policyResult = _decisionPolicy.Apply(recommendations);
+        var policyRecommendations = policyResult.Recommendations
+            .GroupBy(r => (r.Action, r.PlayerId))
+            .Select(g => g.First())
+            .OrderBy(r => r.Action == StartSitAction.Start ? 0 : 1)
+            .ThenByDescending(r => r.Confidence)
+            .Take(10)
+            .ToList();
+
+        // Align DecisionResult recommendations with swapped/suppressed StartSit actions for grading.
+        decisions = AlignDecisionsWithRecommendations(decisions, policyRecommendations, policyResult);
+
         var batch = new StartSitDecisionBatch
         {
-            Recommendations = recommendations
-                .GroupBy(r => (r.Action, r.PlayerId))
-                .Select(g => g.First())
-                .OrderBy(r => r.Action == StartSitAction.Start ? 0 : 1)
-                .ThenByDescending(r => r.Confidence)
-                .Take(10)
-                .ToList(),
+            Recommendations = policyRecommendations,
             Decisions = decisions
         };
 
@@ -197,32 +225,97 @@ public sealed class DecisionEngine : IDecisionEngine
         }
 
         return batch;
-
-        static DecisionResult withRecommendation(DecisionResult source, DecisionRecommendation recommendation) =>
-            new()
-            {
-                DecisionId = source.DecisionId,
-                PlayerId = source.PlayerId,
-                PlayerName = source.PlayerName,
-                PositionLabel = source.PositionLabel,
-                Recommendation = recommendation,
-                Confidence = source.Confidence,
-                CalibratedConfidence = source.CalibratedConfidence,
-                Values = source.Values,
-                Facts = source.Facts,
-                Inferences = source.Inferences,
-                SupportingEvidence = source.SupportingEvidence,
-                OpposingEvidence = source.OpposingEvidence,
-                Unknowns = source.Unknowns,
-                Conflicts = source.Conflicts,
-                Rationale = source.Rationale,
-                AlternativesConsidered = source.AlternativesConsidered,
-                IsProvisional = source.IsProvisional,
-                EvidenceStatus = source.EvidenceStatus,
-                ProjectionSummary = source.ProjectionSummary,
-                GeneratedAt = source.GeneratedAt
-            };
     }
+
+    private static List<DecisionResult> AlignDecisionsWithRecommendations(
+        List<DecisionResult> decisions,
+        IReadOnlyList<StartSitRecommendation> recommendations,
+        ConfidenceAwareDecisionPolicyApplicationResult policyResult)
+    {
+        if (policyResult.SwappedCount == 0 && policyResult.SuppressedCount == 0)
+        {
+            return decisions;
+        }
+
+        var aligned = decisions.ToList();
+        foreach (var rec in recommendations)
+        {
+            var target = MapAction(rec.Action);
+            for (var i = 0; i < aligned.Count; i++)
+            {
+                if (aligned[i].PlayerId != rec.PlayerId)
+                {
+                    continue;
+                }
+
+                if (aligned[i].Recommendation != target)
+                {
+                    aligned[i] = WithRecommendation(aligned[i], target);
+                }
+            }
+        }
+
+        return aligned;
+    }
+
+    private static DecisionRecommendation MapAction(StartSitAction action) => action switch
+    {
+        StartSitAction.Start => DecisionRecommendation.Start,
+        StartSitAction.Sit => DecisionRecommendation.Sit,
+        _ => DecisionRecommendation.NoAction
+    };
+
+    private static DecisionResult WithMargin(DecisionResult source, double margin) =>
+        new()
+        {
+            DecisionId = source.DecisionId,
+            PlayerId = source.PlayerId,
+            PlayerName = source.PlayerName,
+            PositionLabel = source.PositionLabel,
+            Recommendation = source.Recommendation,
+            Confidence = source.Confidence,
+            CalibratedConfidence = source.CalibratedConfidence,
+            ComparativeDecisionValueMargin = margin,
+            Values = source.Values,
+            Facts = source.Facts,
+            Inferences = source.Inferences,
+            SupportingEvidence = source.SupportingEvidence,
+            OpposingEvidence = source.OpposingEvidence,
+            Unknowns = source.Unknowns,
+            Conflicts = source.Conflicts,
+            Rationale = source.Rationale,
+            AlternativesConsidered = source.AlternativesConsidered,
+            IsProvisional = source.IsProvisional,
+            EvidenceStatus = source.EvidenceStatus,
+            ProjectionSummary = source.ProjectionSummary,
+            GeneratedAt = source.GeneratedAt
+        };
+
+    private static DecisionResult WithRecommendation(DecisionResult source, DecisionRecommendation recommendation) =>
+        new()
+        {
+            DecisionId = source.DecisionId,
+            PlayerId = source.PlayerId,
+            PlayerName = source.PlayerName,
+            PositionLabel = source.PositionLabel,
+            Recommendation = recommendation,
+            Confidence = source.Confidence,
+            CalibratedConfidence = source.CalibratedConfidence,
+            ComparativeDecisionValueMargin = source.ComparativeDecisionValueMargin,
+            Values = source.Values,
+            Facts = source.Facts,
+            Inferences = source.Inferences,
+            SupportingEvidence = source.SupportingEvidence,
+            OpposingEvidence = source.OpposingEvidence,
+            Unknowns = source.Unknowns,
+            Conflicts = source.Conflicts,
+            Rationale = source.Rationale,
+            AlternativesConsidered = source.AlternativesConsidered,
+            IsProvisional = source.IsProvisional,
+            EvidenceStatus = source.EvidenceStatus,
+            ProjectionSummary = source.ProjectionSummary,
+            GeneratedAt = source.GeneratedAt
+        };
 
     public async Task<DecisionRecord> RecordDecisionAsync(
         DecisionResult result,
@@ -238,6 +331,7 @@ public sealed class DecisionEngine : IDecisionEngine
             Recommendation = result.Recommendation,
             Confidence = result.Confidence,
             CalibratedConfidence = result.CalibratedConfidence,
+            ComparativeDecisionValueMargin = result.ComparativeDecisionValueMargin,
             LeagueId = context.LeagueId,
             SelectedRosterId = context.SelectedRosterId,
             LeagueName = context.LeagueName,
@@ -688,7 +782,8 @@ public sealed class DecisionEngine : IDecisionEngine
     private static StartSitRecommendation ToStartSit(
         StartSitAction action,
         DecisionResult result,
-        PlayerKnowledge knowledge) =>
+        PlayerKnowledge knowledge,
+        double decisionValueMargin) =>
         new()
         {
             Action = action,
@@ -697,6 +792,9 @@ public sealed class DecisionEngine : IDecisionEngine
             PositionLabel = knowledge.PositionLabel,
             ProjectionSummary = FormatProjection(knowledge),
             Confidence = result.Confidence,
+            CalibratedConfidence = result.CalibratedConfidence,
+            DecisionValue = result.Values.DecisionValue,
+            DecisionValueMargin = decisionValueMargin,
             Reasons = result.Rationale.Take(3).ToList(),
             InsufficientData = result.IsProvisional
         };

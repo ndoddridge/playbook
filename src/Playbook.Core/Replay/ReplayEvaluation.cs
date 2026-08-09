@@ -31,6 +31,12 @@ public sealed class ReplayDecisionGrade
     /// <summary>Experiment 2 calibrated confidence (informational; recommendations unchanged).</summary>
     public int? CalibratedConfidence { get; init; }
 
+    /// <summary>DecisionValue at decision time (from record).</summary>
+    public double? DecisionValue { get; init; }
+
+    /// <summary>DecisionValue margin vs next alternative at ranking time (when known).</summary>
+    public double? DecisionValueMargin { get; init; }
+
     public required double ExpectedValue { get; init; }
 
     public required double? ActualFantasyPoints { get; init; }

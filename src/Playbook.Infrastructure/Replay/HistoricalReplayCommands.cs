@@ -187,4 +187,16 @@ public static class HistoricalReplayCommands
         var runner = services.GetRequiredService<Calibration.ConfidenceCalibrationExperimentRunner>();
         return runner.RunOfficialExperimentAsync(cancellationToken);
     }
+
+    /// <summary>
+    /// Experiment 3: confidence-aware decision policy under Projection V2 + Confidence V2.
+    /// Fits on development seasons only, then ONE 2024 holdout.
+    /// </summary>
+    public static Task<ConfidenceAwareDecisionPolicyExperimentReport> RunConfidenceAwareDecisionPolicyExperimentAsync(
+        IServiceProvider services,
+        CancellationToken cancellationToken = default)
+    {
+        var runner = services.GetRequiredService<Calibration.ConfidenceAwareDecisionPolicyExperimentRunner>();
+        return runner.RunOfficialExperimentAsync(cancellationToken);
+    }
 }

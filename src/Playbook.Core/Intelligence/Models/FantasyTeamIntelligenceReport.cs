@@ -1,3 +1,5 @@
+using Playbook.Core.Replay;
+
 namespace Playbook.Core.Intelligence.Models;
 
 /// <summary>
@@ -62,6 +64,23 @@ public sealed class StartSitRecommendation
     public required string? ProjectionSummary { get; init; }
 
     public required int Confidence { get; init; }
+
+    /// <summary>Experiment 2 calibrated confidence (informational trust signal).</summary>
+    public int? CalibratedConfidence { get; init; }
+
+    /// <summary>DecisionValue used for ranking at recommendation time.</summary>
+    public double? DecisionValue { get; init; }
+
+    /// <summary>
+    /// DecisionValue edge vs next alternative at recommendation time.
+    /// Used by confidence-aware policy for marginal Start suppression.
+    /// </summary>
+    public double? DecisionValueMargin { get; init; }
+
+    /// <summary>Experiment 3 trust label (HIGH/LOW TRUST); Unspecified when policy Off.</summary>
+    public DecisionTrustLabel TrustLabel { get; init; } = DecisionTrustLabel.Unspecified;
+
+    public string? TrustReason { get; init; }
 
     public required IReadOnlyList<string> Reasons { get; init; }
 
