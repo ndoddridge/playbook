@@ -111,7 +111,7 @@
     border-bottom: 1px solid var(--pb-color-border);
     background: var(--pb-color-topbar);
     backdrop-filter: blur(12px);
-    /* Above Player Overlay so league switching remains available while a player is open. */
+    /* Below Player Overlay (z-index 100) so sticky top chrome never covers player identity. */
     z-index: 90;
 }
 

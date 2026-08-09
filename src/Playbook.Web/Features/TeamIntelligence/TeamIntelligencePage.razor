@@ -1,0 +1,308 @@
+@page "/team"
+@using Playbook.Application.Intelligence.Interfaces
+@using Playbook.Application.Leagues
+@using Playbook.Application.Players
+@using Playbook.Core.Intelligence.Models
+@using Playbook.Core.Leagues
+@using Playbook.Web.Features.League.Models
+@inject ILeagueState LeagueState
+@inject IFantasyTeamIntelligenceService TeamIntelligence
+@inject IPlayerOverlayState Overlay
+@implements IDisposable
+
+<PageTitle>My Team — Playbook</PageTitle>
+
+<section class="pb-page ti-page">
+    <header class="pb-page__header">
+        <h1 class="pb-page__title">My Team</h1>
+        <p class="pb-page__subtitle">What should I know about my fantasy team right now?</p>
+    </header>
+
+    @if (isRefreshing)
+    {
+        <p class="pb-empty">Refreshing team intelligence for the selected league…</p>
+    }
+    else if (report is null)
+    {
+        <p class="pb-empty">Team intelligence is unavailable.</p>
+    }
+    else if (report.LeagueId is null)
+    {
+        <p class="pb-empty">@report.StatusMessage</p>
+    }
+    else if (!report.IsSetupComplete)
+    {
+        <p class="pb-empty">@report.StatusMessage</p>
+    }
+    else
+    {
+        <section class="ti-snapshot" aria-label="Team overview">
+            <div class="ti-snapshot__identity">
+                <h2 class="ti-snapshot__team">@report.TeamName</h2>
+                <p class="ti-snapshot__meta">
+                    @report.LeagueName
+                    · @report.LeagueTypeLabel
+                    · @report.ScoringLabel
+                    · Week @report.Week
+                    @if (LeagueState.CurrentLeague is { } league)
+                    {
+                        <span class="league-source-badge @(LeagueDisplay.IsLive(league) ? "league-source-badge--live" : "league-source-badge--mock")">
+                            @LeagueDisplay.DataSource(league.DataSource)
+                        </span>
+                    }
+                </p>
+            </div>
+
+            @if (report.RosterOutlookLabel is not null)
+            {
+                <div class="ti-snapshot__outlook">
+                    <span class="ti-eyebrow">Roster outlook</span>
+                    <strong>@report.RosterOutlookLabel</strong>
+                    @if (!string.IsNullOrWhiteSpace(report.RosterOutlookDetail))
+                    {
+                        <p>@report.RosterOutlookDetail</p>
+                    }
+                </div>
+            }
+
+            <div class="ti-snapshot__columns">
+                <div>
+                    <h3 class="ti-eyebrow">Strengths</h3>
+                    @if (report.Strengths.Count == 0)
+                    {
+                        <p class="ti-muted">No clear strengths supported yet.</p>
+                    }
+                    else
+                    {
+                        <ul class="ti-list">
+                            @foreach (var item in report.Strengths)
+                            {
+                                <li>@item</li>
+                            }
+                        </ul>
+                    }
+                </div>
+                <div>
+                    <h3 class="ti-eyebrow">Weaknesses</h3>
+                    @if (report.Weaknesses.Count == 0)
+                    {
+                        <p class="ti-muted">No clear weaknesses supported yet.</p>
+                    }
+                    else
+                    {
+                        <ul class="ti-list">
+                            @foreach (var item in report.Weaknesses)
+                            {
+                                <li>@item</li>
+                            }
+                        </ul>
+                    }
+                </div>
+            </div>
+
+            @if (report.ImmediateConcerns.Count > 0)
+            {
+                <div class="ti-concerns">
+                    <h3 class="ti-eyebrow">Immediate concerns</h3>
+                    <ul class="ti-list ti-list--concern">
+                        @foreach (var item in report.ImmediateConcerns)
+                        {
+                            <li>@item</li>
+                        }
+                    </ul>
+                </div>
+            }
+        </section>
+
+        <section class="ti-section" aria-labelledby="ti-matters-title">
+            <h2 id="ti-matters-title" class="ti-section__title">What matters most</h2>
+            @if (!report.HasRosterPlayers)
+            {
+                <p class="ti-muted">@report.StatusMessage</p>
+            }
+            else if (report.WhatMatters.Count == 0)
+            {
+                <p class="ti-muted">No high-value team observations from current data.</p>
+            }
+            else
+            {
+                <ul class="ti-list ti-list--matters">
+                    @foreach (var item in report.WhatMatters)
+                    {
+                        <li>@item</li>
+                    }
+                </ul>
+            }
+        </section>
+
+        @if (report.Alerts.Count > 0)
+        {
+            <section class="ti-section" aria-labelledby="ti-alerts-title">
+                <h2 id="ti-alerts-title" class="ti-section__title">Roster alerts</h2>
+                <ul class="ti-alerts">
+                    @foreach (var alert in report.Alerts)
+                    {
+                        <li class="ti-alert ti-alert--@alert.Severity.ToString().ToLowerInvariant()">
+                            <div class="ti-alert__top">
+                                <span class="ti-alert__severity">@alert.Severity</span>
+                                <span class="ti-alert__cat">@alert.Category</span>
+                            </div>
+                            <strong>@alert.Title</strong>
+                            <p>@alert.Detail</p>
+                            @if (alert.PlayerId is Guid playerId)
+                            {
+                                <button type="button" class="ti-link" @onclick="() => OpenPlayer(playerId)">View player</button>
+                            }
+                        </li>
+                    }
+                </ul>
+            </section>
+        }
+
+        <section class="ti-section" aria-labelledby="ti-startsit-title">
+            <h2 id="ti-startsit-title" class="ti-section__title">Start / Sit</h2>
+            @if (!report.HasRosterPlayers)
+            {
+                <p class="ti-muted">@report.StatusMessage</p>
+            }
+            else if (report.StartSit.Count == 0)
+            {
+                <p class="ti-muted">Not enough comparative roster data for start/sit leans yet.</p>
+            }
+            else
+            {
+                <ul class="ti-startsit">
+                    @foreach (var rec in report.StartSit)
+                    {
+                        <li class="ti-startsit__item ti-startsit__item--@rec.Action.ToString().ToLowerInvariant()">
+                            <div class="ti-startsit__top">
+                                <span class="ti-startsit__action">@rec.Action</span>
+                                <button type="button" class="ti-link ti-startsit__name" @onclick="() => OpenPlayer(rec.PlayerId)">
+                                    @rec.PlayerName
+                                </button>
+                                <span class="ti-startsit__pos">@rec.PositionLabel</span>
+                            </div>
+                            <div class="ti-startsit__metrics">
+                                <span>@(rec.ProjectionSummary ?? "Projection unavailable")</span>
+                                <span>Confidence @rec.Confidence%</span>
+                            </div>
+                            @if (rec.InsufficientData)
+                            {
+                                <p class="ti-muted">Insufficient data — lean is low confidence.</p>
+                            }
+                            <ul class="ti-list">
+                                @foreach (var reason in rec.Reasons)
+                                {
+                                    <li>@reason</li>
+                                }
+                            </ul>
+                        </li>
+                    }
+                </ul>
+            }
+        </section>
+
+        <section class="ti-section" aria-labelledby="ti-roster-title">
+            <h2 id="ti-roster-title" class="ti-section__title">Roster intelligence</h2>
+            @if (!report.HasRosterPlayers)
+            {
+                <p class="ti-muted">@report.StatusMessage</p>
+            }
+            else
+            {
+                <ul class="ti-roster">
+                    @foreach (var player in report.RosterIntelligence)
+                    {
+                        <li class="ti-roster__item">
+                            <div class="ti-roster__top">
+                                <button type="button" class="ti-link ti-roster__name" @onclick="() => OpenPlayer(player.PlayerId)">
+                                    @player.PlayerName
+                                </button>
+                                <span class="ti-roster__pos">@player.PositionLabel</span>
+                                @if (player.IsStarter)
+                                {
+                                    <span class="ti-roster__badge">Starter</span>
+                                }
+                                <span class="ti-roster__outlook">@player.OutlookLabel</span>
+                            </div>
+                            <div class="ti-roster__metrics">
+                                <span>@(player.ProjectionSummary ?? "Proj —")</span>
+                                <span>Opp @(player.OpportunityScore?.ToString() ?? "—")</span>
+                                <span>Usage @(player.UsageScore?.ToString() ?? "—")</span>
+                                <span>Intel @player.IntelligenceConfidence%</span>
+                            </div>
+                            <p class="ti-roster__health">@player.HealthLabel</p>
+                            @if (!string.IsNullOrWhiteSpace(player.TopNews))
+                            {
+                                <p class="ti-roster__news">
+                                    <span class="ti-roster__news-badge">@(player.NewsConfirmed ? "Confirmed" : "Reported")</span>
+                                    @player.TopNews
+                                </p>
+                            }
+                            <ul class="ti-list ti-list--compact">
+                                @foreach (var signal in player.KeySignals.Take(3))
+                                {
+                                    <li>@signal</li>
+                                }
+                            </ul>
+                        </li>
+                    }
+                </ul>
+            }
+        </section>
+
+        @if (report.UnavailableSignals.Count > 0)
+        {
+            <section class="ti-section ti-section--secondary">
+                <h2 class="ti-section__title">Unavailable</h2>
+                <ul class="ti-list">
+                    @foreach (var missing in report.UnavailableSignals)
+                    {
+                        <li>@missing</li>
+                    }
+                </ul>
+            </section>
+        }
+
+        <p class="ti-footnote">@report.StatusMessage · Updated @report.GeneratedAt.ToLocalTime().ToString("MMM d, h:mm tt")</p>
+    }
+</section>
+
+@code {
+    private FantasyTeamIntelligenceReport? report;
+    private bool isRefreshing;
+    private PersonalizedAnalysisContext _boundContext;
+
+    protected override void OnInitialized()
+    {
+        LeagueState.Changed += OnLeagueChanged;
+        Reload();
+    }
+
+    private void OnLeagueChanged() => InvokeAsync(() =>
+    {
+        isRefreshing = true;
+        report = null;
+        StateHasChanged();
+        Reload();
+        isRefreshing = false;
+        StateHasChanged();
+    });
+
+    private void Reload()
+    {
+        _boundContext = PersonalizedAnalysisContext.FromState(LeagueState);
+        report = TeamIntelligence.GetReport();
+
+        // Guard against presenting a stamp that no longer matches current selection.
+        if (report is not null &&
+            !_boundContext.Matches(report.LeagueId, report.SelectedRosterId))
+        {
+            report = TeamIntelligence.GetReport();
+        }
+    }
+
+    private void OpenPlayer(Guid playerId) => Overlay.Open(playerId);
+
+    public void Dispose() => LeagueState.Changed -= OnLeagueChanged;
+}

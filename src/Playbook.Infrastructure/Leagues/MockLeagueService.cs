@@ -145,18 +145,56 @@ public sealed class MockLeagueService
             SelectedRosterId = rosterId
         };
 
+    /// <summary>
+    /// Stable mock player catalog ids (see MockPlayerDataProvider) used to seed demo rosters
+    /// so Fantasy Team Intelligence can be exercised without a live Sleeper connection.
+    /// </summary>
+    private static readonly Guid[] DemoPlayerCatalog =
+    [
+        Guid.Parse("11111111-1111-1111-1111-111111111101"), // Jayden Daniels
+        Guid.Parse("11111111-1111-1111-1111-111111111102"), // Jordan Love
+        Guid.Parse("11111111-1111-1111-1111-111111111103"), // Patrick Mahomes
+        Guid.Parse("11111111-1111-1111-1111-111111111104"), // Bucky Irving
+        Guid.Parse("11111111-1111-1111-1111-111111111105"), // Bijan Robinson
+        Guid.Parse("11111111-1111-1111-1111-111111111106"), // Saquon Barkley
+        Guid.Parse("11111111-1111-1111-1111-111111111107"), // Jahmyr Gibbs
+        Guid.Parse("11111111-1111-1111-1111-111111111108"), // Brian Thomas Jr.
+        Guid.Parse("11111111-1111-1111-1111-111111111109"), // Ja'Marr Chase
+        Guid.Parse("11111111-1111-1111-1111-111111111110"), // CeeDee Lamb
+        Guid.Parse("11111111-1111-1111-1111-111111111111"), // Amon-Ra St. Brown
+        Guid.Parse("11111111-1111-1111-1111-111111111112"), // Puka Nacua
+        Guid.Parse("11111111-1111-1111-1111-111111111113"), // Travis Kelce
+        Guid.Parse("11111111-1111-1111-1111-111111111114"), // Brock Bowers
+        Guid.Parse("11111111-1111-1111-1111-111111111115"), // Trey McBride
+        Guid.Parse("11111111-1111-1111-1111-111111111116"), // Justin Tucker
+        Guid.Parse("11111111-1111-1111-1111-111111111117"), // Harrison Butker
+        Guid.Parse("11111111-1111-1111-1111-111111111118"), // Buffalo Bills
+        Guid.Parse("11111111-1111-1111-1111-111111111119"), // San Francisco 49ers
+        Guid.Parse("11111111-1111-1111-1111-111111111120")  // Philadelphia Eagles
+    ];
+
     private static List<FantasyTeam> CreateDemoTeams(League league)
     {
+        var leagueOffset = Math.Abs(league.Id.GetHashCode()) % DemoPlayerCatalog.Length;
         return Enumerable.Range(1, Math.Min(league.NumberOfTeams, 4))
-            .Select(i => new FantasyTeam
+            .Select(i =>
             {
-                LeagueId = league.Id,
-                RosterId = i,
-                DisplayName = $"Demo Owner {i}",
-                TeamName = $"{league.Name} Team {i}",
-                PlayerIds = [],
-                StarterIds = [],
-                ExternalPlayerIds = []
+                var offset = (leagueOffset + (i - 1) * 4) % DemoPlayerCatalog.Length;
+                var playerIds = Enumerable.Range(0, 8)
+                    .Select(k => DemoPlayerCatalog[(offset + k) % DemoPlayerCatalog.Length])
+                    .Distinct()
+                    .ToList();
+                var starters = playerIds.Take(Math.Min(6, playerIds.Count)).ToList();
+                return new FantasyTeam
+                {
+                    LeagueId = league.Id,
+                    RosterId = i,
+                    DisplayName = $"Demo Owner {i}",
+                    TeamName = $"{league.Name} Team {i}",
+                    PlayerIds = playerIds,
+                    StarterIds = starters,
+                    ExternalPlayerIds = []
+                };
             })
             .ToList();
     }

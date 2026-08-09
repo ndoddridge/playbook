@@ -416,7 +416,8 @@ public class PlayerInjuryServiceTests
         Assert.True(File.Exists(cssPath), cssPath);
         var css = File.ReadAllText(cssPath);
         Assert.True(PlayerOverlayLayoutRules.ModalClearsFixedTopBar(css));
-        Assert.Contains(PlayerOverlayLayoutRules.TopBarHeightCssVariable, css);
+        Assert.Contains("z-index: 100", css, StringComparison.Ordinal);
+        Assert.Contains("safe-area-inset-top", css, StringComparison.Ordinal);
     }
 
     private static PlayerInjuryService CreateService(

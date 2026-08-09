@@ -2,6 +2,19 @@
 
 All notable project changes are recorded here.
 
+## [Unreleased] — Fantasy Team Intelligence
+
+### Added
+
+- `FantasyTeamIntelligenceReport` + `IFantasyTeamIntelligenceService` composing existing player assessments/projections for the selected league + owned team
+- `/team` My Team page: team snapshot, what matters, roster alerts, start/sit leans, prioritized roster intelligence
+- Demo mock leagues now seed distinct owned-team rosters so team intelligence can be verified without Sleeper
+- League/team switches invalidate and rebuild team intelligence (no stale prior-team recommendations)
+
+### Fixed
+
+- Player overlay paints above the shell top bar (full-viewport mobile sheet + safe-area on chrome) so player identity never sits underneath sticky header
+
 ## [Unreleased] — Player Intelligence structural refinement
 
 ### Fixed / Changed

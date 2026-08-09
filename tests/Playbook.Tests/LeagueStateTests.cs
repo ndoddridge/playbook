@@ -46,16 +46,17 @@ public class LeagueStateTests
     }
 
     [Fact]
-    public void Mock_Leagues_Expose_Demo_Teams_Without_Player_Ownership()
+    public void Mock_Leagues_Expose_Demo_Teams_With_Seeded_Rosters()
     {
         using var provider = TestServiceFactory.CreateProvider(PlayerDataProviderKind.Mock);
         var state = provider.GetRequiredService<ILeagueState>();
         var teams = state.GetCurrentTeams();
 
         Assert.NotEmpty(teams);
-        Assert.All(teams, t => Assert.Empty(t.PlayerIds));
+        Assert.All(teams, t => Assert.NotEmpty(t.PlayerIds));
         Assert.NotNull(state.CurrentUserTeam);
         Assert.Equal(1, state.CurrentUserTeam!.RosterId);
+        Assert.NotEmpty(state.CurrentUserTeam.StarterIds);
     }
 
     [Fact]
