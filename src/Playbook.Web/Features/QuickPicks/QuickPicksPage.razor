@@ -52,11 +52,25 @@
     @if (filters.StrongestOnly)
     {
         <section class="qp-section" aria-labelledby="qp-top-heading">
-            <h2 id="qp-top-heading" class="qp-section__title">Top Picks</h2>
-            <p class="qp-section__subtitle">Strongest opportunities@(selected is null ? "" : $" · {selected.DisplayLabel}")</p>
+            <div class="qp-section__heading">
+                <h2 id="qp-top-heading" class="qp-section__title">Top Picks</h2>
+                <label class="qp-top-count">
+                    <span class="qp-top-count__label">Show</span>
+                    <select class="qp-top-count__select"
+                            value="@topCount"
+                            @onchange="OnTopCountChanged"
+                            aria-label="Number of top picks">
+                        @for (var n = 1; n <= 20; n++)
+                        {
+                            <option value="@n">@n</option>
+                        }
+                    </select>
+                </label>
+            </div>
+            <p class="qp-section__subtitle">@topSubtitle@(selected is null ? "" : $" · {selected.DisplayLabel}")</p>
             @if (visibleTop.Count == 0)
             {
-                <p class="pb-empty">No high-confidence picks for this slate and filter. Try Watch or All props.</p>
+                <p class="pb-empty">No eligible props for this slate and filter.</p>
             }
             else
             {
@@ -71,10 +85,10 @@
 
         <section class="qp-section" aria-labelledby="qp-watch-heading">
             <h2 id="qp-watch-heading" class="qp-section__title">Watch</h2>
-            <p class="qp-section__subtitle">Interesting but lower-confidence opportunities</p>
+            <p class="qp-section__subtitle">Interesting but weaker opportunities than Top Picks</p>
             @if (visibleWatch.Count == 0)
             {
-                <p class="pb-empty">No watch-list predictions for this filter.</p>
+                <p class="pb-empty">No additional watch-list opportunities for this filter.</p>
             }
             else
             {
@@ -131,12 +145,12 @@
 </section>
 
 @code {
+    private const int WatchCount = 8;
+
     private readonly QuickPickFilters filters = new();
     private IReadOnlyList<NflWeekRef> canonicalWeeks = [];
     private IReadOnlyList<NflWeekRef> marketWeeks = [];
     private NflWeekRef? selected;
-    private IReadOnlyList<Prediction> topPicks = [];
-    private IReadOnlyList<Prediction> watchPicks = [];
     private IReadOnlyList<Prediction> slatePredictions = [];
     private IReadOnlyList<Prediction> visibleTop = [];
     private IReadOnlyList<Prediction> visibleWatch = [];
@@ -144,6 +158,10 @@
     private IReadOnlyList<FootballEvent> events = [];
     private string dataModeLabel = "MOCK DATA";
     private string dataModeCss = "mock";
+    private string topSubtitle = "Best available opportunities";
+
+    /// <summary>Persists for the Blazor Server circuit / session.</summary>
+    private int topCount = 5;
 
     protected override void OnInitialized() => ReloadFromBoard();
 
@@ -152,8 +170,6 @@
         canonicalWeeks = Board.CanonicalWeeks;
         marketWeeks = Board.AvailableWeeks;
         selected = Board.SelectedWeek;
-        topPicks = Board.TopPicks;
-        watchPicks = Board.WatchPicks;
         slatePredictions = Board.SlatePredictions;
         events = Board.Upcoming;
         ApplyFilters();
@@ -174,13 +190,29 @@
 
     private void OnFiltersChanged() => ApplyFilters();
 
+    private void OnTopCountChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var n))
+        {
+            topCount = Math.Clamp(n, 1, 20);
+            ApplyFilters();
+        }
+    }
+
     private void ApplyFilters()
     {
-        visibleTop = filters.Apply(topPicks).ToList();
-        visibleWatch = filters.Apply(watchPicks).ToList();
+        // Filter first, then rank — so "Bengals" + Top 5 = five strongest Bengals props.
+        var ranked = filters.RankEligible(slatePredictions);
+        visibleTop = ranked.Take(topCount).ToList();
+        visibleWatch = ranked.Skip(topCount).Take(WatchCount).ToList();
         visibleAll = filters.Apply(slatePredictions)
             .OrderByDescending(p => p.OpportunityScore)
+            .ThenByDescending(p => p.Edge)
             .ThenByDescending(p => p.Confidence)
             .ToList();
+
+        topSubtitle = visibleTop.Count > 0 && visibleTop.Any(p => p.Confidence >= 55)
+            ? "Strongest opportunities"
+            : "Best available opportunities";
     }
 }
