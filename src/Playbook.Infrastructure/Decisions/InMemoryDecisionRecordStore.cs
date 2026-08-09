@@ -47,4 +47,47 @@ public sealed class InMemoryDecisionRecordStore : IDecisionRecordStore
             .ToList();
         return Task.FromResult<IReadOnlyList<DecisionRecord>>(list);
     }
+
+    public Task<DecisionRecord?> AttachOutcomeAsync(
+        Guid decisionId,
+        double actualOutcome,
+        string evaluationResult,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!_records.TryGetValue(decisionId, out var existing))
+        {
+            return Task.FromResult<DecisionRecord?>(null);
+        }
+
+        var updated = new DecisionRecord
+        {
+            DecisionId = existing.DecisionId,
+            PlayerId = existing.PlayerId,
+            PlayerName = existing.PlayerName,
+            DecisionType = existing.DecisionType,
+            Recommendation = existing.Recommendation,
+            Confidence = existing.Confidence,
+            LeagueId = existing.LeagueId,
+            SelectedRosterId = existing.SelectedRosterId,
+            LeagueName = existing.LeagueName,
+            ScoringType = existing.ScoringType,
+            Season = existing.Season,
+            Week = existing.Week,
+            InformationCutoff = existing.InformationCutoff,
+            CreatedAt = existing.CreatedAt,
+            SupportingEvidence = existing.SupportingEvidence,
+            OpposingEvidence = existing.OpposingEvidence,
+            Unknowns = existing.Unknowns,
+            AlternativesConsidered = existing.AlternativesConsidered,
+            ExpectedValue = existing.ExpectedValue,
+            DecisionValue = existing.DecisionValue,
+            Rationale = existing.Rationale,
+            ActualOutcome = actualOutcome,
+            EvaluationResult = evaluationResult
+        };
+
+        _records[decisionId] = updated;
+        return Task.FromResult<DecisionRecord?>(updated);
+    }
 }

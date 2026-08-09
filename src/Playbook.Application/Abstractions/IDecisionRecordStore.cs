@@ -15,4 +15,14 @@ public interface IDecisionRecordStore
         int? season = null,
         int? week = null,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Attaches actual outcome / evaluation after a decision was immutably recorded.
+    /// Replaces the store entry with a copy that preserves all pre-outcome fields.
+    /// </summary>
+    Task<DecisionRecord?> AttachOutcomeAsync(
+        Guid decisionId,
+        double actualOutcome,
+        string evaluationResult,
+        CancellationToken cancellationToken = default);
 }
