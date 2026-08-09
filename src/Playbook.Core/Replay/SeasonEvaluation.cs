@@ -53,9 +53,13 @@ public sealed class PlayerProjectionEvaluation
 
     public double? BaselineOpportunityAwarePoints { get; init; }
 
+    public double? ProjectionV2Points { get; init; }
+
     public double? BaselineRecentAbsoluteError { get; init; }
 
     public double? BaselineOpportunityAbsoluteError { get; init; }
+
+    public double? ProjectionV2AbsoluteError { get; init; }
 
     public DataSufficiency? DataSufficiency { get; init; }
 

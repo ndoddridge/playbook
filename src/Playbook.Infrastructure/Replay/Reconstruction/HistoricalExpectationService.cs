@@ -6,22 +6,29 @@ using Playbook.Core.Replay;
 namespace Playbook.Infrastructure.Replay.Reconstruction;
 
 /// <summary>
-/// Builds features + Baseline A/B projections. Primary decision input is Baseline B when valid.
+/// Builds features + Baseline A + Projection V1 + Projection V2.
+/// Primary decision input selected by <see cref="HistoricalProjectionExperimentState"/> (default V1).
 /// </summary>
 public sealed class HistoricalExpectationService : IHistoricalExpectationService
 {
     private readonly IHistoricalFeatureReconstructor _features;
     private readonly RecentAverageProjectionEngine _baselineA;
-    private readonly OpportunityAwareProjectionEngine _baselineB;
+    private readonly OpportunityAwareProjectionEngine _projectionV1;
+    private readonly CalibratedOpportunityAwareProjectionEngine _projectionV2;
+    private readonly HistoricalProjectionExperimentState _experimentState;
 
     public HistoricalExpectationService(
         IHistoricalFeatureReconstructor features,
         RecentAverageProjectionEngine baselineA,
-        OpportunityAwareProjectionEngine baselineB)
+        OpportunityAwareProjectionEngine projectionV1,
+        CalibratedOpportunityAwareProjectionEngine projectionV2,
+        HistoricalProjectionExperimentState experimentState)
     {
         _features = features;
         _baselineA = baselineA;
-        _baselineB = baselineB;
+        _projectionV1 = projectionV1;
+        _projectionV2 = projectionV2;
+        _experimentState = experimentState;
     }
 
     public HistoricalProjectionBundle BuildExpectations(
@@ -56,15 +63,20 @@ public sealed class HistoricalExpectationService : IHistoricalExpectationService
             roleNote);
 
         var a = _baselineA.Project(reconstructed, scoringType);
-        var b = _baselineB.Project(reconstructed, scoringType);
-        var primary = b.IsValid ? b : a;
+        var v1 = _projectionV1.Project(reconstructed, scoringType);
+        var v2 = _projectionV2.Project(reconstructed, scoringType);
+
+        var primary = _experimentState.PrimaryMode == HistoricalProjectionPrimaryMode.ProjectionV2
+            ? (v2.IsValid ? v2 : (v1.IsValid ? v1 : a))
+            : (v1.IsValid ? v1 : a);
 
         return new HistoricalProjectionBundle
         {
             Features = reconstructed,
             Primary = primary,
             BaselineRecentAverage = a,
-            BaselineOpportunityAware = b
+            BaselineOpportunityAware = v1,
+            ProjectionV2 = v2
         };
     }
 }

@@ -241,6 +241,9 @@ public sealed class NflverseHistoricalDataProvider : IHistoricalDataProvider
                     : null,
                 BaselineOpportunityAwarePoints = bundle.BaselineOpportunityAware.IsValid
                     ? bundle.BaselineOpportunityAware.ProjectedPoints
+                    : null,
+                ProjectionV2Points = bundle.ProjectionV2 is { IsValid: true }
+                    ? bundle.ProjectionV2.ProjectedPoints
                     : null
             });
 

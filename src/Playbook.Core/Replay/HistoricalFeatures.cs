@@ -157,5 +157,9 @@ public sealed class HistoricalProjectionBundle
 
     public required HistoricalProjection BaselineRecentAverage { get; init; }
 
+    /// <summary>Projection V1 (uncalibrated opportunity-aware).</summary>
     public required HistoricalProjection BaselineOpportunityAware { get; init; }
+
+    /// <summary>Projection V2 (calibrated). Null only if calibration engine unavailable.</summary>
+    public HistoricalProjection? ProjectionV2 { get; init; }
 }

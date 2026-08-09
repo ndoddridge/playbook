@@ -115,4 +115,6 @@ public sealed class HistoricalRawPlayerRecord
     public double? BaselineRecentAveragePoints { get; init; }
 
     public double? BaselineOpportunityAwarePoints { get; init; }
+
+    public double? ProjectionV2Points { get; init; }
 }

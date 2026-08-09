@@ -262,6 +262,7 @@ public sealed class HistoricalReplayRunner : IHistoricalReplayRunner
             var signed = actual - predicted;
             double? baseA = player.BaselineRecentAveragePoints;
             double? baseB = player.BaselineOpportunityAwarePoints;
+            double? v2 = player.ProjectionV2Points;
 
             list.Add(new PlayerProjectionEvaluation
             {
@@ -277,8 +278,10 @@ public sealed class HistoricalReplayRunner : IHistoricalReplayRunner
                 SquaredError = signed * signed,
                 BaselineRecentAveragePoints = baseA,
                 BaselineOpportunityAwarePoints = baseB,
+                ProjectionV2Points = v2,
                 BaselineRecentAbsoluteError = baseA is null ? null : Math.Abs(actual - baseA.Value),
                 BaselineOpportunityAbsoluteError = baseB is null ? null : Math.Abs(actual - baseB.Value),
+                ProjectionV2AbsoluteError = v2 is null ? null : Math.Abs(actual - v2.Value),
                 DataSufficiency = player.DataSufficiency,
                 ProjectionConfidence = player.ProjectionConfidence,
                 SourceWeeks = player.ProjectionSourceWeeks,

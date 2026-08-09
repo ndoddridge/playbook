@@ -106,7 +106,8 @@ public sealed class HistoricalSnapshotBuilder : IHistoricalSnapshotBuilder
                 ProjectionModelId = row.ProjectionModelId,
                 ProjectionMethodology = row.ProjectionMethodology,
                 BaselineRecentAveragePoints = row.BaselineRecentAveragePoints,
-                BaselineOpportunityAwarePoints = row.BaselineOpportunityAwarePoints
+                BaselineOpportunityAwarePoints = row.BaselineOpportunityAwarePoints,
+                ProjectionV2Points = row.ProjectionV2Points
             });
         }
 
