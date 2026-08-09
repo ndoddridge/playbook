@@ -9,16 +9,16 @@ using Playbook.Core.Predictions;
 namespace Playbook.Infrastructure.Predictions;
 
 /// <summary>
-/// Quick Picks Engine v0.2 — intelligence-driven prop recommendations.
+/// Quick Picks Engine v0.3 — week-scoped, intelligence-driven prop recommendations.
 ///
 /// Combines projection-vs-line with health, usage/opportunity, historical injury
 /// (relevance + age decay), unconfirmed buzz (labeled, soft), and intel confidence.
-/// Missing signals reduce confidence — they are never fabricated into positives/negatives.
-/// Weights come from <see cref="QuickPicksScoringOptions"/>.
+/// Preseason treats regular-season production as a prior only. Missing signals reduce
+/// confidence — they are never fabricated. Weights: <see cref="QuickPicksScoringOptions"/>.
 /// </summary>
 public sealed class QuickPicksEngine : IQuickPicksEngine
 {
-    public const string CurrentVersion = "0.2";
+    public const string CurrentVersion = "0.3";
 
     private readonly QuickPicksScoringOptions _options;
 
@@ -65,6 +65,7 @@ public sealed class QuickPicksEngine : IQuickPicksEngine
         var rawDiff = projection - comparableLine;
 
         calc.Add($"Engine v{CurrentVersion}");
+        calc.Add($"Slate: {line.Event.ContextLabel}");
         calc.Add($"Market line: {FormatValue(line.Market, comparableLine)}");
         calc.Add($"Playbook projection: {FormatValue(line.Market, projection)}");
         calc.Add($"Projection confidence: {context.ProjectionConfidence}% · Volatility: {context.Volatility}");
@@ -89,6 +90,9 @@ public sealed class QuickPicksEngine : IQuickPicksEngine
                 ? "No counting-stat projection for this market."
                 : $"Diff {rawDiff:+0.0;-0.0;0.0} · conf {context.ProjectionConfidence}% · vol {context.Volatility}"
         });
+
+        // --- Preseason prior production (explicit — not treated as current form) ---
+        ApplyPreseasonPrior(context, ref quality, ref confidenceDelta, contributions, supporting, calc);
 
         // --- Player intelligence confidence ---
         ApplyIntelligenceConfidence(
@@ -136,9 +140,12 @@ public sealed class QuickPicksEngine : IQuickPicksEngine
             MidpointRounding.AwayFromZero);
         probability = Math.Clamp(probability, 15, 88);
 
+        // Blend projection confidence with signal quality; available intelligence can lift floor.
+        var intelLift = context.Intelligence is null ? 0 : Math.Max(0, context.Intelligence.OverallConfidence - 55) / 4;
         var pickConfidence = (int)Math.Round(
-            context.ProjectionConfidence * (decimal)Math.Sqrt((double)Math.Clamp(quality, 0.05m, 1m))
-            + confidenceDelta);
+            context.ProjectionConfidence * (0.55m + 0.45m * (decimal)Math.Sqrt((double)Math.Clamp(quality, 0.05m, 1m)))
+            + confidenceDelta
+            + intelLift);
         pickConfidence = Math.Clamp(pickConfidence, 12, 92);
 
         if (line.Freshness == PropLineFreshness.Stale)
@@ -184,10 +191,57 @@ public sealed class QuickPicksEngine : IQuickPicksEngine
             Source = line.Source,
             LineFreshness = line.Freshness,
             LastUpdated = DateTimeOffset.UtcNow,
+            LineUpdatedAt = line.UpdatedAt,
             Bookmaker = line.Bookmaker,
             EngineVersion = CurrentVersion,
             OpportunityScore = opportunity
         };
+    }
+
+    private void ApplyPreseasonPrior(
+        QuickPickEvaluationContext context,
+        ref decimal quality,
+        ref int confidenceDelta,
+        List<PredictionSignalContribution> contributions,
+        List<string> supporting,
+        List<string> calc)
+    {
+        if (context.SeasonPhase != NflSeasonPhase.Preseason)
+        {
+            contributions.Add(new PredictionSignalContribution
+            {
+                SignalId = "season-phase",
+                Label = "Season phase",
+                Available = true,
+                Weight = 1m,
+                Detail = context.SeasonPhase == NflSeasonPhase.Postseason
+                    ? "Postseason slate"
+                    : "Regular-season slate"
+            });
+            return;
+        }
+
+        var qMult = context.UsingPriorRegularSeasonProduction
+            ? _options.PreseasonPriorProductionQualityFactor
+            : 0.92m;
+        quality *= qMult;
+        confidenceDelta -= _options.PreseasonConfidencePenalty;
+        contributions.Add(new PredictionSignalContribution
+        {
+            SignalId = "season-phase",
+            Label = "Preseason context",
+            Available = true,
+            Weight = 1m,
+            QualityMultiplier = qMult,
+            ConfidenceDelta = -_options.PreseasonConfidencePenalty,
+            Detail = context.UsingPriorRegularSeasonProduction
+                ? "Regular-season production used as a prior only — not treated as current preseason form."
+                : "Preseason slate — limited sample; confidence tempered."
+        });
+        supporting.Add(context.UsingPriorRegularSeasonProduction
+            ? "Prior regular-season production only (preseason form not equated)."
+            : "Preseason context — conviction tempered.");
+        calc.Add($"Preseason phase: quality ×{qMult:0.00}, conf −{_options.PreseasonConfidencePenalty}");
     }
 
     private void ApplyIntelligenceConfidence(
@@ -571,25 +625,16 @@ public sealed class QuickPicksEngine : IQuickPicksEngine
         qMult = Math.Clamp(qMult, 0.85m, 1.12m);
         quality *= qMult;
 
-        // Mild edge bias: strong usage supports overs; soft usage leans against oversized overs.
-        var bias = 0m;
-        if (Math.Abs(rawDiff) > scale * 0.05m)
+        // Usage/opportunity must move the edge, not only the quality weight.
+        var bias = scale * 0.16m * (usageTilt * _options.UsageSignalWeight * 0.65m
+                                    + oppTilt * _options.OpportunitySignalWeight * 0.55m);
+        if (context.SeasonPhase == NflSeasonPhase.Preseason)
         {
-            bias = scale * 0.08m * (usageTilt * _options.UsageSignalWeight * 0.5m
-                                    + oppTilt * _options.OpportunitySignalWeight * 0.4m);
-            // Bias reinforces the projection side rather than inventing a new side.
-            if (rawDiff < 0)
-            {
-                bias = -Math.Abs(bias) * Math.Sign(usageTilt + oppTilt == 0 ? 1 : Math.Sign(usageTilt + oppTilt));
-                // Keep bias aligned with quality of usage on Unders: high usage fights Under a bit.
-                if (usageTilt > 0.15m)
-                {
-                    bias = Math.Abs(bias) * 0.5m; // pull toward Over slightly
-                }
-            }
-
-            edgeBias += bias;
+            // Current opportunity intel is especially valuable before regular-season samples exist.
+            bias *= 1.25m;
         }
+
+        edgeBias += bias;
 
         var workload = usage?.WorkloadTrend;
         var detail =
@@ -788,6 +833,13 @@ public sealed class QuickPicksEngine : IQuickPicksEngine
             $"about {delta:0.0}{unit} {relation} the line ({FormatValue(line.Market, lineValue)}) — " +
             $"favoring {side} (~{probability}%).";
 
+        if (context.SeasonPhase == NflSeasonPhase.Preseason)
+        {
+            core += context.UsingPriorRegularSeasonProduction
+                ? " Preseason slate: regular-season production is a prior only."
+                : " Preseason slate: limited sample tempered confidence.";
+        }
+
         var current = contributions.FirstOrDefault(c => c.SignalId == "current-injury" && c.Available);
         if (current?.Detail is { } injuryDetail &&
             !injuryDetail.Contains("not a limiting", StringComparison.OrdinalIgnoreCase) &&
@@ -809,11 +861,11 @@ public sealed class QuickPicksEngine : IQuickPicksEngine
         {
             if (intel.UsageScore >= 60)
             {
-                core += " Recent usage looks constructive.";
+                core += " Usage/opportunity signals support the lean.";
             }
             else if (intel.UsageScore <= 40)
             {
-                core += " Recent usage is softer than usual.";
+                core += " Soft usage/opportunity is pulling against oversized overs.";
             }
         }
 
@@ -840,7 +892,7 @@ public sealed class QuickPicksEngine : IQuickPicksEngine
     private static Guid CreateId(PropLine line)
     {
         var bytes = System.Security.Cryptography.MD5.HashData(
-            System.Text.Encoding.UTF8.GetBytes($"playbook:prediction:{line.Id}:{line.Market}:v2"));
+            System.Text.Encoding.UTF8.GetBytes($"playbook:prediction:{line.Id}:{line.Market}:v3"));
         return new Guid(bytes);
     }
 }

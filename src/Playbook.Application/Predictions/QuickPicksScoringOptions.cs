@@ -1,7 +1,7 @@
 namespace Playbook.Application.Predictions;
 
 /// <summary>
-/// Tunable Quick Picks intelligence weights (Engine v0.2).
+/// Tunable Quick Picks intelligence weights (Engine v0.3).
 /// Bound from <c>QuickPicks:Scoring</c> so weights can change without UI rewrites.
 /// </summary>
 public sealed class QuickPicksScoringOptions
@@ -12,6 +12,12 @@ public sealed class QuickPicksScoringOptions
     public decimal MissingIntelligenceQualityFactor { get; set; } = 0.82m;
 
     public int MissingIntelligenceConfidencePenalty { get; set; } = 10;
+
+    /// <summary>Quality factor when preseason uses prior regular-season production.</summary>
+    public decimal PreseasonPriorProductionQualityFactor { get; set; } = 0.78m;
+
+    /// <summary>Confidence penalty applied on preseason slates.</summary>
+    public int PreseasonConfidencePenalty { get; set; } = 8;
 
     /// <summary>Weight of OverallConfidence into quality (0–1).</summary>
     public decimal IntelligenceConfidenceWeight { get; set; } = 0.35m;

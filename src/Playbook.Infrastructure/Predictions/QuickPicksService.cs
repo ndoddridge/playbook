@@ -17,13 +17,15 @@ using Playbook.Core.Projections.Models;
 namespace Playbook.Infrastructure.Predictions;
 
 /// <summary>
-/// Loads prop lines, builds football (non-fantasy) projections, and runs QuickPicksEngine.
+/// Loads prop lines, tags NFL week/game context, filters to one week slate,
+/// builds football (non-fantasy) projections, and runs QuickPicksEngine.
 /// Does not read ILeagueState / roster / fantasy scoring.
 /// </summary>
 public sealed class QuickPicksService : IQuickPicksService
 {
     private readonly IEnumerable<IPropLineProvider> _providers;
     private readonly IQuickPicksEngine _engine;
+    private readonly INflCalendarService _calendar;
     private readonly IPlayerService _players;
     private readonly IPlayerProductionProvider _production;
     private readonly IIntelligenceService _intelligence;
@@ -36,11 +38,17 @@ public sealed class QuickPicksService : IQuickPicksService
 
     private IReadOnlyList<Prediction> _predictions = [];
     private IReadOnlyList<FootballEvent> _events = [];
+    private IReadOnlyList<NflWeekRef> _availableWeeks = [];
+    private NflWeekRef? _selectedWeek;
+    private NflWeekRef? _preferredWeek;
+    private NflSeasonContext? _seasonContext;
+    private IReadOnlyList<PropLine> _enrichedLines = [];
     private bool _loaded;
 
     public QuickPicksService(
         IEnumerable<IPropLineProvider> providers,
         IQuickPicksEngine engine,
+        INflCalendarService calendar,
         IPlayerService players,
         IPlayerProductionProvider production,
         IIntelligenceService intelligence,
@@ -52,6 +60,7 @@ public sealed class QuickPicksService : IQuickPicksService
     {
         _providers = providers;
         _engine = engine;
+        _calendar = calendar;
         _players = players;
         _production = production;
         _intelligence = intelligence;
@@ -66,6 +75,33 @@ public sealed class QuickPicksService : IQuickPicksService
             PropLineCredentialResolver.HasApiKey(_options));
     }
 
+    public NflWeekRef? SelectedWeek
+    {
+        get
+        {
+            EnsureLoaded();
+            return _selectedWeek;
+        }
+    }
+
+    public IReadOnlyList<NflWeekRef> AvailableWeeks
+    {
+        get
+        {
+            EnsureLoaded();
+            return _availableWeeks;
+        }
+    }
+
+    public NflSeasonContext? SeasonContext
+    {
+        get
+        {
+            EnsureLoaded();
+            return _seasonContext;
+        }
+    }
+
     public IReadOnlyList<Prediction> GetAllPredictions()
     {
         EnsureLoaded();
@@ -75,9 +111,12 @@ public sealed class QuickPicksService : IQuickPicksService
     public IReadOnlyList<Prediction> GetTopPicks(int count = 8)
     {
         EnsureLoaded();
+        // Preseason priors keep confidence lower by design — use a softer Top bar there.
+        var minConfidence = _selectedWeek?.Phase == NflSeasonPhase.Preseason ? 40 : 55;
         return _predictions
             .Where(p => p.LineFreshness is PropLineFreshness.Live or PropLineFreshness.Mock)
-            .Where(p => p.Confidence >= 55 && Math.Abs(p.Edge) >= 0.4m && p.Probability >= 55)
+            .Where(p => p.Confidence >= minConfidence && Math.Abs(p.Edge) >= 0.4m && p.Probability >= 55)
+            .Where(p => _selectedWeek is null || _selectedWeek.Matches(p.Event))
             .OrderByDescending(p => p.OpportunityScore)
             .ThenByDescending(p => p.Edge)
             .ThenByDescending(p => p.Probability)
@@ -93,6 +132,7 @@ public sealed class QuickPicksService : IQuickPicksService
         return _predictions
             .Where(p => !topIds.Contains(p.Id))
             .Where(p => p.LineFreshness != PropLineFreshness.Unavailable)
+            .Where(p => _selectedWeek is null || _selectedWeek.Matches(p.Event))
             .OrderByDescending(p => p.OpportunityScore)
             .ThenByDescending(p => p.Probability)
             .ThenByDescending(p => p.Confidence)
@@ -104,6 +144,23 @@ public sealed class QuickPicksService : IQuickPicksService
     {
         EnsureLoaded();
         return _events;
+    }
+
+    public bool TrySelectWeek(NflWeekRef week)
+    {
+        ArgumentNullException.ThrowIfNull(week);
+        lock (_gate)
+        {
+            EnsureLoadedLocked();
+            if (!_availableWeeks.Contains(week))
+            {
+                return false;
+            }
+
+            _preferredWeek = week;
+            BuildPredictionsForSelectedWeekLocked();
+            return true;
+        }
     }
 
     public void Refresh()
@@ -124,14 +181,19 @@ public sealed class QuickPicksService : IQuickPicksService
 
         lock (_gate)
         {
-            if (_loaded)
-            {
-                return;
-            }
-
-            BuildLocked();
-            _loaded = true;
+            EnsureLoadedLocked();
         }
+    }
+
+    private void EnsureLoadedLocked()
+    {
+        if (_loaded)
+        {
+            return;
+        }
+
+        BuildLocked();
+        _loaded = true;
     }
 
     private void BuildLocked()
@@ -160,27 +222,66 @@ public sealed class QuickPicksService : IQuickPicksService
             error = ex.Message;
         }
 
-        // Never treat stale rows as live in the board.
         lines = lines
             .Select(NormalizeFreshness)
             .Where(l => l.Freshness != PropLineFreshness.Unavailable)
             .ToList();
 
-        var games = lines.Select(l => l.Event.EventId).Distinct().Count();
-        var markets = lines.Select(l => l.Market).Distinct().Count();
+        var season = _calendar.GetCurrentContext();
+        _seasonContext = season;
+
+        var rawEvents = lines
+            .Select(l => l.Event)
+            .GroupBy(e => e.EventId)
+            .Select(g => g.First())
+            .ToList();
+        var enrichedEvents = _calendar.EnrichEvents(rawEvents, season)
+            .ToDictionary(e => e.EventId, StringComparer.OrdinalIgnoreCase);
+
+        _enrichedLines = lines
+            .Select(l => CloneWithEvent(l, enrichedEvents.TryGetValue(l.Event.EventId, out var ev) ? ev : l.Event))
+            .ToList();
+
+        _availableWeeks = _calendar.GetAvailableWeeks(_enrichedLines.Select(l => l.Event).ToList());
+        _selectedWeek = _calendar.SelectActiveWeek(_availableWeeks, season, _preferredWeek);
+
+        var games = _enrichedLines.Select(l => l.Event.EventId).Distinct().Count();
+        var markets = _enrichedLines.Select(l => l.Market).Distinct().Count();
         watch.Stop();
         _status.RecordPropSync(
             activeName,
             usedFallback,
             games,
             markets,
-            lines.Count,
+            _enrichedLines.Count,
             watch.Elapsed,
             error,
             apiKeyConfigured);
 
+        BuildPredictionsForSelectedWeekLocked();
+
+        _logger.LogInformation(
+            "Quick Picks: {Predictions} predictions from {Props} props · slate {Slate} ({Provider}{Fallback})",
+            _predictions.Count,
+            _enrichedLines.Count,
+            _selectedWeek?.DisplayLabel ?? "—",
+            activeName,
+            usedFallback ? ", fallback" : "");
+    }
+
+    private void BuildPredictionsForSelectedWeekLocked()
+    {
+        var season = _seasonContext ?? _calendar.GetCurrentContext();
+        var selected = _selectedWeek ?? _calendar.SelectActiveWeek(_availableWeeks, season, _preferredWeek);
+        _selectedWeek = selected;
+
+        // Never mix weeks: evaluate only lines for the active slate week.
+        var weekLines = _enrichedLines
+            .Where(l => selected.Matches(l.Event))
+            .ToList();
+
         var predictions = new List<Prediction>();
-        foreach (var line in lines)
+        foreach (var line in weekLines)
         {
             PlayerProductionSnapshot? production = null;
             PlayerIntelligenceProfile? intel = null;
@@ -202,12 +303,13 @@ public sealed class QuickPicksService : IQuickPicksService
                 facts = _intelligence.GetFactsForPlayer(playerId);
             }
 
-            var projected = PropStatProjector.Project(line.Market, production, statsCtx, intel);
+            var projected = PropStatProjector.Project(
+                line.Market, production, statsCtx, intel, line.Event.Phase);
             var projection = projected.Projection;
             var projConfidence = projected.Confidence;
             var volatility = projected.Volatility;
+            var usingPrior = projected.UsingPriorRegularSeasonProduction;
 
-            // Apply verified current-injury health multiplier to the counting-stat projection.
             var injuryMult = InjuryIntelligenceMapping.ProjectionHealthMultiplier(injuryProfile?.CurrentInjury);
             if (projection is not null && injuryMult is not null)
             {
@@ -225,7 +327,10 @@ public sealed class QuickPicksService : IQuickPicksService
                 Intelligence = intel,
                 StatisticalContext = statsCtx,
                 InjuryProfile = injuryProfile,
-                RecentFacts = facts
+                RecentFacts = facts,
+                SeasonPhase = line.Event.Phase,
+                UsingPriorRegularSeasonProduction = usingPrior,
+                Production = production
             });
             if (prediction is not null)
             {
@@ -238,7 +343,8 @@ public sealed class QuickPicksService : IQuickPicksService
             .ThenByDescending(p => p.Edge)
             .ThenByDescending(p => p.Probability)
             .ToList();
-        _events = lines
+
+        _events = weekLines
             .Select(l => l.Event)
             .GroupBy(e => e.EventId)
             .Select(g => g.First())
@@ -247,14 +353,6 @@ public sealed class QuickPicksService : IQuickPicksService
 
         var avgConf = _predictions.Count == 0 ? 0 : _predictions.Average(p => p.Confidence);
         _status.RecordPredictions(_predictions.Count, avgConf);
-
-        _logger.LogInformation(
-            "Quick Picks: {Predictions} predictions from {Props} props ({Provider}{Fallback}) in {Ms} ms",
-            _predictions.Count,
-            lines.Count,
-            activeName,
-            usedFallback ? ", fallback" : "",
-            watch.ElapsedMilliseconds);
     }
 
     private IReadOnlyList<PropLine> LoadLines(out bool usedFallback, out string activeName, out string? error)
@@ -268,7 +366,6 @@ public sealed class QuickPicksService : IQuickPicksService
             return GetProvider("Mock").GetPropLinesAsync().GetAwaiter().GetResult();
         }
 
-        // Primary path: Live (The Odds API)
         try
         {
             if (!PropLineCredentialResolver.HasApiKey(_options))
@@ -307,20 +404,10 @@ public sealed class QuickPicksService : IQuickPicksService
 
     private static PropLine NormalizeFreshness(PropLine line)
     {
-        // Guard: mock source must never appear as Live.
         if (string.Equals(line.Source, "Mock", StringComparison.OrdinalIgnoreCase) &&
             line.Freshness == PropLineFreshness.Live)
         {
             return CloneWithFreshness(line, PropLineFreshness.Mock);
-        }
-
-        // Guard: The Odds API rows past stale window stay Stale, never Live.
-        if (line.Freshness == PropLineFreshness.Live &&
-            line.UpdatedAt < DateTimeOffset.UtcNow.AddHours(-24) &&
-            !string.Equals(line.Source, "Mock", StringComparison.OrdinalIgnoreCase))
-        {
-            // LivePropLineProvider already applies StaleAfterMinutes; this is a safety net.
-            return line;
         }
 
         return line;
@@ -340,6 +427,24 @@ public sealed class QuickPicksService : IQuickPicksService
             Source = line.Source,
             UpdatedAt = line.UpdatedAt,
             Freshness = freshness,
+            AmericanOddsOver = line.AmericanOddsOver,
+            AmericanOddsUnder = line.AmericanOddsUnder
+        };
+
+    private static PropLine CloneWithEvent(PropLine line, FootballEvent ev) =>
+        new()
+        {
+            Id = line.Id,
+            Event = ev,
+            PlayerId = line.PlayerId,
+            PlayerName = line.PlayerName,
+            TeamName = line.TeamName,
+            Market = line.Market,
+            Line = line.Line,
+            Bookmaker = line.Bookmaker,
+            Source = line.Source,
+            UpdatedAt = line.UpdatedAt,
+            Freshness = line.Freshness,
             AmericanOddsOver = line.AmericanOddsOver,
             AmericanOddsUnder = line.AmericanOddsUnder
         };

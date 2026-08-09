@@ -16,9 +16,9 @@ public class QuickPicksEngineTests
     private readonly QuickPicksEngine _engine = CreateEngine();
 
     [Fact]
-    public void Engine_Version_Is_0_2()
+    public void Engine_Version_Is_0_3()
     {
-        Assert.Equal("0.2", _engine.Version);
+        Assert.Equal("0.3", _engine.Version);
         Assert.Equal(QuickPicksEngine.CurrentVersion, _engine.Version);
     }
 
@@ -34,7 +34,9 @@ public class QuickPicksEngineTests
         Assert.True(prediction.Probability > 50);
         Assert.Contains("above", prediction.Reasoning, StringComparison.OrdinalIgnoreCase);
         Assert.NotEmpty(prediction.SignalContributions);
-        Assert.Equal("0.2", prediction.EngineVersion);
+        Assert.Equal("0.3", prediction.EngineVersion);
+        Assert.Contains("Week", prediction.ContextLabel, StringComparison.OrdinalIgnoreCase);
+        Assert.NotNull(prediction.LineUpdatedAt);
     }
 
     [Fact]
@@ -231,9 +233,48 @@ public class QuickPicksEngineTests
 
         var all = quickPicks.GetAllPredictions();
         Assert.NotEmpty(all);
-        Assert.Contains(all, p => p.EngineVersion == "0.2");
+        Assert.Contains(all, p => p.EngineVersion == "0.3");
         Assert.Contains(all, p => p.SignalContributions.Count > 0);
         Assert.All(all, p => Assert.False(string.IsNullOrWhiteSpace(p.Reasoning)));
+        Assert.NotNull(quickPicks.SelectedWeek);
+        Assert.NotEmpty(quickPicks.AvailableWeeks);
+        Assert.All(all, p => Assert.True(quickPicks.SelectedWeek!.Matches(p.Event)));
+        Assert.All(all, p => Assert.Contains("Week", p.ContextLabel, StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Preseason_Prior_Production_Is_Labeled_And_Tempers_Confidence()
+    {
+        var regular = Require(Eval(
+            Line(PredictionMarketType.ReceivingYards, 94.5m, phase: NflSeasonPhase.RegularSeason),
+            108.2m, 70, 40, Intel(usage: 65, health: 75),
+            seasonPhase: NflSeasonPhase.RegularSeason));
+
+        var preseason = Require(Eval(
+            Line(PredictionMarketType.ReceivingYards, 94.5m, phase: NflSeasonPhase.Preseason),
+            108.2m, 70, 40, Intel(usage: 65, health: 75),
+            seasonPhase: NflSeasonPhase.Preseason,
+            usingPrior: true));
+
+        Assert.True(preseason.Confidence < regular.Confidence);
+        Assert.Contains("preseason", preseason.Reasoning, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(preseason.SupportingIntelligence, s =>
+            s.Contains("Prior regular-season", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(preseason.SignalContributions, c => c.SignalId == "season-phase");
+    }
+
+    [Fact]
+    public void Usage_Signal_Moves_Edge_Vs_Neutral_Usage()
+    {
+        var strong = Require(Eval(
+            Line(PredictionMarketType.ReceivingYards, 94.5m),
+            100m, 75, 35, Intel(usage: 85, opportunity: 80, health: 75)));
+        var soft = Require(Eval(
+            Line(PredictionMarketType.ReceivingYards, 94.5m),
+            100m, 75, 35, Intel(usage: 25, opportunity: 25, health: 75)));
+
+        Assert.True(strong.Edge != soft.Edge || strong.Probability != soft.Probability);
+        Assert.Contains(strong.SignalContributions, c => c.SignalId == "usage-opportunity" && c.Available);
     }
 
     private static QuickPicksEngine CreateEngine(QuickPicksScoringOptions? options = null) =>
@@ -246,7 +287,9 @@ public class QuickPicksEngineTests
         int volatility,
         PlayerIntelligenceProfile? intelligence,
         PlayerInjuryProfile? injuryProfile = null,
-        IReadOnlyList<IntelligenceFact>? facts = null) =>
+        IReadOnlyList<IntelligenceFact>? facts = null,
+        NflSeasonPhase seasonPhase = NflSeasonPhase.RegularSeason,
+        bool usingPrior = false) =>
         _engine.Evaluate(new QuickPickEvaluationContext
         {
             Line = line,
@@ -256,7 +299,9 @@ public class QuickPicksEngineTests
             Intelligence = intelligence,
             StatisticalContext = null,
             InjuryProfile = injuryProfile,
-            RecentFacts = facts ?? []
+            RecentFacts = facts ?? [],
+            SeasonPhase = seasonPhase,
+            UsingPriorRegularSeasonProduction = usingPrior
         });
 
     private static Prediction Require(Prediction? prediction)
@@ -269,7 +314,9 @@ public class QuickPicksEngineTests
         PredictionMarketType market,
         decimal? line,
         PropLineFreshness freshness = PropLineFreshness.Mock,
-        string id = "test-line") =>
+        string id = "test-line",
+        NflSeasonPhase phase = NflSeasonPhase.RegularSeason,
+        int week = 1) =>
         new()
         {
             Id = id,
@@ -278,7 +325,10 @@ public class QuickPicksEngineTests
                 EventId = "test-cin-cle",
                 HomeTeam = "CLE",
                 AwayTeam = "CIN",
-                CommenceTime = DateTimeOffset.UtcNow.AddDays(1)
+                CommenceTime = DateTimeOffset.UtcNow.AddDays(1),
+                Season = 2026,
+                Phase = phase,
+                Week = week
             },
             PlayerId = Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"),
             PlayerName = "Ja'Marr Chase",

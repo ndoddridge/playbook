@@ -5,7 +5,7 @@
     <header class="qp-card__header">
         <div>
             <h3 class="qp-card__subject">@Prediction.SubjectLabel</h3>
-            <p class="qp-card__event">@Prediction.Event.DisplayName</p>
+            <p class="qp-card__event">@Prediction.ContextLabel</p>
         </div>
         <span class="@QuickPickDisplay.FreshnessCss(Prediction.LineFreshness)">
             @QuickPickDisplay.FreshnessLabel(Prediction.LineFreshness)
@@ -56,7 +56,7 @@
 
     <footer class="qp-card__footer">
         <span>@Prediction.Source@(string.IsNullOrWhiteSpace(Prediction.Bookmaker) ? "" : $" · {Prediction.Bookmaker}")</span>
-        <span>Updated @QuickPickDisplay.Timestamp(Prediction.LastUpdated)</span>
+        <span>Line @QuickPickDisplay.Timestamp(Prediction.LineUpdatedAt ?? Prediction.LastUpdated)</span>
     </footer>
 
     <button type="button" class="qp-card__expand" @onclick="Toggle">

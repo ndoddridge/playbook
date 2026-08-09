@@ -433,29 +433,32 @@ Statistics → Intelligence → Projection Engine v0.1
 
 Floor/ceiling bands scale with volatility and uncertainty — not fixed ± offsets.
 
-### Quick Picks / Prediction Engine v0.2
+### Quick Picks / Prediction Engine v0.3
 
 Independent football prediction surface (player/game props). **Not fantasy** — does not read active league, owned team, roster, or scoring settings.
 
 ```
 Real Football Data
         ↓
+INflCalendarService (season / phase / week)
+        ↓
+Prop lines (The Odds API or Mock) → enrich + filter to selected week
+        ↓
 Intelligence + Injury services (existing)
         ↓
-PropStatProjector (counting-stat estimates)
+PropStatProjector (phase-aware counting-stat estimates)
         ↓
-Prop lines (The Odds API or Mock)
-        ↓
-QuickPicksEngine v0.2 (weighted signals → edge / probability / confidence)
+QuickPicksEngine v0.3 (weighted signals → edge / probability / confidence)
         ↓
 Quick Picks board (ranked by OpportunityScore)
 ```
 
-Engine inputs (`QuickPickEvaluationContext`): projection, player intelligence, injury profile (current + historical + unconfirmed), statistical usage, recent facts, live/mock line.
-Weights are tunable via `QuickPicks:Scoring`. Each evaluation emits structured `PredictionSignalContribution` rows so weights can be tuned without rewriting the UI.
-Missing signals reduce confidence (never fabricated). Unconfirmed buzz is labeled. Current injuries dominate; historical injuries are relevance- and age-weighted.
+Each `FootballEvent` / `Prediction` carries season, phase, week, event id, kickoff, and teams. The board evaluates **one week slate** at a time (`SelectedWeek` / `AvailableWeeks` / `TrySelectWeek` ready for a future selector).
 
-Fantasy remains a separate consumer: Projection + Intelligence + League Context → Decision Engine → Recommendations.
+Preseason: regular-season production is a prior only (confidence tempered). Current injury, unconfirmed buzz (labeled), usage/opportunity, and news remain active signals. When regular season begins, calendar state flips automatically — no hardcoded “today is preseason” path.
+
+Engine inputs (`QuickPickEvaluationContext`): projection, player intelligence, injury profile, statistical usage, recent facts, season phase, live/mock line.
+Weights: `QuickPicks:Scoring`. Structured `PredictionSignalContribution` rows support later tuning without UI rewrites.
 
 Provider: The Odds API (`IPropLineProvider` / `LivePropLineProvider`) is primary.
 `MockPropLineProvider` remains the automatic fallback when the API key is missing, the request fails, or markets are empty.

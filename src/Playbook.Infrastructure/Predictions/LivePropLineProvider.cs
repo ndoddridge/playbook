@@ -359,10 +359,7 @@ public sealed class LivePropLineProvider : IPropLineProvider
                 continue;
             }
 
-            var player = players.FirstOrDefault(p =>
-                string.Equals(p.FullName, playerName, StringComparison.OrdinalIgnoreCase) ||
-                p.FullName.EndsWith(playerName, StringComparison.OrdinalIgnoreCase) ||
-                playerName.EndsWith(p.FullName, StringComparison.OrdinalIgnoreCase));
+            var player = MatchPlayer(players, playerName);
 
             decimal? line = outcome.Point is double pt ? (decimal)pt : null;
             if (marketType == PredictionMarketType.AnytimeTouchdown)
@@ -417,6 +414,64 @@ public sealed class LivePropLineProvider : IPropLineProvider
         "player_pass_tds" => PredictionMarketType.PassingTouchdowns,
         _ => null
     };
+
+    private static Core.Players.Player? MatchPlayer(
+        IReadOnlyList<Core.Players.Player> players,
+        string playerName)
+    {
+        var exact = players.FirstOrDefault(p =>
+            string.Equals(p.FullName, playerName, StringComparison.OrdinalIgnoreCase));
+        if (exact is not null)
+        {
+            return exact;
+        }
+
+        var normTarget = NormalizePersonName(playerName);
+        var byNormalized = players.FirstOrDefault(p =>
+            NormalizePersonName(p.FullName) == normTarget);
+        if (byNormalized is not null)
+        {
+            return byNormalized;
+        }
+
+        // Last-name + first-initial (common Odds API / injury report style).
+        var parts = normTarget.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length >= 2)
+        {
+            var last = parts[^1];
+            var firstInitial = parts[0][0];
+            var candidates = players
+                .Where(p =>
+                {
+                    var pn = NormalizePersonName(p.FullName).Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                    return pn.Length >= 2 &&
+                           pn[^1] == last &&
+                           pn[0].Length > 0 &&
+                           pn[0][0] == firstInitial;
+                })
+                .ToList();
+            if (candidates.Count == 1)
+            {
+                return candidates[0];
+            }
+        }
+
+        return players.FirstOrDefault(p =>
+            NormalizePersonName(p.FullName).EndsWith(normTarget, StringComparison.Ordinal) ||
+            normTarget.EndsWith(NormalizePersonName(p.FullName), StringComparison.Ordinal));
+    }
+
+    private static string NormalizePersonName(string name)
+    {
+        var chars = name.Trim().ToLowerInvariant()
+            .Replace(".", "", StringComparison.Ordinal)
+            .Replace("'", "", StringComparison.Ordinal)
+            .Replace("’", "", StringComparison.Ordinal)
+            .Replace("-", " ", StringComparison.Ordinal)
+            .Where(c => char.IsLetter(c) || char.IsWhiteSpace(c))
+            .ToArray();
+        return string.Join(' ', new string(chars).Split(' ', StringSplitOptions.RemoveEmptyEntries));
+    }
 
     private static bool NamesMatchTeam(string? outcomeName, string teamLabel) =>
         !string.IsNullOrWhiteSpace(outcomeName) &&

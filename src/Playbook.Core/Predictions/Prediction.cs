@@ -53,13 +53,19 @@ public sealed class Prediction
 
     public required DateTimeOffset LastUpdated { get; init; }
 
+    /// <summary>Sportsbook line timestamp from the prop provider.</summary>
+    public DateTimeOffset? LineUpdatedAt { get; init; }
+
     public string? Bookmaker { get; init; }
 
-    /// <summary>Engine version that produced this prediction (e.g. 0.2).</summary>
+    /// <summary>Engine version that produced this prediction (e.g. 0.3).</summary>
     public string EngineVersion { get; init; } = "0.1";
 
     /// <summary>Composite ranking score (edge × confidence × probability lean).</summary>
     public decimal OpportunityScore { get; init; }
+
+    /// <summary>Compact game/week context for UI (from <see cref="Event.ContextLabel"/>).</summary>
+    public string ContextLabel => Event.ContextLabel;
 
     public string SubjectLabel =>
         !string.IsNullOrWhiteSpace(PlayerName) ? PlayerName! :

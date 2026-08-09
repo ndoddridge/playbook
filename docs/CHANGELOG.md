@@ -2,6 +2,18 @@
 
 All notable project changes are recorded here.
 
+## [Unreleased] — NFL week/game context for Quick Picks (Engine v0.3)
+
+### Added / Changed
+
+- Every Quick Pick is tagged with NFL **season**, **phase** (preseason / regular / postseason), **week**, game id, kickoff, and teams
+- `INflCalendarService` resolves live NFL state (Sleeper) and maps kickoffs → week; auto-transitions when regular season begins
+- Quick Picks evaluate a **single selected week slate** — props from other weeks are never mixed
+- Preseason: regular-season production is a **prior only** (lower confidence); current injury/news/usage intel still applies
+- Engine **v0.3** strengthens usage/opportunity edge impact; structured `SignalContributions` retained for weight tuning
+- UI: slate badge + per-card context line (`Preseason · Week 1 · NE @ SEA · Aug 14`); board exposes `AvailableWeeks` / `TrySelectWeek` for a future selector
+- Improved Odds API → player name matching so intelligence can attach to live props
+
 ## [Unreleased] — Intelligence-driven Quick Picks (Engine v0.2)
 
 ### Added / Changed

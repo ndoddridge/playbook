@@ -127,14 +127,16 @@ Stale/unavailable lines are never presented as Live. Top Picks only includes Liv
 ```
 Live/Mock prop lines (IPropLineProvider)
         ↓
-Intelligence + Injury services + PropStatProjector
+INflCalendarService → tag season/phase/week → filter to selected week
+        ↓
+Intelligence + Injury services + PropStatProjector (phase-aware)
         ↓
 QuickPickEvaluationContext
         ↓
-QuickPicksEngine v0.2 (QuickPicks:Scoring weights)
+QuickPicksEngine v0.3 (QuickPicks:Scoring weights)
         ↓
 Edge / probability / confidence / OpportunityScore
 + SignalContributions → Quick Picks UI
 ```
 
-Engine v0.2 is intelligence-driven: projection vs line is one signal among health, current/historical injury, unconfirmed buzz (labeled), usage/opportunity, and capped recent facts. Missing intelligence reduces confidence rather than inventing values.
+Engine v0.3 is week-scoped and intelligence-driven. Every pick belongs to one NFL week/game. Projection vs line is one signal among health, current/historical injury, unconfirmed buzz (labeled), usage/opportunity, and capped recent facts. Preseason uses regular-season production as a prior only. Missing intelligence reduces confidence rather than inventing values.

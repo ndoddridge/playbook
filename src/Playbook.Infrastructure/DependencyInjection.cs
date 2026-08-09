@@ -134,6 +134,7 @@ public static class DependencyInjection
         services.AddSingleton<QuickPicksSyncStatus>();
         services.AddSingleton<IQuickPicksSyncStatus>(sp => sp.GetRequiredService<QuickPicksSyncStatus>());
         services.AddSingleton<IQuickPicksEngine, QuickPicksEngine>();
+        services.AddSingleton<INflCalendarService, NflCalendarService>();
 
         services.AddSingleton<MockPropLineProvider>();
         services.AddSingleton<IPropLineProvider>(sp => sp.GetRequiredService<MockPropLineProvider>());
