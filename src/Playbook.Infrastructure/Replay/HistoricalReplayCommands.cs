@@ -119,4 +119,48 @@ public static class HistoricalReplayCommands
         var runner = services.GetRequiredService<IMultiWeekHistoricalReplayRunner>();
         return runner.RunAsync(request, cancellationToken);
     }
+
+    /// <summary>
+    /// Frozen-model multi-season benchmark using the default diverse-era sample.
+    /// Does not alter projection/decision/confidence formulas.
+    /// </summary>
+    public static Task<MultiSeasonBenchmarkReport> RunDefaultMultiSeasonBenchmarkAsync(
+        IServiceProvider services,
+        ScoringType scoringType = ScoringType.Ppr,
+        CancellationToken cancellationToken = default) =>
+        RunMultiSeasonBenchmarkAsync(
+            services,
+            DefaultMultiSeasonBenchmarkSample.Seasons,
+            scoringType,
+            fixtureId: "nflverse",
+            DefaultMultiSeasonBenchmarkSample.DefaultRoles,
+            cancellationToken);
+
+    public static Task<MultiSeasonBenchmarkReport> RunMultiSeasonBenchmarkAsync(
+        IServiceProvider services,
+        IReadOnlyList<int> seasons,
+        ScoringType scoringType = ScoringType.Ppr,
+        string? fixtureId = "nflverse",
+        IReadOnlyDictionary<int, EvaluationSeasonRole>? seasonRoles = null,
+        CancellationToken cancellationToken = default) =>
+        RunMultiSeasonBenchmarkAsync(
+            services,
+            new MultiSeasonBenchmarkRequest
+            {
+                Seasons = seasons,
+                ScoringType = scoringType,
+                FixtureId = fixtureId,
+                ContinueOnWeekFailure = true,
+                SeasonRoles = seasonRoles ?? new Dictionary<int, EvaluationSeasonRole>()
+            },
+            cancellationToken);
+
+    public static Task<MultiSeasonBenchmarkReport> RunMultiSeasonBenchmarkAsync(
+        IServiceProvider services,
+        MultiSeasonBenchmarkRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var runner = services.GetRequiredService<IMultiSeasonHistoricalBenchmarkRunner>();
+        return runner.RunAsync(request, cancellationToken);
+    }
 }
