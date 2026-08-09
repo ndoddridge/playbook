@@ -201,10 +201,11 @@
 
     private void ApplyFilters()
     {
-        // Filter first, then rank — so "Bengals" + Top 5 = five strongest Bengals props.
+        // Filter → strength-rank → diverse Top selection. Near-duplicates fall through to Watch.
         var ranked = filters.RankEligible(slatePredictions);
-        visibleTop = ranked.Take(topCount).ToList();
-        visibleWatch = ranked.Skip(topCount).Take(WatchCount).ToList();
+        visibleTop = filters.SelectDiverseTop(slatePredictions, topCount);
+        var topIds = visibleTop.Select(p => p.Id).ToHashSet();
+        visibleWatch = ranked.Where(p => !topIds.Contains(p.Id)).Take(WatchCount).ToList();
         visibleAll = filters.Apply(slatePredictions)
             .OrderByDescending(p => p.OpportunityScore)
             .ThenByDescending(p => p.Edge)

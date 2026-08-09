@@ -131,10 +131,11 @@ public sealed class QuickPicksService : IQuickPicksService
     public IReadOnlyList<Prediction> GetTopPicks(int count = 5)
     {
         EnsureLoaded();
-        // Top Picks = strongest available on the slate (ranking only — no confidence floor).
-        return RankEligiblePredictions()
-            .Take(Math.Clamp(count, 1, 20))
-            .ToList();
+        // Strongest distinct opportunities on the slate (diversity preference, no confidence floor).
+        return QuickPickSearch.SelectDiverseTop(
+            _predictions,
+            count,
+            p => _selectedWeek is null || _selectedWeek.Matches(p.Event));
     }
 
     public IReadOnlyList<Prediction> GetWatchPicks(int count = 8, int topCount = 5)
