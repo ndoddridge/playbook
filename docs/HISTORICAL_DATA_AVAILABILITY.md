@@ -27,12 +27,14 @@ Statuses:
 
 Replay Engine v1 proves the **pipeline** (snapshot → knowledge → decision → record → outcome → grade) with a controlled fixture and hard information-cutoff enforcement.
 
-Before expanding beyond fixtures, source or build:
+**Real-data status (2018 Week 7):** nflverse-backed `IHistoricalDataProvider` can load one real week end-to-end. See `docs/REAL_HISTORICAL_DATA_COVERAGE_2018_W7.md`.
 
-1. As-of projection archives (or an explicit “projection unavailable” policy)
-2. Week-by-week historical roster ownership for Start/Sit grading in real leagues
-3. Cutoff-safe injury (and optionally news) reconstruction
+Before expanding to multi-season runs, still need:
+
+1. As-of projection archives (currently **UNAVAILABLE** — honestly null)
+2. Week-by-week historical fantasy league ownership (lab roster is reconstructed, not historical)
+3. Stronger cutoff-safe injury/news reconstruction
 4. Durable decision/outcome storage
-5. Deeper nflverse season coverage with week-level as-of filters
+5. Broader season coverage automation (runner API already accepts arbitrary season/week)
 
 Until those exist, mark missing domains **UNAVAILABLE** inside snapshots rather than inventing them.

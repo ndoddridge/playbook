@@ -18,6 +18,7 @@ using Playbook.Application.Stats;
 using Playbook.Application.Stats.Interfaces;
 using Playbook.Infrastructure.Decisions;
 using Playbook.Infrastructure.Replay;
+using Playbook.Infrastructure.Replay.Nflverse;
 using Playbook.Infrastructure.Hosting;
 using Playbook.Infrastructure.Injuries;
 using Playbook.Infrastructure.Intelligence.Services;
@@ -131,7 +132,19 @@ public static class DependencyInjection
 
     private static void RegisterHistoricalReplay(IServiceCollection services)
     {
-        services.AddSingleton<IHistoricalSnapshotSource, FixtureHistoricalSnapshotSource>();
+        services.AddSingleton<IHistoricalPlayerIdentityNormalizer, HistoricalPlayerIdentityNormalizer>();
+        services.AddSingleton<IHistoricalWeekDataValidator, HistoricalWeekDataValidator>();
+        services.AddSingleton<NflverseCsvCache>();
+        services.AddHttpClient(NflverseCsvCache.HttpClientName, client =>
+        {
+            client.Timeout = TimeSpan.FromMinutes(5);
+            client.DefaultRequestHeaders.TryAddWithoutValidation(
+                "User-Agent",
+                "Mozilla/5.0 (compatible; Playbook/0.1; +https://github.com/ndoddridge/playbook)");
+            client.DefaultRequestHeaders.TryAddWithoutValidation("Accept", "*/*");
+        });
+        services.AddSingleton<IHistoricalDataProvider, NflverseHistoricalDataProvider>();
+        services.AddSingleton<IHistoricalSnapshotSource, CompositeHistoricalSnapshotSource>();
         services.AddSingleton<IHistoricalSnapshotBuilder, HistoricalSnapshotBuilder>();
         services.AddSingleton<IHistoricalKnowledgeFactory, HistoricalKnowledgeFactory>();
         services.AddSingleton<IDecisionOutcomeEvaluator, StartSitOutcomeEvaluator>();
