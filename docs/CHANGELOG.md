@@ -2,6 +2,14 @@
 
 All notable project changes are recorded here.
 
+## [Unreleased] — Player Intelligence experience
+
+### Added
+
+- `PlayerIntelligenceAssessment` composed from existing intelligence, injury, projection, stats, and news services
+- Mobile-first Player Intelligence panel on player overlay Overview / Intelligence: snapshot, why factors, recent intel (confirmed vs unconfirmed), health, projection, secondary historical context, expandable details
+- Missing signals labeled unavailable — never fabricated or treated as positive
+
 ## [Unreleased] — Top Picks diversity (de-dupe alternate lines)
 
 ### Fixed / Changed
