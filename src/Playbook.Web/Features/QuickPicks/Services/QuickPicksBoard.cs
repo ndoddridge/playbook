@@ -20,6 +20,8 @@ public sealed class QuickPicksBoard : IQuickPicksBoard
 
     public IReadOnlyList<NflWeekRef> AvailableWeeks => _service.AvailableWeeks;
 
+    public IReadOnlyList<NflWeekRef> CanonicalWeeks => _service.CanonicalWeeks;
+
     public NflSeasonContext? SeasonContext => _service.SeasonContext;
 
     public IReadOnlyList<Prediction> TopPicks => _service.GetTopPicks(8);

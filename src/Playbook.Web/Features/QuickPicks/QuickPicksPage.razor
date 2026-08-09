@@ -36,13 +36,16 @@
         }
     </header>
 
-    @if (selected is not null && slates.Count > 0)
+    @if (selected is not null && canonicalWeeks.Count > 0)
     {
-        <SlateNavigator Selected="selected" Slates="slates" OnSelected="OnSlateSelected" />
+        <SlateNavigator Selected="selected"
+                        CanonicalWeeks="canonicalWeeks"
+                        MarketWeeks="marketWeeks"
+                        OnSelected="OnSlateSelected" />
     }
     else
     {
-        <p class="pb-empty">No NFL slates with markets are available yet.</p>
+        <p class="pb-empty">NFL slate context is not available yet.</p>
     }
 
     <QuickPicksFilterBar Filters="filters" FiltersChanged="OnFiltersChanged" />
@@ -130,7 +133,8 @@
 
 @code {
     private readonly QuickPickFilters filters = new();
-    private IReadOnlyList<NflSlate> slates = [];
+    private IReadOnlyList<NflWeekRef> canonicalWeeks = [];
+    private IReadOnlyList<NflWeekRef> marketWeeks = [];
     private NflWeekRef? selected;
     private IReadOnlyList<Prediction> topPicks = [];
     private IReadOnlyList<Prediction> watchPicks = [];
@@ -146,7 +150,8 @@
 
     private void ReloadFromBoard()
     {
-        slates = Board.AvailableSlates;
+        canonicalWeeks = Board.CanonicalWeeks;
+        marketWeeks = Board.AvailableWeeks;
         selected = Board.SelectedWeek;
         topPicks = Board.TopPicks;
         watchPicks = Board.WatchPicks;

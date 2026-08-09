@@ -7,11 +7,17 @@ public interface IQuickPicksService
     /// <summary>Active NFL slate currently driving the board.</summary>
     NflWeekRef? SelectedWeek { get; }
 
-    /// <summary>Concrete available slates backed by real games (for navigator UI).</summary>
+    /// <summary>Provider-backed slates that have at least one real game/market.</summary>
     IReadOnlyList<NflSlate> AvailableSlates { get; }
 
-    /// <summary>Slate refs present in the loaded prop catalog.</summary>
+    /// <summary>Slate refs present in the loaded prop catalog (provider-backed).</summary>
     IReadOnlyList<NflWeekRef> AvailableWeeks { get; }
+
+    /// <summary>
+    /// Full canonical NFL season structure for the active season
+    /// (Preseason 1–3, Regular 1–18, Postseason rounds). Used by the week picker.
+    /// </summary>
+    IReadOnlyList<NflWeekRef> CanonicalWeeks { get; }
 
     /// <summary>Resolved live NFL calendar context (season / phase hint).</summary>
     global::Playbook.Application.Predictions.NflSeasonContext? SeasonContext { get; }
@@ -28,8 +34,8 @@ public interface IQuickPicksService
     IReadOnlyList<FootballEvent> GetUpcomingEvents();
 
     /// <summary>
-    /// Select a slate when it exists in <see cref="AvailableWeeks"/>.
-    /// Rebuilds predictions for that slate only. Returns false if unavailable.
+    /// Select a canonical season slate. Rebuilds predictions for that slate only
+    /// (empty when the provider has no markets for it). Returns false if out of season.
     /// </summary>
     bool TrySelectWeek(NflWeekRef week);
 

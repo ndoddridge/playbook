@@ -2,6 +2,15 @@
 
 All notable project changes are recorded here.
 
+## [Unreleased] — Compact slate navigator + canonical NFL order
+
+### Fixed / Changed
+
+- Default slate uses **NFL calendar phase/week first**, then provider availability — future Regular Season Odds events no longer confuse an active Preseason
+- Canonical season structure everywhere: Preseason W1–W3 → Regular W1–W18 → Wild Card / Divisional / Conference Championship / Super Bowl
+- Compact navigator (`‹ PRESEASON · WEEK 1 ›`) with expandable **Browse weeks** picker organized by phase
+- Prev/Next follows canonical order; weeks without markets are selectable but empty (no invented props)
+
 ## [Unreleased] — Quick Picks slate navigator + event-driven NFL calendar
 
 ### Fixed / Added

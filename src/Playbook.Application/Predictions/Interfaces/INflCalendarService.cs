@@ -21,12 +21,12 @@ public interface INflCalendarService
     /// <summary>Build concrete slates that have at least one real event.</summary>
     IReadOnlyList<NflSlate> BuildSlates(IReadOnlyList<FootballEvent> enrichedEvents);
 
-    /// <summary>Distinct slate refs present in an enriched event list.</summary>
+    /// <summary>Distinct slate refs present in an enriched event list (provider-backed only).</summary>
     IReadOnlyList<NflWeekRef> GetAvailableWeeks(IReadOnlyList<FootballEvent> events);
 
     /// <summary>
-    /// Default slate: next incomplete available slate (by event dates).
-    /// Preferred selection wins when still available.
+    /// Default slate: NFL calendar phase/week first, then next incomplete provider slate
+    /// within that phase. Future regular-season provider events do not override an active preseason.
     /// </summary>
     NflWeekRef SelectActiveWeek(
         IReadOnlyList<NflSlate> available,

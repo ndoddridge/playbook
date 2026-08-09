@@ -98,9 +98,7 @@ public sealed class NflCalendarService : INflCalendarService
                     LatestKickoff = ordered[^1].CommenceTime
                 };
             })
-            .OrderBy(s => s.Ref.Season)
-            .ThenBy(s => s.Ref.Phase)
-            .ThenBy(s => s.Ref.Week)
+            .OrderBy(s => s.Ref, NflWeekRef.CanonicalComparer)
             .ToList();
     }
 
@@ -114,29 +112,61 @@ public sealed class NflCalendarService : INflCalendarService
         DateTimeOffset? utcNow = null)
     {
         var now = utcNow ?? DateTimeOffset.UtcNow;
-        if (available.Count == 0)
+        var calendar = current.CurrentWeekRef;
+
+        // Preferred selection wins when it belongs to this season (navigator / saved week).
+        if (preferred is not null && preferred.Season == current.Season)
         {
-            return preferred ?? current.CurrentWeekRef;
+            return preferred;
         }
 
-        if (preferred is not null)
+        // Phase-first: only consider provider slates in the calendar's current phase.
+        // Future Regular Season Odds events must not override an active Preseason.
+        var samePhase = available
+            .Where(s => s.Ref.Season == current.Season && s.Ref.Phase == current.Phase)
+            .OrderBy(s => s.Ref, NflWeekRef.CanonicalComparer)
+            .ToList();
+
+        var openSamePhase = samePhase
+            .Where(s => s.Ref.Week >= calendar.Week && s.HasUpcomingOrLive(now))
+            .FirstOrDefault()
+            ?? samePhase.FirstOrDefault(s => s.HasUpcomingOrLive(now));
+
+        if (openSamePhase is not null)
         {
-            var preferredSlate = available.FirstOrDefault(s => s.Ref == preferred);
-            if (preferredSlate is not null)
+            return openSamePhase.Ref;
+        }
+
+        // Current calendar week's provider slate exists but is complete → advance within phase.
+        var calendarSlate = samePhase.FirstOrDefault(s => s.Ref == calendar);
+        if (calendarSlate is not null && calendarSlate.IsComplete(now))
+        {
+            var nextInPhase = samePhase.FirstOrDefault(s =>
+                s.Ref.Week > calendar.Week && s.HasUpcomingOrLive(now));
+            if (nextInPhase is not null)
             {
-                return preferredSlate.Ref;
+                return nextInPhase.Ref;
+            }
+
+            // End of phase with all complete → only then allow the next phase's open slate.
+            var maxWeek = NflWeekRef.MaxWeekForPhase(current.Phase);
+            if (calendar.Week >= maxWeek && samePhase.All(s => s.IsComplete(now)))
+            {
+                var nextPhaseOpen = available
+                    .Where(s => s.Ref.Season == current.Season)
+                    .Where(s => NflWeekRef.CompareCanonical(s.Ref, calendar) > 0)
+                    .Where(s => s.HasUpcomingOrLive(now))
+                    .OrderBy(s => s.Ref, NflWeekRef.CanonicalComparer)
+                    .FirstOrDefault();
+                if (nextPhaseOpen is not null)
+                {
+                    return nextPhaseOpen.Ref;
+                }
             }
         }
 
-        // Next relevant slate: first incomplete slate by chronological order.
-        var nextOpen = available.FirstOrDefault(s => s.HasUpcomingOrLive(now));
-        if (nextOpen is not null)
-        {
-            return nextOpen.Ref;
-        }
-
-        // All complete → stay on the latest available slate.
-        return available[^1].Ref;
+        // Calendar phase/week wins over future provider noise when nothing better matches.
+        return calendar;
     }
 
     /// <summary>

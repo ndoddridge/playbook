@@ -14,6 +14,8 @@ public interface IQuickPicksBoard
 
     IReadOnlyList<NflWeekRef> AvailableWeeks { get; }
 
+    IReadOnlyList<NflWeekRef> CanonicalWeeks { get; }
+
     NflSeasonContext? SeasonContext { get; }
 
     IReadOnlyList<Prediction> TopPicks { get; }

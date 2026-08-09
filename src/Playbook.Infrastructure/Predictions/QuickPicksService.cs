@@ -39,6 +39,7 @@ public sealed class QuickPicksService : IQuickPicksService
     private IReadOnlyList<Prediction> _predictions = [];
     private IReadOnlyList<FootballEvent> _events = [];
     private IReadOnlyList<NflWeekRef> _availableWeeks = [];
+    private IReadOnlyList<NflWeekRef> _canonicalWeeks = [];
     private IReadOnlyList<NflSlate> _availableSlates = [];
     private NflWeekRef? _selectedWeek;
     private NflWeekRef? _preferredWeek;
@@ -100,6 +101,15 @@ public sealed class QuickPicksService : IQuickPicksService
         {
             EnsureLoaded();
             return _availableWeeks;
+        }
+    }
+
+    public IReadOnlyList<NflWeekRef> CanonicalWeeks
+    {
+        get
+        {
+            EnsureLoaded();
+            return _canonicalWeeks;
         }
     }
 
@@ -168,7 +178,7 @@ public sealed class QuickPicksService : IQuickPicksService
         lock (_gate)
         {
             EnsureLoadedLocked();
-            if (!_availableWeeks.Contains(week))
+            if (!_canonicalWeeks.Contains(week))
             {
                 return false;
             }
@@ -288,6 +298,7 @@ public sealed class QuickPicksService : IQuickPicksService
             .ToList();
         _availableSlates = _calendar.BuildSlates(distinctEvents);
         _availableWeeks = _availableSlates.Select(s => s.Ref).ToList();
+        _canonicalWeeks = NflWeekRef.BuildCanonicalSeason(season.Season);
         _selectedWeek = _calendar.SelectActiveWeek(_availableSlates, season, _preferredWeek);
 
         var games = _enrichedLines.Select(l => l.Event.EventId).Distinct().Count();
@@ -318,7 +329,7 @@ public sealed class QuickPicksService : IQuickPicksService
     {
         var season = _seasonContext ?? _calendar.GetCurrentContext();
         NflWeekRef selected;
-        if (_preferredWeek is not null && _availableWeeks.Contains(_preferredWeek))
+        if (_preferredWeek is not null && _canonicalWeeks.Contains(_preferredWeek))
         {
             selected = _preferredWeek;
         }

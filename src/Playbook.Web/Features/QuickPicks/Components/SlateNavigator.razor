@@ -1,69 +1,122 @@
 @using Playbook.Core.Predictions
 
-<div class="qp-slate-nav" role="navigation" aria-label="NFL slate">
-    <div class="qp-slate-nav__controls">
+<nav class="qp-slate-nav" aria-label="NFL slate">
+    <div class="qp-slate-nav__bar">
         <button type="button"
-                class="qp-slate-nav__arrow"
+                class="qp-slate-nav__step"
                 disabled="@(!CanGoPrevious)"
                 @onclick="GoPrevious"
                 aria-label="Previous slate">
-            ‹ Previous
+            ‹
         </button>
 
-        <div class="qp-slate-nav__current">
-            <span class="qp-slate-nav__phase">@Selected.PhaseLabel.ToUpperInvariant()</span>
-            <span class="qp-slate-nav__week">@Selected.WeekLabel</span>
-        </div>
+        <button type="button"
+                class="qp-slate-nav__current"
+                @onclick="ToggleBrowse"
+                aria-expanded="@_browseOpen"
+                aria-controls="qp-week-picker">
+            <span class="qp-slate-nav__label">@Selected.CompactLabel</span>
+        </button>
 
         <button type="button"
-                class="qp-slate-nav__arrow"
+                class="qp-slate-nav__step"
                 disabled="@(!CanGoNext)"
                 @onclick="GoNext"
                 aria-label="Next slate">
-            Next ›
+            ›
         </button>
     </div>
 
-    @if (Slates.Count > 1)
-    {
-        <div class="qp-slate-nav__chips" role="list">
-            @foreach (var slate in Slates)
-            {
-                var isActive = slate.Ref == Selected;
-                <button type="button"
-                        role="listitem"
-                        class="qp-slate-chip @(isActive ? "qp-slate-chip--active" : null) qp-slate-chip--@(slate.Ref.Phase.ToString().ToLowerInvariant())"
-                        @onclick="() => Select(slate.Ref)"
-                        aria-current="@(isActive ? "true" : "false")">
-                    @slate.Ref.ShortLabel
-                </button>
-            }
-        </div>
-    }
-</div>
+    <button type="button"
+            class="qp-slate-nav__browse"
+            @onclick="ToggleBrowse"
+            aria-expanded="@_browseOpen"
+            aria-controls="qp-week-picker">
+        @(_browseOpen ? "Hide weeks" : "Browse weeks")
+        <span class="qp-slate-nav__browse-chevron" aria-hidden="true">@(_browseOpen ? "▴" : "▾")</span>
+    </button>
+
+    <div id="qp-week-picker"
+         class="qp-week-picker @(_browseOpen ? "qp-week-picker--open" : null)"
+         aria-hidden="@(!_browseOpen)">
+        @if (_browseOpen)
+        {
+            <div class="qp-week-picker__panel">
+                @foreach (var group in PhaseGroups)
+                {
+                    <div class="qp-week-picker__phase">
+                        <p class="qp-week-picker__phase-label">@group.Label</p>
+                        <div class="qp-week-picker__chips" role="list">
+                            @foreach (var week in group.Weeks)
+                            {
+                                var isActive = week == Selected;
+                                var hasMarkets = MarketWeeks.Contains(week);
+                                <button type="button"
+                                        role="listitem"
+                                        class="qp-week-chip @(isActive ? "qp-week-chip--active" : null) @(hasMarkets ? "qp-week-chip--live" : "qp-week-chip--empty")"
+                                        @onclick="() => Select(week)"
+                                        aria-current="@(isActive ? "true" : "false")"
+                                        title="@(hasMarkets ? week.DisplayLabel : $"{week.DisplayLabel} · no markets yet")">
+                                    @week.ShortLabel
+                                </button>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</nav>
 
 @code {
     [Parameter, EditorRequired]
     public NflWeekRef Selected { get; set; } = default!;
 
     [Parameter, EditorRequired]
-    public IReadOnlyList<NflSlate> Slates { get; set; } = [];
+    public IReadOnlyList<NflWeekRef> CanonicalWeeks { get; set; } = [];
+
+    [Parameter]
+    public IReadOnlyList<NflWeekRef> MarketWeeks { get; set; } = [];
 
     [Parameter]
     public EventCallback<NflWeekRef> OnSelected { get; set; }
 
+    private bool _browseOpen;
+
+    private IReadOnlyList<PhaseGroup> PhaseGroups =>
+        CanonicalWeeks
+            .GroupBy(w => w.Phase)
+            .OrderBy(g => g.First().PhaseOrder)
+            .Select(g => new PhaseGroup(
+                g.Key switch
+                {
+                    NflSeasonPhase.Preseason => "PRESEASON",
+                    NflSeasonPhase.RegularSeason => "REGULAR SEASON",
+                    NflSeasonPhase.Postseason => "POSTSEASON",
+                    _ => g.Key.ToString().ToUpperInvariant()
+                },
+                g.OrderBy(w => w.Week).ToList()))
+            .ToList();
+
     private int SelectedIndex =>
-        Math.Max(0, Slates.ToList().FindIndex(s => s.Ref == Selected));
+        Math.Max(0, CanonicalWeeks.ToList().FindIndex(w => w == Selected));
 
     private bool CanGoPrevious => SelectedIndex > 0;
 
-    private bool CanGoNext => SelectedIndex >= 0 && SelectedIndex < Slates.Count - 1;
+    private bool CanGoNext => SelectedIndex >= 0 && SelectedIndex < CanonicalWeeks.Count - 1;
 
     private Task GoPrevious() =>
-        CanGoPrevious ? Select(Slates[SelectedIndex - 1].Ref) : Task.CompletedTask;
+        CanGoPrevious ? Select(CanonicalWeeks[SelectedIndex - 1]) : Task.CompletedTask;
 
     private Task GoNext() =>
-        CanGoNext ? Select(Slates[SelectedIndex + 1].Ref) : Task.CompletedTask;
+        CanGoNext ? Select(CanonicalWeeks[SelectedIndex + 1]) : Task.CompletedTask;
 
-    private Task Select(NflWeekRef slate) => OnSelected.InvokeAsync(slate);
+    private void ToggleBrowse() => _browseOpen = !_browseOpen;
+
+    private async Task Select(NflWeekRef slate)
+    {
+        await OnSelected.InvokeAsync(slate);
+    }
+
+    private sealed record PhaseGroup(string Label, IReadOnlyList<NflWeekRef> Weeks);
 }
