@@ -5,17 +5,22 @@
     <header class="qp-card__header">
         <div class="qp-card__identity">
             <h3 class="qp-card__subject">@Prediction.SubjectLabel</h3>
-            <p class="qp-card__matchup">@Prediction.Event.DisplayName</p>
-            <p class="qp-card__slate">@Prediction.Event.SlateLabel</p>
+            <p class="qp-card__context">@QuickPickDisplay.CompactContext(Prediction)</p>
         </div>
         <span class="@QuickPickDisplay.FreshnessCss(Prediction.LineFreshness)">
             @QuickPickDisplay.FreshnessLabel(Prediction.LineFreshness)
         </span>
     </header>
 
-    <div class="qp-card__market">
-        <span class="qp-card__market-name">@Prediction.MarketLabel</span>
-        <span class="qp-card__direction">@QuickPickDisplay.LineText(Prediction)</span>
+    <div class="qp-card__pick-row">
+        <div class="qp-card__market-block">
+            <span class="qp-card__market-name">@Prediction.MarketLabel</span>
+            <span class="qp-card__direction">@QuickPickDisplay.LineText(Prediction)</span>
+        </div>
+        <div class="qp-card__confidence">
+            <span class="qp-card__confidence-label">Confidence</span>
+            <span class="qp-card__confidence-value">@Prediction.Confidence%</span>
+        </div>
     </div>
 
     <div class="qp-card__stats">
@@ -28,61 +33,36 @@
             <span class="qp-stat__value">@QuickPickDisplay.ProjectionText(Prediction)</span>
         </div>
         <div class="qp-stat">
-            <span class="qp-stat__label">Probability</span>
-            <span class="qp-stat__value">@Prediction.Probability%</span>
-        </div>
-        <div class="qp-stat">
             <span class="qp-stat__label">Edge</span>
-            <span class="qp-stat__value">@Prediction.Edge.ToString("0.0")</span>
-        </div>
-        <div class="qp-stat">
-            <span class="qp-stat__label">Confidence</span>
-            <span class="qp-stat__value">@Prediction.Confidence%</span>
+            <span class="qp-stat__value qp-stat__value--edge">@QuickPickDisplay.EdgeText(Prediction)</span>
         </div>
     </div>
 
-    <p class="qp-card__reasoning">@Prediction.Reasoning</p>
+    <p class="qp-card__summary">@QuickPickDisplay.ShortSummary(Prediction)</p>
 
-    @if (highlightSignals.Count > 0)
-    {
-        <ul class="qp-card__signals">
-            @foreach (var signal in highlightSignals)
-            {
-                <li class="@(signal.IsUnconfirmed ? "qp-card__signal qp-card__signal--unconfirmed" : "qp-card__signal")">
-                    @signal.Text
-                </li>
-            }
-        </ul>
-    }
-
-    <footer class="qp-card__footer">
-        <span>@Prediction.Source@(string.IsNullOrWhiteSpace(Prediction.Bookmaker) ? "" : $" · {Prediction.Bookmaker}")</span>
-        <span>Line @QuickPickDisplay.Timestamp(Prediction.LineUpdatedAt ?? Prediction.LastUpdated)</span>
-    </footer>
-
-    <button type="button" class="qp-card__expand" @onclick="Toggle">
-        @(expanded ? "Hide details" : "Show details")
+    <button type="button"
+            class="qp-card__expand"
+            @onclick="Toggle"
+            aria-expanded="@expanded">
+        @(expanded ? "Hide analysis" : "Why?")
     </button>
 
     @if (expanded)
     {
-        <ul class="qp-card__calc">
-            @foreach (var note in Prediction.CalculationNotes)
+        <div class="qp-card__details">
+            @foreach (var detail in detailSections)
             {
-                <li>@note</li>
+                <div class="qp-card__detail-section">
+                    <h4 class="qp-card__detail-title">@detail.Title</h4>
+                    <ul class="qp-card__detail-list">
+                        @foreach (var item in detail.Items)
+                        {
+                            <li>@item</li>
+                        }
+                    </ul>
+                </div>
             }
-            @foreach (var contribution in Prediction.SignalContributions)
-            {
-                <li>
-                    @contribution.Label:
-                    @(contribution.Available ? (contribution.Detail ?? "available") : (contribution.Detail ?? "unavailable"))
-                    @if (contribution.IsUnconfirmed)
-                    {
-                        <text> (unconfirmed)</text>
-                    }
-                </li>
-            }
-        </ul>
+        </div>
     }
 </article>
 
@@ -91,20 +71,12 @@
     public Prediction Prediction { get; set; } = default!;
 
     private bool expanded;
-    private IReadOnlyList<SignalChip> highlightSignals = [];
+    private IReadOnlyList<QuickPickDisplay.DetailSection> detailSections = [];
 
     protected override void OnParametersSet()
     {
-        highlightSignals = Prediction.SupportingIntelligence
-            .Where(s => !string.IsNullOrWhiteSpace(s))
-            .Take(3)
-            .Select(s => new SignalChip(
-                s,
-                s.StartsWith("Unconfirmed", StringComparison.OrdinalIgnoreCase)))
-            .ToList();
+        detailSections = QuickPickDisplay.BuildDetailSections(Prediction);
     }
 
     private void Toggle() => expanded = !expanded;
-
-    private sealed record SignalChip(string Text, bool IsUnconfirmed);
 }

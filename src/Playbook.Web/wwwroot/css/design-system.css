@@ -95,13 +95,18 @@
 html,
 body {
     margin: 0;
+    width: 100%;
+    max-width: 100%;
     min-height: 100%;
+    overflow-x: clip;
     font-family: var(--pb-font-sans);
     font-size: var(--pb-text-md);
     font-weight: var(--pb-weight-regular);
     line-height: var(--pb-leading-normal);
     color: var(--pb-color-text);
     background: var(--pb-color-bg);
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
 }
@@ -169,13 +174,14 @@ ul, ol {
 
 .pb-page {
     width: 100%;
-    max-width: var(--pb-content-max);
+    max-width: min(100%, var(--pb-content-max));
     margin: 0 auto;
+    min-width: 0;
     animation: pb-fade-up var(--pb-transition-slow) both;
 }
 
 .pb-page__header {
-    margin-bottom: var(--pb-space-8);
+    margin-bottom: var(--pb-space-6);
 }
 
 .pb-page__title {
@@ -228,24 +234,34 @@ ul, ol {
     padding: 0.2rem 0.55rem;
     border-radius: var(--pb-radius-full);
     font-size: var(--pb-text-xs);
-    font-weight: var(--pb-weight-medium);
+    font-weight: var(--pb-weight-semibold);
     background: var(--pb-color-surface-active);
-    color: var(--pb-color-text-secondary);
+    color: #d7dee6;
+    border: 1px solid var(--pb-color-border-strong);
 }
 
 .pb-badge--accent {
-    background: var(--pb-color-accent-soft);
-    color: var(--pb-color-accent);
+    background: rgba(62, 207, 142, 0.18);
+    color: #7dffc0;
+    border-color: rgba(62, 207, 142, 0.45);
 }
 
 .pb-badge--warning {
-    background: rgba(230, 184, 77, 0.14);
-    color: var(--pb-color-warning);
+    background: rgba(230, 184, 77, 0.2);
+    color: #f3c96a;
+    border-color: rgba(230, 184, 77, 0.5);
 }
 
 .pb-badge--danger {
-    background: rgba(224, 107, 107, 0.16);
-    color: var(--pb-color-danger);
+    background: rgba(224, 107, 107, 0.2);
+    color: #f0a0a0;
+    border-color: rgba(224, 107, 107, 0.5);
+}
+
+.pb-badge--info {
+    background: rgba(107, 179, 224, 0.2);
+    color: #9fd0ef;
+    border-color: rgba(107, 179, 224, 0.5);
 }
 
 .pb-dot {
