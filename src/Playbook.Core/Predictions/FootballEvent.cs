@@ -19,28 +19,40 @@ public sealed class FootballEvent
 
     public NflSeasonPhase Phase { get; init; } = NflSeasonPhase.RegularSeason;
 
-    /// <summary>Week number within the phase (preseason week, regular week, etc.).</summary>
+    /// <summary>
+    /// Week number within the phase.
+    /// Preseason 1–3, regular 1–18, postseason 1–4 (Wild Card → Super Bowl).
+    /// </summary>
     public int Week { get; init; }
+
+    /// <summary>
+    /// Optional phase hint from the prop provider sport key
+    /// (e.g. americanfootball_nfl_preseason → Preseason). Used during enrichment.
+    /// </summary>
+    public NflSeasonPhase? PhaseHint { get; init; }
 
     public string DisplayName => $"{AwayTeam} @ {HomeTeam}";
 
-    /// <summary>Compact slate label, e.g. "Preseason · Week 1 · NE @ SEA · Aug 14".</summary>
-    public string ContextLabel
+    public string MatchupKey =>
+        string.Join(" ", new[] { AwayTeam, HomeTeam, $"{AwayTeam}@{HomeTeam}", $"{AwayTeam} vs {HomeTeam}" });
+
+    public string WeekLabel => new NflWeekRef(Season, Phase, Week).WeekLabel;
+
+    public string PhaseLabel => new NflWeekRef(Season, Phase, Week).PhaseLabel;
+
+    /// <summary>Slate identity line, e.g. "Preseason · Week 1 · Aug 14".</summary>
+    public string SlateLabel
     {
         get
         {
-            var phase = Phase switch
-            {
-                NflSeasonPhase.Preseason => "Preseason",
-                NflSeasonPhase.RegularSeason => "Regular Season",
-                NflSeasonPhase.Postseason => "Postseason",
-                _ => Phase.ToString()
-            };
-            var weekPart = Week > 0 ? $"Week {Week}" : "Week —";
+            var slate = new NflWeekRef(Season, Phase, Week).DisplayLabel;
             var date = CommenceTime.ToLocalTime().ToString("MMM d");
-            return $"{phase} · {weekPart} · {DisplayName} · {date}";
+            return $"{slate} · {date}";
         }
     }
+
+    /// <summary>Full context, e.g. "Preseason · Week 1 · DET @ CIN · Aug 14".</summary>
+    public string ContextLabel => $"{new NflWeekRef(Season, Phase, Week).DisplayLabel} · {DisplayName} · {CommenceTime.ToLocalTime():MMM d}";
 
     public NflWeekRef WeekRef => new(Season, Phase, Week);
 }

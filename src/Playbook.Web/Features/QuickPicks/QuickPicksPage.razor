@@ -15,10 +15,6 @@
         <p class="pb-page__subtitle">Playbook's strongest football predictions.</p>
         <p class="qp-page__meta">
             <span class="qp-data-badge qp-data-badge--@(dataModeCss)">@dataModeLabel</span>
-            @if (!string.IsNullOrWhiteSpace(slateLabel))
-            {
-                <span class="qp-slate-badge">@slateLabel</span>
-            }
             Independent of fantasy leagues ·
             @SyncStatus.PropProvider ·
             Last updated @(SyncStatus.LastPredictionRun?.ToLocalTime().ToString("h:mm:ss tt") ?? "—")
@@ -40,48 +36,82 @@
         }
     </header>
 
-    <section class="qp-section" aria-labelledby="qp-top-heading">
-        <h2 id="qp-top-heading" class="qp-section__title">Top Picks</h2>
-        <p class="qp-section__subtitle">Strongest opportunities@(string.IsNullOrWhiteSpace(slateLabel) ? "" : $" · {slateLabel}")</p>
-        @if (topPicks.Count == 0)
-        {
-            <p class="pb-empty">No high-confidence picks yet. Check Watch or wait for fresh lines.</p>
-        }
-        else
-        {
-            <div class="qp-grid">
-                @foreach (var pick in topPicks)
-                {
-                    <PredictionCard Prediction="pick" />
-                }
-            </div>
-        }
-    </section>
+    @if (selected is not null && slates.Count > 0)
+    {
+        <SlateNavigator Selected="selected" Slates="slates" OnSelected="OnSlateSelected" />
+    }
+    else
+    {
+        <p class="pb-empty">No NFL slates with markets are available yet.</p>
+    }
 
-    <section class="qp-section" aria-labelledby="qp-watch-heading">
-        <h2 id="qp-watch-heading" class="qp-section__title">Watch</h2>
-        <p class="qp-section__subtitle">Interesting but lower-confidence predictions</p>
-        @if (watchPicks.Count == 0)
-        {
-            <p class="pb-empty">No watch-list predictions right now.</p>
-        }
-        else
-        {
-            <div class="qp-grid">
-                @foreach (var pick in watchPicks)
-                {
-                    <PredictionCard Prediction="pick" />
-                }
-            </div>
-        }
-    </section>
+    <QuickPicksFilterBar Filters="filters" FiltersChanged="OnFiltersChanged" />
+
+    @if (filters.StrongestOnly)
+    {
+        <section class="qp-section" aria-labelledby="qp-top-heading">
+            <h2 id="qp-top-heading" class="qp-section__title">Top Picks</h2>
+            <p class="qp-section__subtitle">Strongest opportunities@(selected is null ? "" : $" · {selected.DisplayLabel}")</p>
+            @if (visibleTop.Count == 0)
+            {
+                <p class="pb-empty">No high-confidence picks for this slate and filter. Try Watch or All props.</p>
+            }
+            else
+            {
+                <div class="qp-grid">
+                    @foreach (var pick in visibleTop)
+                    {
+                        <PredictionCard @key="pick.Id" Prediction="pick" />
+                    }
+                </div>
+            }
+        </section>
+
+        <section class="qp-section" aria-labelledby="qp-watch-heading">
+            <h2 id="qp-watch-heading" class="qp-section__title">Watch</h2>
+            <p class="qp-section__subtitle">Interesting but lower-confidence opportunities</p>
+            @if (visibleWatch.Count == 0)
+            {
+                <p class="pb-empty">No watch-list predictions for this filter.</p>
+            }
+            else
+            {
+                <div class="qp-grid">
+                    @foreach (var pick in visibleWatch)
+                    {
+                        <PredictionCard @key="pick.Id" Prediction="pick" />
+                    }
+                </div>
+            }
+        </section>
+    }
+    else
+    {
+        <section class="qp-section" aria-labelledby="qp-all-heading">
+            <h2 id="qp-all-heading" class="qp-section__title">All Props</h2>
+            <p class="qp-section__subtitle">Every evaluated opportunity on this slate</p>
+            @if (visibleAll.Count == 0)
+            {
+                <p class="pb-empty">No props match this filter on the selected slate.</p>
+            }
+            else
+            {
+                <div class="qp-grid">
+                    @foreach (var pick in visibleAll)
+                    {
+                        <PredictionCard @key="pick.Id" Prediction="pick" />
+                    }
+                </div>
+            }
+        </section>
+    }
 
     <section class="qp-section" aria-labelledby="qp-upcoming-heading">
-        <h2 id="qp-upcoming-heading" class="qp-section__title">Upcoming</h2>
-        <p class="qp-section__subtitle">Games in this week’s slate</p>
+        <h2 id="qp-upcoming-heading" class="qp-section__title">Games</h2>
+        <p class="qp-section__subtitle">Matchups on this slate</p>
         @if (events.Count == 0)
         {
-            <p class="pb-empty">No upcoming events loaded for this week.</p>
+            <p class="pb-empty">No games loaded for this slate.</p>
         }
         else
         {
@@ -90,7 +120,7 @@
                 {
                     <li>
                         <span class="qp-upcoming__match">@ev.DisplayName</span>
-                        <span class="qp-upcoming__time">@ev.ContextLabel</span>
+                        <span class="qp-upcoming__time">@ev.SlateLabel · @ev.CommenceTime.ToLocalTime().ToString("ddd h:mm tt")</span>
                     </li>
                 }
             </ul>
@@ -99,23 +129,54 @@
 </section>
 
 @code {
+    private readonly QuickPickFilters filters = new();
+    private IReadOnlyList<NflSlate> slates = [];
+    private NflWeekRef? selected;
     private IReadOnlyList<Prediction> topPicks = [];
     private IReadOnlyList<Prediction> watchPicks = [];
+    private IReadOnlyList<Prediction> slatePredictions = [];
+    private IReadOnlyList<Prediction> visibleTop = [];
+    private IReadOnlyList<Prediction> visibleWatch = [];
+    private IReadOnlyList<Prediction> visibleAll = [];
     private IReadOnlyList<FootballEvent> events = [];
     private string dataModeLabel = "MOCK DATA";
     private string dataModeCss = "mock";
-    private string slateLabel = "";
 
-    protected override void OnInitialized()
+    protected override void OnInitialized() => ReloadFromBoard();
+
+    private void ReloadFromBoard()
     {
+        slates = Board.AvailableSlates;
+        selected = Board.SelectedWeek;
         topPicks = Board.TopPicks;
         watchPicks = Board.WatchPicks;
+        slatePredictions = Board.SlatePredictions;
         events = Board.Upcoming;
-        slateLabel = Board.SelectedWeek?.DisplayLabel ?? Board.SeasonContext?.DisplayLabel ?? "";
+        ApplyFilters();
 
         var isLive = string.Equals(SyncStatus.ProviderStatus, "Live", StringComparison.OrdinalIgnoreCase)
                      && !SyncStatus.UsedFallback;
         dataModeLabel = isLive ? "LIVE DATA" : SyncStatus.UsedFallback ? "MOCK FALLBACK" : "MOCK DATA";
         dataModeCss = isLive ? "live" : "mock";
+    }
+
+    private void OnSlateSelected(NflWeekRef slate)
+    {
+        if (Board.TrySelectWeek(slate))
+        {
+            ReloadFromBoard();
+        }
+    }
+
+    private void OnFiltersChanged() => ApplyFilters();
+
+    private void ApplyFilters()
+    {
+        visibleTop = filters.Apply(topPicks).ToList();
+        visibleWatch = filters.Apply(watchPicks).ToList();
+        visibleAll = filters.Apply(slatePredictions)
+            .OrderByDescending(p => p.OpportunityScore)
+            .ThenByDescending(p => p.Confidence)
+            .ToList();
     }
 }

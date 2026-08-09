@@ -35,7 +35,7 @@ public class QuickPicksEngineTests
         Assert.Contains("above", prediction.Reasoning, StringComparison.OrdinalIgnoreCase);
         Assert.NotEmpty(prediction.SignalContributions);
         Assert.Equal("0.3", prediction.EngineVersion);
-        Assert.Contains("Week", prediction.ContextLabel, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Week", prediction.Event.SlateLabel, StringComparison.OrdinalIgnoreCase);
         Assert.NotNull(prediction.LineUpdatedAt);
     }
 
@@ -239,7 +239,8 @@ public class QuickPicksEngineTests
         Assert.NotNull(quickPicks.SelectedWeek);
         Assert.NotEmpty(quickPicks.AvailableWeeks);
         Assert.All(all, p => Assert.True(quickPicks.SelectedWeek!.Matches(p.Event)));
-        Assert.All(all, p => Assert.Contains("Week", p.ContextLabel, StringComparison.OrdinalIgnoreCase));
+        Assert.All(all, p => Assert.Contains("Week", p.Event.SlateLabel, StringComparison.OrdinalIgnoreCase));
+        Assert.All(all, p => Assert.True(p.Event.Week <= 3 || p.Event.Phase != NflSeasonPhase.Preseason));
     }
 
     [Fact]

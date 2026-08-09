@@ -19,15 +19,33 @@ public sealed class NflSeasonContext
 
     /// <summary>
     /// Phase-relative start date from the NFL state provider (preseason start while pre;
-    /// regular-season start once regular begins). Used to map kickoff → week.
+    /// regular-season start once regular begins).
     /// </summary>
     public DateOnly? PhaseStartDate { get; init; }
+
+    /// <summary>
+    /// Regular-season kickoff week start when known. Used to separate preseason vs regular
+    /// when events are mixed. Null until regular season (or inferred from Odds events).
+    /// </summary>
+    public DateOnly? RegularSeasonStartDate { get; init; }
 
     public DateTimeOffset ResolvedAt { get; init; } = DateTimeOffset.UtcNow;
 
     public string? Source { get; init; }
 
-    public NflWeekRef CurrentWeekRef => new(Season, Phase, Week > 0 ? Week : DisplayWeek);
+    public NflWeekRef CurrentWeekRef
+    {
+        get
+        {
+            var week = Week > 0 ? Week : DisplayWeek;
+            if (Phase == NflSeasonPhase.Preseason)
+            {
+                week = Math.Clamp(week, 1, NflWeekRef.MaxPreseasonWeeks);
+            }
+
+            return new NflWeekRef(Season, Phase, week);
+        }
+    }
 
     public string PhaseLabel => CurrentWeekRef.PhaseLabel;
 

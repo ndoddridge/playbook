@@ -2,6 +2,17 @@
 
 All notable project changes are recorded here.
 
+## [Unreleased] — Quick Picks slate navigator + event-driven NFL calendar
+
+### Fixed / Added
+
+- **Root cause of “Preseason · Week 5”:** regular-season Odds markets were labeled with the preseason phase-start date. Live provider now loads `americanfootball_nfl_preseason` + `americanfootball_nfl`, and weeks are clustered from real kickoffs (Eastern Tuesday weeks)
+- Preseason capped at **3 weeks**; regular 1–18; postseason rounds Wild Card → Super Bowl
+- Default slate = **next incomplete available slate** (never invents weeks; never mixes slates)
+- Shared `NflSlate` model for UI, retrieval, filtering, and intelligence scoping
+- Slate navigator (Previous / Next + week chips) and compact team/player/matchup/market filters
+- Cards show player, matchup, slate date, market, and side clearly
+
 ## [Unreleased] — NFL week/game context for Quick Picks (Engine v0.3)
 
 ### Added / Changed

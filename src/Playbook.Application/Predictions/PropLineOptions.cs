@@ -27,7 +27,8 @@ public sealed class PropLineOptions
     /// <summary>Lines older than this are marked Stale (never shown as Live).</summary>
     public int StaleAfterMinutes { get; set; } = 180;
 
-    public int MaxEvents { get; set; } = 8;
+    /// <summary>Max events loaded per Odds sport key (preseason / regular).</summary>
+    public int MaxEvents { get; set; } = 24;
 
     public int MaxPlayerPropsPerEvent { get; set; } = 40;
 
@@ -52,7 +53,14 @@ public sealed class OddsApiOptions
     /// </summary>
     public string ApiKey { get; set; } = string.Empty;
 
+    /// <summary>Regular-season / postseason Odds sport key.</summary>
     public string SportKey { get; set; } = "americanfootball_nfl";
+
+    /// <summary>Preseason Odds sport key (separate market catalog).</summary>
+    public string PreseasonSportKey { get; set; } = "americanfootball_nfl_preseason";
+
+    /// <summary>When true, also load preseason markets while that sport is active.</summary>
+    public bool IncludePreseasonSport { get; set; } = true;
 
     public string Regions { get; set; } = "us";
 

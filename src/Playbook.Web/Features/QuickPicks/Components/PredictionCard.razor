@@ -3,9 +3,10 @@
 
 <article class="qp-card">
     <header class="qp-card__header">
-        <div>
+        <div class="qp-card__identity">
             <h3 class="qp-card__subject">@Prediction.SubjectLabel</h3>
-            <p class="qp-card__event">@Prediction.ContextLabel</p>
+            <p class="qp-card__matchup">@Prediction.Event.DisplayName</p>
+            <p class="qp-card__slate">@Prediction.Event.SlateLabel</p>
         </div>
         <span class="@QuickPickDisplay.FreshnessCss(Prediction.LineFreshness)">
             @QuickPickDisplay.FreshnessLabel(Prediction.LineFreshness)

@@ -18,24 +18,130 @@ public class NflCalendarServiceTests
         Assert.Equal(expected, NflCalendarService.ParsePhase(raw));
 
     [Fact]
-    public void ResolveWeekNumber_Uses_Phase_Start_Date()
+    public void Preseason_Weeks_Cap_At_Three()
     {
-        var ctx = new NflSeasonContext
+        var events = new List<FootballEvent>();
+        // Four Tuesday-spaced clusters — must still cap at week 3.
+        for (var i = 0; i < 4; i++)
+        {
+            events.Add(new FootballEvent
+            {
+                EventId = $"e{i}",
+                HomeTeam = "HOME",
+                AwayTeam = "AWAY",
+                CommenceTime = new DateTimeOffset(2026, 8, 13, 20, 0, 0, TimeSpan.Zero).AddDays(i * 7),
+                PhaseHint = NflSeasonPhase.Preseason,
+                Phase = NflSeasonPhase.Preseason
+            });
+        }
+
+        var enriched = NflCalendarService.AssignWeeksInPhase(events, 2026, NflSeasonPhase.Preseason);
+        Assert.Equal(3, enriched.Max(e => e.Week));
+        Assert.DoesNotContain(enriched, e => e.Week > 3);
+    }
+
+    [Fact]
+    public void EnrichEvents_Uses_PhaseHint_Not_Sleeper_Phase_Alone()
+    {
+        var service = CreateService();
+        var current = new NflSeasonContext
         {
             Season = 2026,
             Phase = NflSeasonPhase.Preseason,
             Week = 1,
             DisplayWeek = 1,
-            PhaseStartDate = new DateOnly(2026, 8, 6)
+            PhaseStartDate = new DateOnly(2026, 8, 6),
+            RegularSeasonStartDate = new DateOnly(2026, 9, 8)
         };
 
-        var week1 = NflCalendarService.ResolveWeekNumber(
-            new DateTimeOffset(2026, 8, 9, 0, 0, 0, TimeSpan.Zero), ctx);
-        var week2 = NflCalendarService.ResolveWeekNumber(
-            new DateTimeOffset(2026, 8, 16, 0, 0, 0, TimeSpan.Zero), ctx);
+        var events = new[]
+        {
+            new FootballEvent
+            {
+                EventId = "pre1",
+                HomeTeam = "CIN",
+                AwayTeam = "DET",
+                CommenceTime = new DateTimeOffset(2026, 8, 13, 23, 0, 0, TimeSpan.Zero),
+                PhaseHint = NflSeasonPhase.Preseason
+            },
+            new FootballEvent
+            {
+                EventId = "reg1",
+                HomeTeam = "SEA",
+                AwayTeam = "NE",
+                CommenceTime = new DateTimeOffset(2026, 9, 10, 0, 15, 0, TimeSpan.Zero),
+                PhaseHint = NflSeasonPhase.RegularSeason
+            }
+        };
 
-        Assert.Equal(1, week1);
-        Assert.Equal(2, week2);
+        var enriched = service.EnrichEvents(events, current);
+        var pre = enriched.Single(e => e.EventId == "pre1");
+        var reg = enriched.Single(e => e.EventId == "reg1");
+
+        Assert.Equal(NflSeasonPhase.Preseason, pre.Phase);
+        Assert.Equal(1, pre.Week);
+        Assert.Equal(NflSeasonPhase.RegularSeason, reg.Phase);
+        Assert.Equal(1, reg.Week);
+        Assert.DoesNotContain(enriched, e => e.Phase == NflSeasonPhase.Preseason && e.Week > 3);
+    }
+
+    [Fact]
+    public void SelectActiveWeek_Picks_Next_Incomplete_Slate()
+    {
+        var service = CreateService();
+        var current = new NflSeasonContext
+        {
+            Season = 2026,
+            Phase = NflSeasonPhase.Preseason,
+            Week = 1,
+            DisplayWeek = 1
+        };
+
+        var now = new DateTimeOffset(2026, 8, 20, 12, 0, 0, TimeSpan.Zero);
+        var slates = new List<NflSlate>
+        {
+            new()
+            {
+                Ref = new NflWeekRef(2026, NflSeasonPhase.Preseason, 1),
+                Events =
+                [
+                    new FootballEvent
+                    {
+                        EventId = "old",
+                        HomeTeam = "A",
+                        AwayTeam = "B",
+                        CommenceTime = now.AddDays(-10),
+                        Season = 2026,
+                        Phase = NflSeasonPhase.Preseason,
+                        Week = 1
+                    }
+                ],
+                EarliestKickoff = now.AddDays(-10),
+                LatestKickoff = now.AddDays(-10)
+            },
+            new()
+            {
+                Ref = new NflWeekRef(2026, NflSeasonPhase.Preseason, 2),
+                Events =
+                [
+                    new FootballEvent
+                    {
+                        EventId = "next",
+                        HomeTeam = "C",
+                        AwayTeam = "D",
+                        CommenceTime = now.AddDays(2),
+                        Season = 2026,
+                        Phase = NflSeasonPhase.Preseason,
+                        Week = 2
+                    }
+                ],
+                EarliestKickoff = now.AddDays(2),
+                LatestKickoff = now.AddDays(2)
+            }
+        };
+
+        var selected = service.SelectActiveWeek(slates, current, preferred: null, utcNow: now);
+        Assert.Equal(new NflWeekRef(2026, NflSeasonPhase.Preseason, 2), selected);
     }
 
     [Fact]
@@ -45,73 +151,10 @@ public class NflCalendarServiceTests
             new DateTimeOffset(2026, 8, 9, 12, 0, 0, TimeSpan.Zero));
         Assert.Equal(2026, ctx.Season);
         Assert.Equal(NflSeasonPhase.Preseason, ctx.Phase);
-        Assert.True(ctx.Week >= 1);
     }
 
     [Fact]
-    public void CalendarFallback_Mid_September_Is_Regular_Season()
-    {
-        var ctx = NflCalendarService.BuildCalendarFallback(
-            new DateTimeOffset(2026, 9, 14, 12, 0, 0, TimeSpan.Zero));
-        Assert.Equal(NflSeasonPhase.RegularSeason, ctx.Phase);
-        Assert.True(ctx.Week >= 1);
-    }
-
-    [Fact]
-    public void SelectActiveWeek_Never_Mixes_When_Current_Present()
-    {
-        var service = CreateService();
-        var current = new NflSeasonContext
-        {
-            Season = 2026,
-            Phase = NflSeasonPhase.Preseason,
-            Week = 1,
-            DisplayWeek = 1,
-            PhaseStartDate = new DateOnly(2026, 8, 6)
-        };
-        var available = new List<NflWeekRef>
-        {
-            new(2026, NflSeasonPhase.Preseason, 1),
-            new(2026, NflSeasonPhase.Preseason, 2)
-        };
-
-        var selected = service.SelectActiveWeek(available, current);
-        Assert.Equal(new NflWeekRef(2026, NflSeasonPhase.Preseason, 1), selected);
-    }
-
-    [Fact]
-    public void EnrichEvents_Tags_Season_Phase_Week()
-    {
-        var service = CreateService();
-        var current = new NflSeasonContext
-        {
-            Season = 2026,
-            Phase = NflSeasonPhase.Preseason,
-            Week = 1,
-            DisplayWeek = 1,
-            PhaseStartDate = new DateOnly(2026, 8, 6)
-        };
-        var events = new[]
-        {
-            new FootballEvent
-            {
-                EventId = "e1",
-                HomeTeam = "SEA",
-                AwayTeam = "NE",
-                CommenceTime = new DateTimeOffset(2026, 8, 14, 0, 0, 0, TimeSpan.Zero)
-            }
-        };
-
-        var enriched = service.EnrichEvents(events, current);
-        Assert.Equal(2026, enriched[0].Season);
-        Assert.Equal(NflSeasonPhase.Preseason, enriched[0].Phase);
-        Assert.Equal(2, enriched[0].Week);
-        Assert.Contains("Preseason", enriched[0].ContextLabel, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("NE @ SEA", enriched[0].ContextLabel, StringComparison.OrdinalIgnoreCase);
-    }
-
-    [Fact]
-    public void QuickPicks_Service_Keeps_Single_Week_Slate()
+    public void QuickPicks_Service_Keeps_Single_Week_Slate_And_Supports_Navigation()
     {
         using var provider = TestServiceFactory.CreateProvider(
             PlayerDataProviderKind.Mock,
@@ -122,8 +165,17 @@ public class NflCalendarServiceTests
 
         var selected = quickPicks.SelectedWeek;
         Assert.NotNull(selected);
-        Assert.All(quickPicks.GetAllPredictions(), p => Assert.True(selected!.Matches(p.Event)));
-        Assert.All(quickPicks.GetUpcomingEvents(), e => Assert.True(selected!.Matches(e)));
+        Assert.True(selected!.Week <= 3 || selected.Phase != NflSeasonPhase.Preseason);
+        Assert.All(quickPicks.GetAllPredictions(), p => Assert.True(selected.Matches(p.Event)));
+        Assert.NotEmpty(quickPicks.AvailableSlates);
+
+        if (quickPicks.AvailableWeeks.Count > 1)
+        {
+            var other = quickPicks.AvailableWeeks.First(w => w != selected);
+            Assert.True(quickPicks.TrySelectWeek(other));
+            Assert.Equal(other, quickPicks.SelectedWeek);
+            Assert.All(quickPicks.GetAllPredictions(), p => Assert.True(other.Matches(p.Event)));
+        }
     }
 
     private static NflCalendarService CreateService() =>

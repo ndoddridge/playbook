@@ -125,18 +125,18 @@ Stale/unavailable lines are never presented as Live. Top Picks only includes Liv
 ## Pipeline
 
 ```
-Live/Mock prop lines (IPropLineProvider)
+Live Odds sports:
+  americanfootball_nfl_preseason + americanfootball_nfl
         ↓
-INflCalendarService → tag season/phase/week → filter to selected week
+INflCalendarService
+  (cluster kickoffs → NflSlate; preseason ≤ 3 weeks)
         ↓
-Intelligence + Injury services + PropStatProjector (phase-aware)
+Select next incomplete slate (or user-selected)
         ↓
-QuickPickEvaluationContext
+Intelligence + Injury + PropStatProjector (phase-aware)
         ↓
-QuickPicksEngine v0.3 (QuickPicks:Scoring weights)
-        ↓
-Edge / probability / confidence / OpportunityScore
-+ SignalContributions → Quick Picks UI
+QuickPicksEngine v0.3 → board + navigator + filters
 ```
 
-Engine v0.3 is week-scoped and intelligence-driven. Every pick belongs to one NFL week/game. Projection vs line is one signal among health, current/historical injury, unconfirmed buzz (labeled), usage/opportunity, and capped recent facts. Preseason uses regular-season production as a prior only. Missing intelligence reduces confidence rather than inventing values.
+Sport keys: `PropLines:OddsApi:SportKey` (regular/post) and `PreseasonSportKey` (preseason).
+Slates are built only from real events — never invented week numbers.

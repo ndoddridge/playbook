@@ -39,6 +39,7 @@ public sealed class QuickPicksService : IQuickPicksService
     private IReadOnlyList<Prediction> _predictions = [];
     private IReadOnlyList<FootballEvent> _events = [];
     private IReadOnlyList<NflWeekRef> _availableWeeks = [];
+    private IReadOnlyList<NflSlate> _availableSlates = [];
     private NflWeekRef? _selectedWeek;
     private NflWeekRef? _preferredWeek;
     private NflSeasonContext? _seasonContext;
@@ -81,6 +82,15 @@ public sealed class QuickPicksService : IQuickPicksService
         {
             EnsureLoaded();
             return _selectedWeek;
+        }
+    }
+
+    public IReadOnlyList<NflSlate> AvailableSlates
+    {
+        get
+        {
+            EnsureLoaded();
+            return _availableSlates;
         }
     }
 
@@ -138,6 +148,12 @@ public sealed class QuickPicksService : IQuickPicksService
             .ThenByDescending(p => p.Confidence)
             .Take(Math.Max(1, count))
             .ToList();
+    }
+
+    public IReadOnlyList<Prediction> GetSlatePredictions()
+    {
+        EnsureLoaded();
+        return _predictions;
     }
 
     public IReadOnlyList<FootballEvent> GetUpcomingEvents()
@@ -228,13 +244,36 @@ public sealed class QuickPicksService : IQuickPicksService
             .ToList();
 
         var season = _calendar.GetCurrentContext();
-        _seasonContext = season;
 
         var rawEvents = lines
             .Select(l => l.Event)
             .GroupBy(e => e.EventId)
             .Select(g => g.First())
             .ToList();
+
+        // If regular-season Odds events are present, record their week-start as the RS open
+        // so phase inference stays event-driven (never invents weeks).
+        var firstRegular = rawEvents
+            .Where(e => e.PhaseHint == NflSeasonPhase.RegularSeason || e.Phase == NflSeasonPhase.RegularSeason)
+            .OrderBy(e => e.CommenceTime)
+            .FirstOrDefault();
+        if (firstRegular is not null && season.RegularSeasonStartDate is null)
+        {
+            season = new NflSeasonContext
+            {
+                Season = season.Season,
+                Phase = season.Phase,
+                Week = season.Week,
+                DisplayWeek = season.DisplayWeek,
+                PhaseStartDate = season.PhaseStartDate,
+                RegularSeasonStartDate = NflCalendarService.NflWeekStartEastern(firstRegular.CommenceTime),
+                ResolvedAt = season.ResolvedAt,
+                Source = season.Source
+            };
+        }
+
+        _seasonContext = season;
+
         var enrichedEvents = _calendar.EnrichEvents(rawEvents, season)
             .ToDictionary(e => e.EventId, StringComparer.OrdinalIgnoreCase);
 
@@ -242,8 +281,14 @@ public sealed class QuickPicksService : IQuickPicksService
             .Select(l => CloneWithEvent(l, enrichedEvents.TryGetValue(l.Event.EventId, out var ev) ? ev : l.Event))
             .ToList();
 
-        _availableWeeks = _calendar.GetAvailableWeeks(_enrichedLines.Select(l => l.Event).ToList());
-        _selectedWeek = _calendar.SelectActiveWeek(_availableWeeks, season, _preferredWeek);
+        var distinctEvents = _enrichedLines
+            .Select(l => l.Event)
+            .GroupBy(e => e.EventId)
+            .Select(g => g.First())
+            .ToList();
+        _availableSlates = _calendar.BuildSlates(distinctEvents);
+        _availableWeeks = _availableSlates.Select(s => s.Ref).ToList();
+        _selectedWeek = _calendar.SelectActiveWeek(_availableSlates, season, _preferredWeek);
 
         var games = _enrichedLines.Select(l => l.Event.EventId).Distinct().Count();
         var markets = _enrichedLines.Select(l => l.Market).Distinct().Count();
@@ -272,7 +317,16 @@ public sealed class QuickPicksService : IQuickPicksService
     private void BuildPredictionsForSelectedWeekLocked()
     {
         var season = _seasonContext ?? _calendar.GetCurrentContext();
-        var selected = _selectedWeek ?? _calendar.SelectActiveWeek(_availableWeeks, season, _preferredWeek);
+        NflWeekRef selected;
+        if (_preferredWeek is not null && _availableWeeks.Contains(_preferredWeek))
+        {
+            selected = _preferredWeek;
+        }
+        else
+        {
+            selected = _calendar.SelectActiveWeek(_availableSlates, season, _preferredWeek);
+        }
+
         _selectedWeek = selected;
 
         // Never mix weeks: evaluate only lines for the active slate week.

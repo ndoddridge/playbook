@@ -16,6 +16,8 @@ public sealed class QuickPicksBoard : IQuickPicksBoard
 
     public NflWeekRef? SelectedWeek => _service.SelectedWeek;
 
+    public IReadOnlyList<NflSlate> AvailableSlates => _service.AvailableSlates;
+
     public IReadOnlyList<NflWeekRef> AvailableWeeks => _service.AvailableWeeks;
 
     public NflSeasonContext? SeasonContext => _service.SeasonContext;
@@ -23,6 +25,8 @@ public sealed class QuickPicksBoard : IQuickPicksBoard
     public IReadOnlyList<Prediction> TopPicks => _service.GetTopPicks(8);
 
     public IReadOnlyList<Prediction> WatchPicks => _service.GetWatchPicks(8);
+
+    public IReadOnlyList<Prediction> SlatePredictions => _service.GetSlatePredictions();
 
     public IReadOnlyList<FootballEvent> Upcoming => _service.GetUpcomingEvents();
 

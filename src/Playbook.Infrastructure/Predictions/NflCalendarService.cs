@@ -9,12 +9,15 @@ using Playbook.Infrastructure.Players;
 namespace Playbook.Infrastructure.Predictions;
 
 /// <summary>
-/// Resolves NFL season/phase/week from Sleeper state/nfl and maps kickoffs → week numbers.
-/// Automatically follows pre → regular → post transitions via the live state payload.
+/// Builds NFL slates from real event kickoff times.
+/// Preseason is capped at 3 weeks. Default selection is the next incomplete slate.
 /// </summary>
 public sealed class NflCalendarService : INflCalendarService
 {
     public const string HttpClientName = LivePlayerDataProvider.HttpClientName;
+
+    private static readonly TimeZoneInfo Eastern =
+        ResolveEasternTimeZone();
 
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<NflCalendarService> _logger;
@@ -58,97 +61,234 @@ public sealed class NflCalendarService : INflCalendarService
             return events;
         }
 
-        return events
-            .Select(ev => EnrichOne(ev, current))
+        // Assign phase from provider hint when present; otherwise infer from kickoff vs regular start.
+        var withPhase = events
+            .Select(ev =>
+            {
+                var phase = ev.PhaseHint
+                            ?? InferPhase(ev.CommenceTime, current);
+                return Clone(ev, current.Season, phase, week: 0);
+            })
+            .ToList();
+
+        var enriched = new List<FootballEvent>(withPhase.Count);
+        foreach (var phaseGroup in withPhase.GroupBy(e => e.Phase).OrderBy(g => g.Key))
+        {
+            enriched.AddRange(AssignWeeksInPhase(phaseGroup.ToList(), current.Season, phaseGroup.Key));
+        }
+
+        return enriched
+            .OrderBy(e => e.CommenceTime)
+            .ToList();
+    }
+
+    public IReadOnlyList<NflSlate> BuildSlates(IReadOnlyList<FootballEvent> enrichedEvents)
+    {
+        return enrichedEvents
+            .Where(e => e.Season > 0 && e.Week > 0)
+            .GroupBy(e => e.WeekRef)
+            .Select(g =>
+            {
+                var ordered = g.OrderBy(e => e.CommenceTime).ToList();
+                return new NflSlate
+                {
+                    Ref = g.Key,
+                    Events = ordered,
+                    EarliestKickoff = ordered[0].CommenceTime,
+                    LatestKickoff = ordered[^1].CommenceTime
+                };
+            })
+            .OrderBy(s => s.Ref.Season)
+            .ThenBy(s => s.Ref.Phase)
+            .ThenBy(s => s.Ref.Week)
             .ToList();
     }
 
     public IReadOnlyList<NflWeekRef> GetAvailableWeeks(IReadOnlyList<FootballEvent> events) =>
-        events
-            .Where(e => e.Season > 0 && e.Week > 0)
-            .Select(e => e.WeekRef)
-            .Distinct()
-            .OrderBy(w => w.Season)
-            .ThenBy(w => w.Phase)
-            .ThenBy(w => w.Week)
-            .ToList();
+        BuildSlates(events).Select(s => s.Ref).ToList();
 
     public NflWeekRef SelectActiveWeek(
-        IReadOnlyList<NflWeekRef> available,
+        IReadOnlyList<NflSlate> available,
         NflSeasonContext current,
-        NflWeekRef? preferred = null)
+        NflWeekRef? preferred = null,
+        DateTimeOffset? utcNow = null)
     {
+        var now = utcNow ?? DateTimeOffset.UtcNow;
         if (available.Count == 0)
         {
             return preferred ?? current.CurrentWeekRef;
         }
 
-        if (preferred is not null && available.Contains(preferred))
+        if (preferred is not null)
         {
-            return preferred;
+            var preferredSlate = available.FirstOrDefault(s => s.Ref == preferred);
+            if (preferredSlate is not null)
+            {
+                return preferredSlate.Ref;
+            }
         }
 
-        var currentRef = current.CurrentWeekRef;
-        if (available.Contains(currentRef))
+        // Next relevant slate: first incomplete slate by chronological order.
+        var nextOpen = available.FirstOrDefault(s => s.HasUpcomingOrLive(now));
+        if (nextOpen is not null)
         {
-            return currentRef;
+            return nextOpen.Ref;
         }
 
-        // Prefer the soonest week at/after current, else the latest available.
-        var atOrAfter = available
-            .Where(w =>
-                w.Season > currentRef.Season ||
-                (w.Season == currentRef.Season && w.Phase > currentRef.Phase) ||
-                (w.Season == currentRef.Season && w.Phase == currentRef.Phase && w.Week >= currentRef.Week))
-            .OrderBy(w => w.Season)
-            .ThenBy(w => w.Phase)
-            .ThenBy(w => w.Week)
-            .FirstOrDefault();
-
-        return atOrAfter ?? available[^1];
-    }
-
-    private FootballEvent EnrichOne(FootballEvent ev, NflSeasonContext current)
-    {
-        var week = ResolveWeekNumber(ev.CommenceTime, current);
-        return new FootballEvent
-        {
-            EventId = ev.EventId,
-            HomeTeam = ev.HomeTeam,
-            AwayTeam = ev.AwayTeam,
-            CommenceTime = ev.CommenceTime,
-            Season = current.Season,
-            Phase = current.Phase,
-            Week = week
-        };
+        // All complete → stay on the latest available slate.
+        return available[^1].Ref;
     }
 
     /// <summary>
-    /// Map kickoff → week using the provider phase-start date when available.
-    /// Falls back to anchoring around "now" + current week so we never hardcode a season calendar.
+    /// Cluster games inside one phase into week/round numbers using Eastern Tuesday week starts.
+    /// Preseason capped at 3; regular at 18; postseason at 4 rounds.
     /// </summary>
-    public static int ResolveWeekNumber(DateTimeOffset commenceTime, NflSeasonContext current)
+    public static IReadOnlyList<FootballEvent> AssignWeeksInPhase(
+        IReadOnlyList<FootballEvent> phaseEvents,
+        int season,
+        NflSeasonPhase phase)
     {
-        var gameDate = DateOnly.FromDateTime(commenceTime.UtcDateTime);
-
-        if (current.PhaseStartDate is DateOnly start)
+        if (phaseEvents.Count == 0)
         {
-            var days = gameDate.DayNumber - start.DayNumber;
-            if (days < 0)
-            {
-                // Slightly before published start — still treat as week 1 of the active phase.
-                return Math.Max(1, current.Week > 0 ? current.Week : 1);
-            }
-
-            return Math.Clamp((days / 7) + 1, 1, current.Phase == NflSeasonPhase.Preseason ? 5 : 22);
+            return phaseEvents;
         }
 
-        // Anchor: current week contains "today"; offset by whole weeks from UTC today.
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        var deltaDays = gameDate.DayNumber - today.DayNumber;
-        var weekOffset = (int)Math.Floor(deltaDays / 7.0);
-        var anchored = (current.Week > 0 ? current.Week : Math.Max(1, current.DisplayWeek)) + weekOffset;
-        return Math.Clamp(anchored, 1, 22);
+        var ordered = phaseEvents.OrderBy(e => e.CommenceTime).ToList();
+        var weekStarts = ordered
+            .Select(e => NflWeekStartEastern(e.CommenceTime))
+            .Distinct()
+            .OrderBy(d => d)
+            .ToList();
+
+        var maxWeeks = phase switch
+        {
+            NflSeasonPhase.Preseason => NflWeekRef.MaxPreseasonWeeks,
+            NflSeasonPhase.Postseason => NflWeekRef.MaxPostseasonRounds,
+            _ => NflWeekRef.MaxRegularSeasonWeeks
+        };
+
+        // Map each distinct week-start to sequential week numbers 1..n (capped).
+        var startToWeek = new Dictionary<DateOnly, int>();
+        for (var i = 0; i < weekStarts.Count; i++)
+        {
+            startToWeek[weekStarts[i]] = Math.Min(i + 1, maxWeeks);
+        }
+
+        return ordered
+            .Select(ev =>
+            {
+                var start = NflWeekStartEastern(ev.CommenceTime);
+                var week = startToWeek[start];
+                return Clone(ev, season, phase, week);
+            })
+            .ToList();
+    }
+
+    public static DateOnly NflWeekStartEastern(DateTimeOffset commenceTime)
+    {
+        var et = TimeZoneInfo.ConvertTime(commenceTime, Eastern);
+        var date = DateOnly.FromDateTime(et.DateTime);
+        // NFL weeks roll on Tuesday.
+        var diff = ((int)date.DayOfWeek - (int)DayOfWeek.Tuesday + 7) % 7;
+        return date.AddDays(-diff);
+    }
+
+    public static NflSeasonPhase InferPhase(DateTimeOffset commenceTime, NflSeasonContext current)
+    {
+        // Prefer live provider phase when the game is near "now"; otherwise use kickoff vs regular start.
+        if (current.RegularSeasonStartDate is DateOnly regStart)
+        {
+            var gameDate = DateOnly.FromDateTime(
+                TimeZoneInfo.ConvertTime(commenceTime, Eastern).DateTime);
+            if (gameDate < regStart)
+            {
+                return NflSeasonPhase.Preseason;
+            }
+
+            // Rough postseason window: after ~18 weeks from regular start.
+            var postStart = regStart.AddDays(18 * 7);
+            if (gameDate >= postStart)
+            {
+                return NflSeasonPhase.Postseason;
+            }
+
+            return NflSeasonPhase.RegularSeason;
+        }
+
+        return current.Phase;
+    }
+
+    public static NflSeasonPhase ParsePhase(string? seasonType) =>
+        (seasonType ?? string.Empty).Trim().ToLowerInvariant() switch
+        {
+            "pre" or "preseason" => NflSeasonPhase.Preseason,
+            "post" or "postseason" or "playoffs" => NflSeasonPhase.Postseason,
+            _ => NflSeasonPhase.RegularSeason
+        };
+
+    public static NflSeasonContext BuildCalendarFallback(DateTimeOffset? utcNow = null)
+    {
+        var now = utcNow ?? DateTimeOffset.UtcNow;
+        var year = now.Year;
+        var month = now.Month;
+        var day = now.Day;
+
+        if (month is 1 || (month == 2 && day <= 15))
+        {
+            return new NflSeasonContext
+            {
+                Season = year - 1,
+                Phase = NflSeasonPhase.Postseason,
+                Week = 1,
+                DisplayWeek = 1,
+                PhaseStartDate = new DateOnly(year, 1, 10),
+                RegularSeasonStartDate = new DateOnly(year - 1, 9, 4),
+                ResolvedAt = now,
+                Source = "CalendarFallback"
+            };
+        }
+
+        if (month is >= 2 and <= 7)
+        {
+            return new NflSeasonContext
+            {
+                Season = year,
+                Phase = NflSeasonPhase.Preseason,
+                Week = 1,
+                DisplayWeek = 1,
+                PhaseStartDate = new DateOnly(year, 8, 1),
+                RegularSeasonStartDate = new DateOnly(year, 9, 10),
+                ResolvedAt = now,
+                Source = "CalendarFallback"
+            };
+        }
+
+        if (month == 8 || (month == 9 && day < 10))
+        {
+            return new NflSeasonContext
+            {
+                Season = year,
+                Phase = NflSeasonPhase.Preseason,
+                Week = 1,
+                DisplayWeek = 1,
+                PhaseStartDate = new DateOnly(year, 8, 1),
+                RegularSeasonStartDate = new DateOnly(year, 9, 10),
+                ResolvedAt = now,
+                Source = "CalendarFallback"
+            };
+        }
+
+        return new NflSeasonContext
+        {
+            Season = year,
+            Phase = NflSeasonPhase.RegularSeason,
+            Week = 1,
+            DisplayWeek = 1,
+            PhaseStartDate = new DateOnly(year, 9, 10),
+            RegularSeasonStartDate = new DateOnly(year, 9, 10),
+            ResolvedAt = now,
+            Source = "CalendarFallback"
+        };
     }
 
     private NflSeasonContext ResolveLiveOrFallback()
@@ -163,20 +303,39 @@ public sealed class NflCalendarService : INflCalendarService
             {
                 var phase = ParsePhase(state.SeasonType);
                 var week = state.Week > 0 ? state.Week : Math.Max(1, state.DisplayWeek);
-                DateOnly? start = null;
+                if (phase == NflSeasonPhase.Preseason)
+                {
+                    week = Math.Clamp(week, 1, NflWeekRef.MaxPreseasonWeeks);
+                }
+                else if (phase == NflSeasonPhase.RegularSeason)
+                {
+                    week = Math.Clamp(week, 1, NflWeekRef.MaxRegularSeasonWeeks);
+                }
+                else
+                {
+                    week = Math.Clamp(week, 1, NflWeekRef.MaxPostseasonRounds);
+                }
+
+                DateOnly? phaseStart = null;
                 if (!string.IsNullOrWhiteSpace(state.SeasonStartDate) &&
                     DateOnly.TryParse(state.SeasonStartDate, out var parsed))
                 {
-                    start = parsed;
+                    phaseStart = parsed;
                 }
 
+                // During preseason, Sleeper's season_start_date is the pre start.
+                // Regular-season open is derived later from the first regular Odds events when available.
+                DateOnly? regularStart = phase == NflSeasonPhase.RegularSeason
+                    ? phaseStart
+                    : null;
+
                 _logger.LogInformation(
-                    "NFL calendar: {Season} {Phase} week {Week} (display {Display}) start={Start}",
+                    "NFL calendar: {Season} {Phase} week {Week} (display {Display}) phaseStart={Start}",
                     season,
                     phase,
                     week,
                     state.DisplayWeek,
-                    start?.ToString("yyyy-MM-dd") ?? "—");
+                    phaseStart?.ToString("yyyy-MM-dd") ?? "—");
 
                 return new NflSeasonContext
                 {
@@ -184,7 +343,8 @@ public sealed class NflCalendarService : INflCalendarService
                     Phase = phase,
                     Week = week,
                     DisplayWeek = state.DisplayWeek > 0 ? state.DisplayWeek : week,
-                    PhaseStartDate = start,
+                    PhaseStartDate = phaseStart,
+                    RegularSeasonStartDate = regularStart,
                     ResolvedAt = DateTimeOffset.UtcNow,
                     Source = "Sleeper"
                 };
@@ -198,87 +358,34 @@ public sealed class NflCalendarService : INflCalendarService
         return BuildCalendarFallback();
     }
 
-    /// <summary>
-    /// Date-based fallback that still transitions phases without hardcoding a single "today" slate.
-    /// Approximate NFL windows: pre Aug–early Sep, regular Sep–early Jan, post through mid-Feb.
-    /// </summary>
-    public static NflSeasonContext BuildCalendarFallback(DateTimeOffset? utcNow = null)
+    private static FootballEvent Clone(
+        FootballEvent ev,
+        int season,
+        NflSeasonPhase phase,
+        int week) =>
+        new()
+        {
+            EventId = ev.EventId,
+            HomeTeam = ev.HomeTeam,
+            AwayTeam = ev.AwayTeam,
+            CommenceTime = ev.CommenceTime,
+            Season = season,
+            Phase = phase,
+            Week = week,
+            PhaseHint = ev.PhaseHint ?? phase
+        };
+
+    private static TimeZoneInfo ResolveEasternTimeZone()
     {
-        var now = utcNow ?? DateTimeOffset.UtcNow;
-        var year = now.Year;
-        var month = now.Month;
-        var day = now.Day;
-
-        // Jan–Feb: prior season postseason (or offseason → next pre).
-        if (month is 1 || (month == 2 && day <= 15))
+        try
         {
-            return new NflSeasonContext
-            {
-                Season = year - 1,
-                Phase = NflSeasonPhase.Postseason,
-                Week = month == 1 ? Math.Clamp((day / 7) + 1, 1, 5) : 5,
-                DisplayWeek = month == 1 ? Math.Clamp((day / 7) + 1, 1, 5) : 5,
-                PhaseStartDate = new DateOnly(year, 1, 10),
-                ResolvedAt = now,
-                Source = "CalendarFallback"
-            };
+            return TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
         }
-
-        if (month is >= 2 and <= 7 || (month == 8 && day < 1))
+        catch (TimeZoneNotFoundException)
         {
-            // Offseason → upcoming preseason of this calendar year.
-            return new NflSeasonContext
-            {
-                Season = year,
-                Phase = NflSeasonPhase.Preseason,
-                Week = 1,
-                DisplayWeek = 1,
-                PhaseStartDate = new DateOnly(year, 8, 1),
-                ResolvedAt = now,
-                Source = "CalendarFallback"
-            };
+            return TimeZoneInfo.FindSystemTimeZoneById("Eastern Standard Time");
         }
-
-        if (month == 8 || (month == 9 && day < 4))
-        {
-            var start = new DateOnly(year, 8, 1);
-            var week = Math.Clamp((DateOnly.FromDateTime(now.UtcDateTime).DayNumber - start.DayNumber) / 7 + 1, 1, 4);
-            return new NflSeasonContext
-            {
-                Season = year,
-                Phase = NflSeasonPhase.Preseason,
-                Week = week,
-                DisplayWeek = week,
-                PhaseStartDate = start,
-                ResolvedAt = now,
-                Source = "CalendarFallback"
-            };
-        }
-
-        var regStart = new DateOnly(year, 9, 4);
-        var regWeek = Math.Clamp(
-            (DateOnly.FromDateTime(now.UtcDateTime).DayNumber - regStart.DayNumber) / 7 + 1,
-            1,
-            18);
-        return new NflSeasonContext
-        {
-            Season = year,
-            Phase = NflSeasonPhase.RegularSeason,
-            Week = regWeek,
-            DisplayWeek = regWeek,
-            PhaseStartDate = regStart,
-            ResolvedAt = now,
-            Source = "CalendarFallback"
-        };
     }
-
-    public static NflSeasonPhase ParsePhase(string? seasonType) =>
-        (seasonType ?? string.Empty).Trim().ToLowerInvariant() switch
-        {
-            "pre" or "preseason" => NflSeasonPhase.Preseason,
-            "post" or "postseason" or "playoffs" => NflSeasonPhase.Postseason,
-            _ => NflSeasonPhase.RegularSeason
-        };
 
     private sealed class SleeperNflState
     {

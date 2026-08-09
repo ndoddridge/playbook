@@ -55,7 +55,55 @@ public sealed class LivePropLineProvider : IPropLineProvider
 
         var client = _httpClientFactory.CreateClient(HttpClientName);
         var watch = Stopwatch.StartNew();
-        var sport = Uri.EscapeDataString(_options.OddsApi.SportKey);
+        var players = _players.GetAllPlayers();
+        var lines = new List<PropLine>();
+        var eventCount = 0;
+
+        foreach (var (sportKey, phaseHint) in ResolveSportKeys())
+        {
+            try
+            {
+                var loaded = await LoadSportAsync(
+                        client, sportKey, phaseHint, players, cancellationToken)
+                    .ConfigureAwait(false);
+                lines.AddRange(loaded.Lines);
+                eventCount += loaded.EventCount;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Odds sport {SportKey} failed; continuing with other sports", sportKey);
+            }
+        }
+
+        watch.Stop();
+        _logger.LogInformation(
+            "The Odds API loaded {Count} lines from {Events} events across sport keys in {Ms} ms",
+            lines.Count,
+            eventCount,
+            watch.ElapsedMilliseconds);
+
+        return Deduplicate(lines);
+    }
+
+    private IEnumerable<(string SportKey, NflSeasonPhase PhaseHint)> ResolveSportKeys()
+    {
+        if (_options.OddsApi.IncludePreseasonSport &&
+            !string.IsNullOrWhiteSpace(_options.OddsApi.PreseasonSportKey))
+        {
+            yield return (_options.OddsApi.PreseasonSportKey, NflSeasonPhase.Preseason);
+        }
+
+        yield return (_options.OddsApi.SportKey, NflSeasonPhase.RegularSeason);
+    }
+
+    private async Task<(IReadOnlyList<PropLine> Lines, int EventCount)> LoadSportAsync(
+        HttpClient client,
+        string sportKey,
+        NflSeasonPhase phaseHint,
+        IReadOnlyList<Core.Players.Player> players,
+        CancellationToken cancellationToken)
+    {
+        var sport = Uri.EscapeDataString(sportKey);
         var url =
             $"sports/{sport}/odds?apiKey={Uri.EscapeDataString(_options.OddsApi.ApiKey)}" +
             $"&regions={Uri.EscapeDataString(_options.OddsApi.Regions)}" +
@@ -65,11 +113,11 @@ public sealed class LivePropLineProvider : IPropLineProvider
         var events = await GetJsonAsync<List<OddsEventDto>>(client, url, cancellationToken)
             .ConfigureAwait(false) ?? [];
 
-        var players = _players.GetAllPlayers();
         var lines = new List<PropLine>();
         var staleAfter = TimeSpan.FromMinutes(Math.Clamp(_options.StaleAfterMinutes, 15, 24 * 60));
-        var maxEvents = Math.Clamp(_options.MaxEvents, 1, 16);
+        var maxEvents = Math.Clamp(_options.MaxEvents, 1, 40);
         var preferred = ParsePreferredBookmakers(_options.OddsApi.PreferredBookmakers);
+        var taken = 0;
 
         foreach (var ev in events.OrderBy(e => e.CommenceTime).Take(maxEvents))
         {
@@ -78,12 +126,15 @@ public sealed class LivePropLineProvider : IPropLineProvider
                 continue;
             }
 
+            taken++;
             var footballEvent = new FootballEvent
             {
                 EventId = ev.Id!,
                 HomeTeam = AbbreviateTeam(ev.HomeTeam) ?? ev.HomeTeam ?? "Home",
                 AwayTeam = AbbreviateTeam(ev.AwayTeam) ?? ev.AwayTeam ?? "Away",
-                CommenceTime = ev.CommenceTime
+                CommenceTime = ev.CommenceTime,
+                PhaseHint = phaseHint,
+                Phase = phaseHint
             };
 
             foreach (var book in OrderBookmakers(ev.Bookmakers, preferred))
@@ -94,63 +145,68 @@ public sealed class LivePropLineProvider : IPropLineProvider
                 }
             }
 
-            if (_options.OddsApi.FetchPlayerProps)
+            if (!_options.OddsApi.FetchPlayerProps)
             {
-                try
+                continue;
+            }
+
+            try
+            {
+                var propUrl =
+                    $"sports/{sport}/events/{Uri.EscapeDataString(ev.Id!)}/odds" +
+                    $"?apiKey={Uri.EscapeDataString(_options.OddsApi.ApiKey)}" +
+                    $"&regions={Uri.EscapeDataString(_options.OddsApi.Regions)}" +
+                    $"&markets={Uri.EscapeDataString(_options.OddsApi.PlayerPropMarkets)}" +
+                    "&oddsFormat=american";
+                var detail = await GetJsonAsync<OddsEventDto>(client, propUrl, cancellationToken)
+                    .ConfigureAwait(false);
+                if (detail?.Bookmakers is not { Count: > 0 })
                 {
-                    var propUrl =
-                        $"sports/{sport}/events/{Uri.EscapeDataString(ev.Id!)}/odds" +
-                        $"?apiKey={Uri.EscapeDataString(_options.OddsApi.ApiKey)}" +
-                        $"&regions={Uri.EscapeDataString(_options.OddsApi.Regions)}" +
-                        $"&markets={Uri.EscapeDataString(_options.OddsApi.PlayerPropMarkets)}" +
-                        "&oddsFormat=american";
-                    var detail = await GetJsonAsync<OddsEventDto>(client, propUrl, cancellationToken)
-                        .ConfigureAwait(false);
-                    if (detail?.Bookmakers is { Count: > 0 })
+                    continue;
+                }
+
+                var propCount = 0;
+                foreach (var book in OrderBookmakers(detail.Bookmakers, preferred))
+                {
+                    foreach (var market in book.Markets ?? [])
                     {
-                        var propCount = 0;
-                        foreach (var book in OrderBookmakers(detail.Bookmakers, preferred))
+                        foreach (var mapped in MapPlayerMarket(footballEvent, book, market, players, staleAfter))
                         {
-                            foreach (var market in book.Markets ?? [])
-                            {
-                                foreach (var mapped in MapPlayerMarket(footballEvent, book, market, players, staleAfter))
-                                {
-                                    lines.Add(mapped);
-                                    propCount++;
-                                    if (propCount >= _options.MaxPlayerPropsPerEvent)
-                                    {
-                                        break;
-                                    }
-                                }
-
-                                if (propCount >= _options.MaxPlayerPropsPerEvent)
-                                {
-                                    break;
-                                }
-                            }
-
+                            lines.Add(mapped);
+                            propCount++;
                             if (propCount >= _options.MaxPlayerPropsPerEvent)
                             {
                                 break;
                             }
                         }
+
+                        if (propCount >= _options.MaxPlayerPropsPerEvent)
+                        {
+                            break;
+                        }
+                    }
+
+                    if (propCount >= _options.MaxPlayerPropsPerEvent)
+                    {
+                        break;
                     }
                 }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Player props fetch failed for event {EventId}", ev.Id);
-                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Player props fetch failed for {Sport} event {EventId}", sportKey, ev.Id);
             }
         }
 
-        watch.Stop();
         _logger.LogInformation(
-            "The Odds API loaded {Count} lines from {Events} events in {Ms} ms",
+            "Odds sport {SportKey} ({Phase}): {Lines} lines from {Events}/{Total} events",
+            sportKey,
+            phaseHint,
             lines.Count,
-            Math.Min(events.Count, maxEvents),
-            watch.ElapsedMilliseconds);
+            taken,
+            events.Count);
 
-        return Deduplicate(lines);
+        return (lines, taken);
     }
 
     private static async Task<T?> GetJsonAsync<T>(

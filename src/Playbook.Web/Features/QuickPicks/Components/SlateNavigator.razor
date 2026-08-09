@@ -1,0 +1,69 @@
+@using Playbook.Core.Predictions
+
+<div class="qp-slate-nav" role="navigation" aria-label="NFL slate">
+    <div class="qp-slate-nav__controls">
+        <button type="button"
+                class="qp-slate-nav__arrow"
+                disabled="@(!CanGoPrevious)"
+                @onclick="GoPrevious"
+                aria-label="Previous slate">
+            ‹ Previous
+        </button>
+
+        <div class="qp-slate-nav__current">
+            <span class="qp-slate-nav__phase">@Selected.PhaseLabel.ToUpperInvariant()</span>
+            <span class="qp-slate-nav__week">@Selected.WeekLabel</span>
+        </div>
+
+        <button type="button"
+                class="qp-slate-nav__arrow"
+                disabled="@(!CanGoNext)"
+                @onclick="GoNext"
+                aria-label="Next slate">
+            Next ›
+        </button>
+    </div>
+
+    @if (Slates.Count > 1)
+    {
+        <div class="qp-slate-nav__chips" role="list">
+            @foreach (var slate in Slates)
+            {
+                var isActive = slate.Ref == Selected;
+                <button type="button"
+                        role="listitem"
+                        class="qp-slate-chip @(isActive ? "qp-slate-chip--active" : null) qp-slate-chip--@(slate.Ref.Phase.ToString().ToLowerInvariant())"
+                        @onclick="() => Select(slate.Ref)"
+                        aria-current="@(isActive ? "true" : "false")">
+                    @slate.Ref.ShortLabel
+                </button>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public NflWeekRef Selected { get; set; } = default!;
+
+    [Parameter, EditorRequired]
+    public IReadOnlyList<NflSlate> Slates { get; set; } = [];
+
+    [Parameter]
+    public EventCallback<NflWeekRef> OnSelected { get; set; }
+
+    private int SelectedIndex =>
+        Math.Max(0, Slates.ToList().FindIndex(s => s.Ref == Selected));
+
+    private bool CanGoPrevious => SelectedIndex > 0;
+
+    private bool CanGoNext => SelectedIndex >= 0 && SelectedIndex < Slates.Count - 1;
+
+    private Task GoPrevious() =>
+        CanGoPrevious ? Select(Slates[SelectedIndex - 1].Ref) : Task.CompletedTask;
+
+    private Task GoNext() =>
+        CanGoNext ? Select(Slates[SelectedIndex + 1].Ref) : Task.CompletedTask;
+
+    private Task Select(NflWeekRef slate) => OnSelected.InvokeAsync(slate);
+}

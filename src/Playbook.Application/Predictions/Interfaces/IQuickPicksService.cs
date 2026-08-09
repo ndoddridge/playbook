@@ -4,13 +4,16 @@ namespace Playbook.Application.Predictions.Interfaces;
 
 public interface IQuickPicksService
 {
-    /// <summary>Active NFL week slate currently driving the board.</summary>
+    /// <summary>Active NFL slate currently driving the board.</summary>
     NflWeekRef? SelectedWeek { get; }
 
-    /// <summary>Weeks present in the loaded prop slate (for a future week selector).</summary>
+    /// <summary>Concrete available slates backed by real games (for navigator UI).</summary>
+    IReadOnlyList<NflSlate> AvailableSlates { get; }
+
+    /// <summary>Slate refs present in the loaded prop catalog.</summary>
     IReadOnlyList<NflWeekRef> AvailableWeeks { get; }
 
-    /// <summary>Resolved live NFL calendar context (season / phase / week).</summary>
+    /// <summary>Resolved live NFL calendar context (season / phase hint).</summary>
     global::Playbook.Application.Predictions.NflSeasonContext? SeasonContext { get; }
 
     IReadOnlyList<Prediction> GetAllPredictions();
@@ -19,11 +22,14 @@ public interface IQuickPicksService
 
     IReadOnlyList<Prediction> GetWatchPicks(int count = 8);
 
+    /// <summary>All evaluated props for the selected slate (for "All Props" / filtering).</summary>
+    IReadOnlyList<Prediction> GetSlatePredictions();
+
     IReadOnlyList<FootballEvent> GetUpcomingEvents();
 
     /// <summary>
-    /// Select a week slate when it exists in <see cref="AvailableWeeks"/>.
-    /// Rebuilds predictions for that week only. Returns false if the week is unavailable.
+    /// Select a slate when it exists in <see cref="AvailableWeeks"/>.
+    /// Rebuilds predictions for that slate only. Returns false if unavailable.
     /// </summary>
     bool TrySelectWeek(NflWeekRef week);
 
