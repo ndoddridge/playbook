@@ -47,6 +47,12 @@ public enum KnowledgeImpactGroup
     /// </summary>
     RecentFormThinMargin = 16,
 
+    /// <summary>
+    /// Player-local trust gate: reduce KnowledgeConfidence when DataSufficiency is
+    /// Limited/Insufficient. Does not restore Usage/RecentForm/RoleHealth transforms.
+    /// </summary>
+    DataSufficiencyTrust = 32,
+
     AllSupported = RecentForm | Usage | RoleHealth
 }
 

@@ -18,11 +18,18 @@ public sealed class KnowledgeImpactExperimentState
     public double ThinMarginMaxPoints { get; set; } =
         FrozenRecentFormThinMarginExperimentV1.ThinMarginMaxPoints;
 
+    /// <summary>
+    /// Limited-history KnowledgeConfidence penalty. Used when ActiveGroups includes DataSufficiencyTrust.
+    /// </summary>
+    public int DataSufficiencyLimitedPenalty { get; set; } =
+        FrozenDataSufficiencyTrustExperimentV1.SelectedLimitedPenalty;
+
     public void ConfigurePassthrough()
     {
         Mode = KnowledgeMode.Passthrough;
         ActiveGroups = KnowledgeImpactGroup.None;
         ThinMarginMaxPoints = FrozenRecentFormThinMarginExperimentV1.ThinMarginMaxPoints;
+        DataSufficiencyLimitedPenalty = FrozenDataSufficiencyTrustExperimentV1.SelectedLimitedPenalty;
     }
 
     public void ConfigureBaseline()
@@ -30,6 +37,7 @@ public sealed class KnowledgeImpactExperimentState
         Mode = KnowledgeMode.Baseline;
         ActiveGroups = KnowledgeImpactGroup.None;
         ThinMarginMaxPoints = FrozenRecentFormThinMarginExperimentV1.ThinMarginMaxPoints;
+        DataSufficiencyLimitedPenalty = FrozenDataSufficiencyTrustExperimentV1.SelectedLimitedPenalty;
     }
 
     public void ConfigureEnhanced(KnowledgeImpactGroup groups)
@@ -37,5 +45,6 @@ public sealed class KnowledgeImpactExperimentState
         Mode = KnowledgeMode.Enhanced;
         ActiveGroups = groups;
         ThinMarginMaxPoints = FrozenRecentFormThinMarginExperimentV1.ThinMarginMaxPoints;
+        DataSufficiencyLimitedPenalty = FrozenDataSufficiencyTrustExperimentV1.SelectedLimitedPenalty;
     }
 }
