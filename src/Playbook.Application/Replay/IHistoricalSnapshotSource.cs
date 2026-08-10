@@ -16,6 +16,21 @@ public interface IHistoricalSnapshotSource
         int week,
         ScoringType scoringType,
         string? fixtureId = null,
+        CancellationToken cancellationToken = default) =>
+        GetRawWeekAsync(
+            season,
+            week,
+            scoringType,
+            fixtureId,
+            HistoricalCandidateUniverse.LabRoster,
+            cancellationToken);
+
+    Task<HistoricalRawWeekData?> GetRawWeekAsync(
+        int season,
+        int week,
+        ScoringType scoringType,
+        string? fixtureId,
+        HistoricalCandidateUniverse candidateUniverse,
         CancellationToken cancellationToken = default);
 }
 

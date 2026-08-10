@@ -1,6 +1,7 @@
 using Playbook.Core.Knowledge;
 using Playbook.Core.Leagues;
 using Playbook.Core.Predictions;
+using Playbook.Core.Replay;
 
 namespace Playbook.Application.Predictions;
 
@@ -18,6 +19,7 @@ public interface IQuickPicksHistoricalEvaluationRunner
         string? fixtureId = "nflverse",
         ScoringType scoringType = ScoringType.Ppr,
         KnowledgeImpactGroup? enhancedGroups = null,
+        HistoricalCandidateUniverse candidateUniverse = HistoricalCandidateUniverse.LabRoster,
         CancellationToken cancellationToken = default);
 
     /// <summary>Evaluate one season under Baseline or Enhanced mode.</summary>
@@ -27,6 +29,7 @@ public interface IQuickPicksHistoricalEvaluationRunner
         string? fixtureId = "nflverse",
         ScoringType scoringType = ScoringType.Ppr,
         KnowledgeImpactGroup? enhancedGroups = null,
+        HistoricalCandidateUniverse candidateUniverse = HistoricalCandidateUniverse.LabRoster,
         CancellationToken cancellationToken = default);
 
     /// <summary>

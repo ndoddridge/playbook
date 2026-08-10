@@ -44,7 +44,8 @@ public sealed class MultiWeekHistoricalReplayRunner : IMultiWeekHistoricalReplay
                 Week = week,
                 ScoringType = request.ScoringType,
                 FixtureId = request.FixtureId,
-                DecisionKind = request.DecisionKind
+                DecisionKind = request.DecisionKind,
+                CandidateUniverse = request.CandidateUniverse
             };
 
             try

@@ -175,6 +175,7 @@ public static class DependencyInjection
         services.AddSingleton<IMultiWeekHistoricalReplayRunner, MultiWeekHistoricalReplayRunner>();
         services.AddSingleton<IHistoricalSeasonCalendar, NflverseHistoricalSeasonCalendar>();
         services.AddSingleton<IMultiSeasonHistoricalBenchmarkRunner, MultiSeasonHistoricalBenchmarkRunner>();
+        services.AddSingleton<HistoricalEvaluationCoverageRunner>();
     }
 
     private static void RegisterProjections(IServiceCollection services)

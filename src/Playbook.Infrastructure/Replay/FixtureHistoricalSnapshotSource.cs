@@ -1,5 +1,6 @@
 using Playbook.Application.Replay;
 using Playbook.Core.Leagues;
+using Playbook.Core.Replay;
 
 namespace Playbook.Infrastructure.Replay;
 
@@ -14,9 +15,25 @@ public sealed class FixtureHistoricalSnapshotSource : IHistoricalSnapshotSource
         int week,
         ScoringType scoringType,
         string? fixtureId = null,
+        CancellationToken cancellationToken = default) =>
+        GetRawWeekAsync(
+            season,
+            week,
+            scoringType,
+            fixtureId,
+            HistoricalCandidateUniverse.LabRoster,
+            cancellationToken);
+
+    public Task<HistoricalRawWeekData?> GetRawWeekAsync(
+        int season,
+        int week,
+        ScoringType scoringType,
+        string? fixtureId,
+        HistoricalCandidateUniverse candidateUniverse,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        _ = candidateUniverse; // Controlled fixture is fixed-size; universe mode does not apply.
 
         var wantsControlled =
             string.IsNullOrWhiteSpace(fixtureId) ||
