@@ -116,6 +116,7 @@ public static class DependencyInjection
         services.AddSingleton<IIntelligenceAnalyzer, IntelligenceAnalyzer>();
         services.AddSingleton<IIntelligenceAggregator, IntelligenceAggregator>();
         services.AddSingleton<IIntelligenceService, IntelligenceService>();
+        services.AddSingleton<IPlayerIntelligenceAssessmentService, PlayerIntelligenceAssessmentService>();
     }
 
     private static void RegisterProjections(IServiceCollection services)

@@ -1,0 +1,413 @@
+@using Playbook.Core.Intelligence.Models
+@using Playbook.Core.Injuries.Models
+@using Playbook.Web.Features.Intelligence.Models
+@using Playbook.Web.Features.Projections.Models
+
+@if (Assessment is null)
+{
+    <p class="player-section__muted">Player intelligence is still loading.</p>
+}
+else if (Mode == PlayerIntelligencePanelMode.Overview)
+{
+    <section class="pi-panel pi-panel--overview" aria-label="Player overview">
+        <header class="pi-snapshot">
+            <div class="pi-snapshot__outlook pi-snapshot__outlook--@Assessment.Outlook.ToString().ToLowerInvariant()">
+                <span class="pi-snapshot__eyebrow">Current outlook</span>
+                <strong class="pi-snapshot__outlook-label">@Assessment.OutlookLabel</strong>
+            </div>
+            <p class="pi-snapshot__headline">@Assessment.Headline</p>
+            <div class="pi-snapshot__metrics">
+                <div class="pi-metric">
+                    <span class="pi-metric__label">Projection</span>
+                    <span class="pi-metric__value">@(Assessment.ProjectionSummary ?? "Unavailable")</span>
+                </div>
+                <div class="pi-metric">
+                    <span class="pi-metric__label">Intelligence confidence</span>
+                    <span class="pi-metric__value">@Assessment.AssessmentConfidence%</span>
+                </div>
+                <div class="pi-metric">
+                    <span class="pi-metric__label">Opportunity</span>
+                    <span class="pi-metric__value">@(Assessment.OpportunityScore?.ToString() ?? "—")</span>
+                </div>
+                <div class="pi-metric">
+                    <span class="pi-metric__label">Usage</span>
+                    <span class="pi-metric__value">@(Assessment.UsageScore?.ToString() ?? "—")</span>
+                </div>
+                <div class="pi-metric pi-metric--wide">
+                    <span class="pi-metric__label">Health</span>
+                    <span class="pi-metric__value">@Assessment.HealthStatusLabel</span>
+                </div>
+            </div>
+        </header>
+
+        <section class="pi-section" aria-labelledby="pi-key-title">
+            <h3 id="pi-key-title" class="pi-section__title">Key factors</h3>
+            @if (Assessment.KeyFactors.Count == 0)
+            {
+                <p class="pi-empty">No material factors supported by current data.</p>
+            }
+            else
+            {
+                <ul class="pi-factor-list">
+                    @foreach (var factor in Assessment.KeyFactors)
+                    {
+                        <li class="@(factor.IsPositive ? "pi-factor--pos" : "pi-factor--neg")">
+                            <strong>@(factor.IsPositive ? "Positive" : "Negative") · @factor.Text</strong>
+                            @if (!string.IsNullOrWhiteSpace(factor.Detail))
+                            {
+                                <span>@factor.Detail</span>
+                            }
+                        </li>
+                    }
+                </ul>
+            }
+        </section>
+
+        <section class="pi-section" aria-labelledby="pi-recent-overview-title">
+            <h3 id="pi-recent-overview-title" class="pi-section__title">Recent intelligence</h3>
+            @if (OverviewIntel.Count == 0)
+            {
+                <p class="pi-empty">No recent intelligence items for this player.</p>
+            }
+            else
+            {
+                <ul class="pi-intel-list">
+                    @foreach (var item in OverviewIntel)
+                    {
+                        <li class="pi-intel @(item.IsConfirmed ? "pi-intel--confirmed" : "pi-intel--unconfirmed")">
+                            <div class="pi-intel__top">
+                                <span class="pi-intel__badge @(item.IsConfirmed ? "pi-intel__badge--confirmed" : "pi-intel__badge--unconfirmed")">
+                                    @item.VerificationLabel
+                                </span>
+                                <span class="pi-intel__when">@IntelligencePresentation.RelativeTime(item.Timestamp)</span>
+                            </div>
+                            <p class="pi-intel__title">@item.Title</p>
+                            <p class="pi-intel__meta">@item.Category · @item.Source</p>
+                        </li>
+                    }
+                </ul>
+            }
+            <p class="pi-snapshot__note">See Intelligence for full reasoning and sources.</p>
+        </section>
+    </section>
+}
+else
+{
+    <section class="pi-panel pi-panel--intelligence" aria-label="Player intelligence reasoning">
+        <header class="pi-snapshot">
+            <div class="pi-snapshot__outlook pi-snapshot__outlook--@Assessment.Outlook.ToString().ToLowerInvariant()">
+                <span class="pi-snapshot__eyebrow">Why Playbook believes this</span>
+                <strong class="pi-snapshot__outlook-label">@Assessment.OutlookLabel</strong>
+            </div>
+            <p class="pi-snapshot__headline">@Assessment.Headline</p>
+            <div class="pi-snapshot__metrics">
+                <div class="pi-metric">
+                    <span class="pi-metric__label">Intelligence confidence</span>
+                    <span class="pi-metric__value">@Assessment.AssessmentConfidence%</span>
+                </div>
+                <div class="pi-metric">
+                    <span class="pi-metric__label">Projection confidence</span>
+                    <span class="pi-metric__value">@(Assessment.ProjectionConfidence?.ToString() is string pc ? $"{pc}%" : "—")</span>
+                </div>
+                <div class="pi-metric">
+                    <span class="pi-metric__label">Opportunity</span>
+                    <span class="pi-metric__value">@(Assessment.OpportunityScore?.ToString() ?? "—")</span>
+                </div>
+                <div class="pi-metric">
+                    <span class="pi-metric__label">Usage</span>
+                    <span class="pi-metric__value">@(Assessment.UsageScore?.ToString() ?? "—")</span>
+                </div>
+                <div class="pi-metric pi-metric--wide">
+                    <span class="pi-metric__label">Health</span>
+                    <span class="pi-metric__value">@Assessment.HealthStatusLabel</span>
+                </div>
+            </div>
+            <p class="pi-snapshot__note">@Assessment.ConfidenceNote</p>
+        </header>
+
+        <section class="pi-section" aria-labelledby="pi-why-title">
+            <h3 id="pi-why-title" class="pi-section__title">Detailed factors</h3>
+            <div class="pi-factors">
+                <div class="pi-factors__col">
+                    <h4 class="pi-factors__heading pi-factors__heading--pos">Positive</h4>
+                    @if (Assessment.PositiveFactors.Count == 0)
+                    {
+                        <p class="pi-empty">No supported positive factors right now.</p>
+                    }
+                    else
+                    {
+                        <ul class="pi-factor-list">
+                            @foreach (var factor in Assessment.PositiveFactors)
+                            {
+                                <li>
+                                    <strong>@factor.Text</strong>
+                                    @if (!string.IsNullOrWhiteSpace(factor.Detail))
+                                    {
+                                        <span>@factor.Detail</span>
+                                    }
+                                    <span class="pi-factor__source">@factor.Source</span>
+                                </li>
+                            }
+                        </ul>
+                    }
+                </div>
+                <div class="pi-factors__col">
+                    <h4 class="pi-factors__heading pi-factors__heading--neg">Negative</h4>
+                    @if (Assessment.NegativeFactors.Count == 0)
+                    {
+                        <p class="pi-empty">No supported negative factors right now.</p>
+                    }
+                    else
+                    {
+                        <ul class="pi-factor-list">
+                            @foreach (var factor in Assessment.NegativeFactors)
+                            {
+                                <li>
+                                    <strong>@factor.Text</strong>
+                                    @if (!string.IsNullOrWhiteSpace(factor.Detail))
+                                    {
+                                        <span>@factor.Detail</span>
+                                    }
+                                    <span class="pi-factor__source">@factor.Source</span>
+                                </li>
+                            }
+                        </ul>
+                    }
+                </div>
+            </div>
+        </section>
+
+        <section class="pi-section" aria-labelledby="pi-recent-title">
+            <h3 id="pi-recent-title" class="pi-section__title">Recent intelligence</h3>
+            @if (Assessment.RecentIntelligence.Count == 0)
+            {
+                <p class="pi-empty">No recent intelligence items for this player.</p>
+            }
+            else
+            {
+                <ul class="pi-intel-list">
+                    @foreach (var item in Assessment.RecentIntelligence)
+                    {
+                        <li class="pi-intel @(item.IsConfirmed ? "pi-intel--confirmed" : "pi-intel--unconfirmed")">
+                            <div class="pi-intel__top">
+                                <span class="pi-intel__badge @(item.IsConfirmed ? "pi-intel__badge--confirmed" : "pi-intel__badge--unconfirmed")">
+                                    @item.VerificationLabel
+                                </span>
+                                <span class="pi-intel__when">@IntelligencePresentation.RelativeTime(item.Timestamp)</span>
+                            </div>
+                            <p class="pi-intel__title">
+                                @if (!string.IsNullOrWhiteSpace(item.Url))
+                                {
+                                    <a href="@item.Url" target="_blank" rel="noopener noreferrer">@item.Title</a>
+                                }
+                                else
+                                {
+                                    @item.Title
+                                }
+                            </p>
+                            <p class="pi-intel__summary">@item.Summary</p>
+                            <p class="pi-intel__meta">@item.Category · @item.Source · @item.Timestamp.ToLocalTime().ToString("MMM d, h:mm tt")</p>
+                        </li>
+                    }
+                </ul>
+            }
+        </section>
+
+        <section class="pi-section" aria-labelledby="pi-health-title">
+            <h3 id="pi-health-title" class="pi-section__title">Health / injury reasoning</h3>
+            @if (Assessment.InjuryProfile is null)
+            {
+                <p class="pi-empty">Injury profile unavailable.</p>
+            }
+            else
+            {
+                var injury = Assessment.InjuryProfile;
+                <div class="pi-health">
+                    <p class="pi-health__status">@Assessment.HealthStatusLabel</p>
+                    @if (injury.CurrentInjury is { } current)
+                    {
+                        <p class="pi-health__line">
+                            <span class="pi-intel__badge pi-intel__badge--confirmed">Confirmed</span>
+                            @current.Status
+                            @if (!string.IsNullOrWhiteSpace(current.BodyPart))
+                            {
+                                <text> — @current.BodyPart</text>
+                            }
+                        </p>
+                    }
+                    else if (injury.CurrentDataStatus == CurrentInjuryDataStatus.NoCurrentInjury)
+                    {
+                        <p class="pi-health__line">No confirmed current injury.</p>
+                    }
+                    else if (injury.CurrentDataStatus == CurrentInjuryDataStatus.Unavailable)
+                    {
+                        <p class="pi-health__line">Current injury data is unavailable.</p>
+                    }
+
+                    @if (injury.UnconfirmedSignals.Count > 0)
+                    {
+                        <p class="pi-health__sub">Unconfirmed / reported</p>
+                        <ul class="pi-factor-list">
+                            @foreach (var signal in injury.UnconfirmedSignals.Take(4))
+                            {
+                                <li>
+                                    <strong>@signal.Headline</strong>
+                                    <span>@signal.Source · @signal.ConfidenceLabel · @signal.LastUpdated.ToLocalTime().ToString("MMM d, h:mm tt")</span>
+                                </li>
+                            }
+                        </ul>
+                    }
+
+                    @if (injury.RecentHistory.Count > 0)
+                    {
+                        <p class="pi-health__sub">Relevant history</p>
+                        <ul class="pi-history">
+                            @foreach (var entry in injury.RecentHistory.Take(5))
+                            {
+                                <li class="@entry.EmphasisCssClass">
+                                    <strong>@(entry.Record.BodyPart ?? entry.Record.Status)</strong>
+                                    <span>@entry.Record.Date.ToLocalTime().ToString("MMM yyyy") · @entry.Band</span>
+                                    @if (!string.IsNullOrWhiteSpace(entry.RelevanceReason))
+                                    {
+                                        <span>@entry.RelevanceReason</span>
+                                    }
+                                </li>
+                            }
+                        </ul>
+                    }
+                </div>
+            }
+        </section>
+
+        <section class="pi-section" aria-labelledby="pi-proj-title">
+            <h3 id="pi-proj-title" class="pi-section__title">Projection reasoning</h3>
+            @if (Assessment.Projection is null)
+            {
+                <p class="pi-empty">Projection unavailable.</p>
+            }
+            else
+            {
+                var p = Assessment.Projection;
+                <div class="pi-proj">
+                    <div class="pi-proj__primary">
+                        <span class="pi-proj__points">@ProjectionPresentation.Points(p.ProjectedFantasyPoints)</span>
+                        <span class="pi-proj__label">projected points</span>
+                    </div>
+                    <div class="pi-snapshot__metrics">
+                        <div class="pi-metric">
+                            <span class="pi-metric__label">Floor</span>
+                            <span class="pi-metric__value">@ProjectionPresentation.Points(p.Floor)</span>
+                        </div>
+                        <div class="pi-metric">
+                            <span class="pi-metric__label">Median</span>
+                            <span class="pi-metric__value">@ProjectionPresentation.Points(p.Median)</span>
+                        </div>
+                        <div class="pi-metric">
+                            <span class="pi-metric__label">Ceiling</span>
+                            <span class="pi-metric__value">@ProjectionPresentation.Points(p.Ceiling)</span>
+                        </div>
+                        <div class="pi-metric">
+                            <span class="pi-metric__label">Projection confidence</span>
+                            <span class="pi-metric__value">@p.Confidence%</span>
+                        </div>
+                        <div class="pi-metric">
+                            <span class="pi-metric__label">Volatility</span>
+                            <span class="pi-metric__value">@p.Volatility</span>
+                        </div>
+                    </div>
+                    @if (p.ProjectionReasoning.Count > 0)
+                    {
+                        <ul class="pi-factor-list" style="margin-top:0.75rem;">
+                            @foreach (var reason in p.ProjectionReasoning.Take(4))
+                            {
+                                <li><span>@reason</span></li>
+                            }
+                        </ul>
+                    }
+                </div>
+            }
+        </section>
+
+        <section class="pi-section pi-section--secondary" aria-labelledby="pi-hist-title">
+            <h3 id="pi-hist-title" class="pi-section__title">Historical context</h3>
+            @if (Assessment.StatisticalContext is null)
+            {
+                <p class="pi-empty">Statistical context unavailable.</p>
+            }
+            else
+            {
+                var s = Assessment.StatisticalContext;
+                <ul class="pi-factor-list">
+                    <li><strong>NFL seasons</strong><span>@(s.NflSeasonsAvailable > 0 ? s.NflSeasonsAvailable.ToString() : "Unavailable")</span></li>
+                    <li><strong>Game logs</strong><span>@(s.GameLogsAvailable > 0 ? s.GameLogsAvailable.ToString() : "Unavailable")</span></li>
+                    <li><strong>Trend</strong><span>@s.Trend</span></li>
+                    @if (s.CareerBaseline?.Label is string career)
+                    {
+                        <li><strong>Career baseline</strong><span>@career</span></li>
+                    }
+                    @if (s.HasCollegeStatistics)
+                    {
+                        <li><strong>College</strong><span>Available (kept separate from NFL)</span></li>
+                    }
+                </ul>
+                <p class="pi-snapshot__note">Full season tables stay on Career / College tabs.</p>
+            }
+        </section>
+
+        @if (Assessment.UnavailableSignals.Count > 0)
+        {
+            <section class="pi-section pi-section--secondary">
+                <h3 class="pi-section__title">Data quality</h3>
+                <ul class="pi-factor-list">
+                    @foreach (var missing in Assessment.UnavailableSignals)
+                    {
+                        <li><strong>@missing</strong></li>
+                    }
+                </ul>
+            </section>
+        }
+
+        <button type="button" class="pi-expand" @onclick="Toggle" aria-expanded="@_expanded">
+            @(_expanded ? "Hide source details" : "Show source details")
+        </button>
+
+        @if (_expanded)
+        {
+            <div class="pi-details">
+                @foreach (var detail in Assessment.DetailSections)
+                {
+                    <div class="pi-detail">
+                        <h4 class="pi-detail__title">@detail.Title</h4>
+                        <ul class="pi-factor-list">
+                            @foreach (var item in detail.Items)
+                            {
+                                <li><span>@item</span></li>
+                            }
+                        </ul>
+                    </div>
+                }
+                <p class="pi-snapshot__note">Generated @Assessment.GeneratedAt.ToLocalTime().ToString("MMM d, h:mm tt")</p>
+            </div>
+        }
+    </section>
+}
+
+@code {
+    [Parameter, EditorRequired]
+    public PlayerIntelligenceAssessment? Assessment { get; set; }
+
+    [Parameter]
+    public PlayerIntelligencePanelMode Mode { get; set; } = PlayerIntelligencePanelMode.Overview;
+
+    private bool _expanded;
+
+    private IReadOnlyList<RecentIntelligenceItem> OverviewIntel =>
+        Assessment?.RecentIntelligence
+            .OrderByDescending(i => i.IsConfirmed)
+            .ThenByDescending(i => i.Timestamp)
+            .Take(3)
+            .ToList()
+        ?? [];
+
+    private void Toggle() => _expanded = !_expanded;
+}

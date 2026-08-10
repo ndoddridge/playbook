@@ -37,8 +37,16 @@
     background: var(--pb-color-surface);
     box-shadow: var(--pb-shadow-lg);
     overflow: hidden;
+    isolation: isolate;
     animation: player-overlay-in var(--pb-transition-slow) both;
     pointer-events: auto;
+}
+
+.player-overlay__chrome {
+    flex-shrink: 0;
+    position: relative;
+    z-index: 4;
+    background: var(--pb-color-surface);
 }
 
 @keyframes player-overlay-in {
@@ -60,6 +68,7 @@
     border-bottom: 1px solid var(--pb-color-border);
     flex-shrink: 0;
     min-width: 0;
+    background: var(--pb-color-surface);
 }
 
 .player-overlay__identity {
@@ -222,8 +231,8 @@
 
 @media (max-width: 640px) {
     .player-overlay {
-        /* Sit below the fixed/grid top bar — uses shared shell variable, not arbitrary padding. */
-        top: var(--pb-topbar-height);
+        /* Sit below shell safe-area + top bar so sticky top chrome never covers the player card. */
+        top: calc(env(safe-area-inset-top, 0px) + var(--pb-topbar-height));
         right: 0;
         bottom: 0;
         left: 0;
@@ -234,8 +243,8 @@
     .player-overlay__panel {
         width: 100%;
         max-width: 100%;
-        height: calc(100dvh - var(--pb-topbar-height));
-        max-height: calc(100dvh - var(--pb-topbar-height));
+        height: calc(100dvh - env(safe-area-inset-top, 0px) - var(--pb-topbar-height));
+        max-height: calc(100dvh - env(safe-area-inset-top, 0px) - var(--pb-topbar-height));
         border-radius: var(--pb-radius-xl) var(--pb-radius-xl) 0 0;
         border-left: 0;
         border-right: 0;
@@ -275,8 +284,8 @@
 
     @media (max-width: 640px) {
         .player-overlay__panel {
-            height: calc(100vh - var(--pb-topbar-height));
-            max-height: calc(100vh - var(--pb-topbar-height));
+            height: calc(100vh - env(safe-area-inset-top, 0px) - var(--pb-topbar-height));
+            max-height: calc(100vh - env(safe-area-inset-top, 0px) - var(--pb-topbar-height));
         }
     }
 }

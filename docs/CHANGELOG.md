@@ -2,6 +2,25 @@
 
 All notable project changes are recorded here.
 
+## [Unreleased] — Player Intelligence structural refinement
+
+### Fixed / Changed
+
+- Mobile player overlay clears shell safe-area + top bar so sticky chrome never overlaps the player card
+- Overview vs Intelligence are distinct: Overview = concise decision snapshot; Intelligence = structured reasoning/evidence
+- One canonical outlook label (Stable replaces conflicting “Stable Outlook” headlines); explanation text cannot contradict it
+- Injury/history factors deduplicated and summarized (e.g. repeated foot history)
+- Health language: Healthy only when data supports it; otherwise No current designation / Limited information / Current concern
+- Intelligence confidence vs Projection confidence labeled separately
+
+## [Unreleased] — Player Intelligence experience
+
+### Added
+
+- `PlayerIntelligenceAssessment` composed from existing intelligence, injury, projection, stats, and news services
+- Mobile-first Player Intelligence panel on player overlay Overview / Intelligence: snapshot, why factors, recent intel (confirmed vs unconfirmed), health, projection, secondary historical context, expandable details
+- Missing signals labeled unavailable — never fabricated or treated as positive
+
 ## [Unreleased] — Top Picks diversity (de-dupe alternate lines)
 
 ### Fixed / Changed

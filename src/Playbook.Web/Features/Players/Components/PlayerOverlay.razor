@@ -17,8 +17,10 @@
 @using Playbook.Web.Features.Intelligence.Models
 @using Playbook.Web.Features.News.Models
 @using Playbook.Web.Features.Projections.Models
+@using Playbook.Web.Features.Players.Components
 @inject IPlayerOverlayState Overlay
 @inject IIntelligenceService IntelligenceService
+@inject IPlayerIntelligenceAssessmentService AssessmentService
 @inject IProjectionService ProjectionService
 @inject IPlayerProductionProvider ProductionProvider
 @inject IPlayerStatsService PlayerStatsService
@@ -35,123 +37,73 @@
         <div class="player-overlay__backdrop" @onclick="Close"></div>
 
         <div class="player-overlay__panel" @onclick:stopPropagation="true">
-            <header class="player-overlay__header">
-                <div class="player-overlay__identity">
-                    <div class="player-avatar player-avatar--lg" aria-hidden="true">
-                        @PlayerPresentation.Initials(player)
-                    </div>
-                    <div>
-                        <h2 class="player-overlay__name">@player.FullName</h2>
-                        <p class="player-overlay__meta">
-                            @PlayerPresentation.PositionLabel(player.Position) · @player.Team
-                            @if (player.JerseyNumber is int number)
-                            {
-                                <text> · #@number</text>
-                            }
-                            · @PlayerPresentation.StatusLabel(player.Status)
-                        </p>
-                        <p class="player-overlay__league">
-                            @(context.League?.Name ?? "No League Selected")
-                            · @FormatScoring(context.ScoringType)
-                            @if (context.League is { } ctxLeague)
-                            {
-                                <span class="league-source-badge @(ctxLeague.DataSource == LeagueDataSource.Sleeper ? "league-source-badge--live" : "league-source-badge--mock")">
-                                    @(ctxLeague.DataSource == LeagueDataSource.Sleeper ? "Live" : "Mock")
-                                </span>
-                            }
-                            @if (context.FantasyTeam is { } fantasyTeam)
-                            {
-                                <text> · @(fantasyTeam.TeamName ?? fantasyTeam.DisplayName)</text>
-                                @if (context.League?.SelectedRosterId == fantasyTeam.RosterId)
+            <div class="player-overlay__chrome">
+                <header class="player-overlay__header">
+                    <div class="player-overlay__identity">
+                        <div class="player-avatar player-avatar--lg" aria-hidden="true">
+                            @PlayerPresentation.Initials(player)
+                        </div>
+                        <div>
+                            <h2 class="player-overlay__name">@player.FullName</h2>
+                            <p class="player-overlay__meta">
+                                @PlayerPresentation.PositionLabel(player.Position) · @player.Team
+                                @if (player.JerseyNumber is int number)
                                 {
-                                    <span class="league-source-badge league-source-badge--live">My team</span>
+                                    <text> · #@number</text>
                                 }
-                            }
-                        </p>
+                                · @PlayerPresentation.StatusLabel(player.Status)
+                                @if (player.YearsPro is int yearsPro)
+                                {
+                                    <text> · @yearsPro yr</text>
+                                }
+                                @if (player.ByeWeek is int bye)
+                                {
+                                    <text> · Bye @bye</text>
+                                }
+                            </p>
+                            <p class="player-overlay__league">
+                                @(context.League?.Name ?? "No League Selected")
+                                · @FormatScoring(context.ScoringType)
+                                @if (context.League is { } ctxLeague)
+                                {
+                                    <span class="league-source-badge @(ctxLeague.DataSource == LeagueDataSource.Sleeper ? "league-source-badge--live" : "league-source-badge--mock")">
+                                        @(ctxLeague.DataSource == LeagueDataSource.Sleeper ? "Live" : "Mock")
+                                    </span>
+                                }
+                                @if (context.FantasyTeam is { } fantasyTeam)
+                                {
+                                    <text> · @(fantasyTeam.TeamName ?? fantasyTeam.DisplayName)</text>
+                                    @if (context.League?.SelectedRosterId == fantasyTeam.RosterId)
+                                    {
+                                        <span class="league-source-badge league-source-badge--live">My team</span>
+                                    }
+                                }
+                            </p>
+                        </div>
                     </div>
-                </div>
 
-                <button type="button" class="player-overlay__close" aria-label="Close player overlay" @onclick="Close">
-                    ✕
-                </button>
-            </header>
-
-            <nav class="player-overlay__tabs" aria-label="Player sections">
-                @foreach (var tab in Tabs)
-                {
-                    <button type="button"
-                            class="player-overlay__tab @(activeTab == tab ? "is-active" : null)"
-                            @onclick="() => SelectTab(tab)">
-                        @tab
+                    <button type="button" class="player-overlay__close" aria-label="Close player overlay" @onclick="Close">
+                        ✕
                     </button>
-                }
-            </nav>
+                </header>
+
+                <nav class="player-overlay__tabs" aria-label="Player sections">
+                    @foreach (var tab in Tabs)
+                    {
+                        <button type="button"
+                                class="player-overlay__tab @(activeTab == tab ? "is-active" : null)"
+                                @onclick="() => SelectTab(tab)">
+                            @tab
+                        </button>
+                    }
+                </nav>
+            </div>
 
             <div class="player-overlay__body">
                 @if (activeTab == "Overview")
                 {
                     <section class="player-section">
-                        <h3 class="player-section__title">Overview</h3>
-                        <div class="player-profile__grid">
-                            <div class="player-stat">
-                                <span class="player-stat__label">Years Pro</span>
-                                <span class="player-stat__value">@(player.YearsPro?.ToString() ?? "—")</span>
-                            </div>
-                            <div class="player-stat">
-                                <span class="player-stat__label">College</span>
-                                <span class="player-stat__value">@(player.College ?? "—")</span>
-                            </div>
-                            <div class="player-stat">
-                                <span class="player-stat__label">Age</span>
-                                <span class="player-stat__value">@(player.Age?.ToString() ?? "—")</span>
-                            </div>
-                            <div class="player-stat">
-                                <span class="player-stat__label">Bye</span>
-                                <span class="player-stat__value">@(player.ByeWeek?.ToString() ?? "—")</span>
-                            </div>
-                        </div>
-                        @if (context.Profile?.Trend is { } trend)
-                        {
-                            <p class="player-section__text" style="margin-top:1rem;">
-                                @PlayerPresentation.TrendLabel(trend.Direction) — @trend.Label
-                            </p>
-                        }
-
-                        <h3 class="player-section__title" style="margin-top:1.5rem;">Recent News</h3>
-                        @if (playerNews.Count > 0)
-                        {
-                            <div class="player-news-list">
-                                @foreach (var article in playerNews)
-                                {
-                                    <article class="news-item">
-                                        <div class="news-item__header">
-                                            <h4 class="news-item__title">
-                                                @if (!string.IsNullOrWhiteSpace(article.Url))
-                                                {
-                                                    <a href="@article.Url" target="_blank" rel="noopener noreferrer">@article.Title</a>
-                                                }
-                                                else
-                                                {
-                                                    @article.Title
-                                                }
-                                            </h4>
-                                            <span class="@NewsPresentation.PriorityClass(article.Priority)">
-                                                @NewsPresentation.Priority(article.Priority)
-                                            </span>
-                                        </div>
-                                        <p class="news-item__summary">@article.Summary</p>
-                                        <div class="news-item__meta">
-                                            <span>@NewsPresentation.RelativeTime(article.Published)</span>
-                                            <span>@article.Source</span>
-                                        </div>
-                                    </article>
-                                }
-                            </div>
-                        }
-                        else
-                        {
-                            <p class="player-section__muted">No related news for this player right now.</p>
-                        }
+                        <PlayerIntelligencePanel Assessment="assessment" Mode="PlayerIntelligencePanelMode.Overview" />
                     </section>
                 }
                 else if (activeTab == "Fantasy")
@@ -274,105 +226,7 @@
                 else if (activeTab == "Intelligence")
                 {
                     <section class="player-section">
-                        <h3 class="player-section__title">Player Intelligence Profile</h3>
-                        @if (playerProfile is null)
-                        {
-                            <p class="player-section__muted">No aggregated intelligence profile for this player yet.</p>
-                        }
-                        else
-                        {
-                            <div class="player-profile__grid" style="margin-bottom:1rem;">
-                                <div class="player-stat">
-                                    <span class="player-stat__label">Overall Intelligence</span>
-                                    <span class="player-stat__value">@playerProfile.Headline</span>
-                                </div>
-                                <div class="player-stat">
-                                    <span class="player-stat__label">Health</span>
-                                    <span class="player-stat__value">@playerProfile.HealthScore</span>
-                                </div>
-                                <div class="player-stat">
-                                    <span class="player-stat__label">Opportunity</span>
-                                    <span class="player-stat__value">@playerProfile.OpportunityScore</span>
-                                </div>
-                                <div class="player-stat">
-                                    <span class="player-stat__label">Usage</span>
-                                    <span class="player-stat__value">@playerProfile.UsageScore</span>
-                                </div>
-                                <div class="player-stat">
-                                    <span class="player-stat__label">Trend</span>
-                                    <span class="player-stat__value">@IntelligencePresentation.TrendLabel(playerProfile.TrendDirection)</span>
-                                </div>
-                                <div class="player-stat">
-                                    <span class="player-stat__label">Overall Confidence</span>
-                                    <span class="player-stat__value">@playerProfile.OverallConfidence%</span>
-                                </div>
-                            </div>
-
-                            <div class="intel-summary">
-                                <div class="intel-summary__item">
-                                    <span class="intel-summary__label">Risk</span>
-                                    <p class="intel-summary__text">@playerProfile.OverallRisk / 100</p>
-                                </div>
-                                <div class="intel-summary__item">
-                                    <span class="intel-summary__label">News Momentum</span>
-                                    <p class="intel-summary__text">@playerProfile.NewsMomentum / 100</p>
-                                </div>
-                                <div class="intel-summary__item">
-                                    <span class="intel-summary__label">Supporting Facts</span>
-                                    <p class="intel-summary__text">@playerProfile.SupportingFacts.Count evidence items</p>
-                                </div>
-                            </div>
-
-                            <h3 class="player-section__title" style="margin-top:1.25rem;">Supporting Intelligence</h3>
-                            @foreach (var group in playerProfile.SupportingFacts.GroupBy(f => f.Category).OrderBy(g => g.Key))
-                            {
-                                <div class="intel-group">
-                                    <h4 class="intel-group__title">@IntelligencePresentation.Category(group.Key)</h4>
-                                    @foreach (var fact in group.OrderByDescending(f => f.Importance).ThenByDescending(f => f.Confidence))
-                                    {
-                                        <article class="intel-fact">
-                                            <div class="intel-fact__header">
-                                                <h5 class="intel-fact__title">@fact.Title</h5>
-                                                <div class="intel-fact__meta">
-                                                    <span>@fact.Confidence%</span>
-                                                    <span class="@IntelligencePresentation.ImportanceClass(fact.Importance)">
-                                                        @IntelligencePresentation.Importance(fact.Importance)
-                                                    </span>
-                                                </div>
-                                            </div>
-                                            <p class="intel-fact__description">@fact.Description</p>
-                                            @{
-                                                var supportArticles = NewsProvider.GetByIds(fact.RelatedNewsArticleIds);
-                                            }
-                                            @if (supportArticles.Count > 0)
-                                            {
-                                                <div class="player-news-list">
-                                                    @foreach (var article in supportArticles)
-                                                    {
-                                                        <article class="news-item">
-                                                            <h4 class="news-item__title">
-                                                                @if (!string.IsNullOrWhiteSpace(article.Url))
-                                                                {
-                                                                    <a href="@article.Url" target="_blank" rel="noopener noreferrer">@article.Title</a>
-                                                                }
-                                                                else
-                                                                {
-                                                                    @article.Title
-                                                                }
-                                                            </h4>
-                                                            <div class="news-item__meta">
-                                                                <span>@article.Source</span>
-                                                                <span>@NewsPresentation.RelativeTime(article.Published)</span>
-                                                            </div>
-                                                        </article>
-                                                    }
-                                                </div>
-                                            }
-                                        </article>
-                                    }
-                                </div>
-                            }
-                        }
+                        <PlayerIntelligencePanel Assessment="assessment" Mode="PlayerIntelligencePanelMode.Intelligence" />
                     </section>
                 }
                 else if (activeTab == "Career")
@@ -669,6 +523,8 @@
     private static readonly string[] Tabs = PlayerOverlayLayoutRules.Tabs;
 
     private string activeTab = "Overview";
+    private PlayerIntelligenceAssessment? assessment;
+    private Guid? loadedAssessmentPlayerId;
     private PlayerIntelligenceProfile? playerProfile;
     private PlayerProjection? playerProjection;
     private string projectionBaselineLabel = "—";
@@ -712,6 +568,8 @@
                 openPlayerId = openedPlayerId;
                 openLeagueId = openedLeagueId;
                 activeTab = "Overview";
+                assessment = null;
+                loadedAssessmentPlayerId = null;
                 playerProfile = null;
                 playerProjection = null;
                 projectionBaselineLabel = "—";
@@ -733,7 +591,7 @@
                 loadedNewsPlayerId = null;
                 loadedStatsPlayerId = null;
                 loadedInjuriesPlayerId = null;
-                EnsurePlayerNews();
+                EnsureAssessment();
             }
             else if (openedLeagueId != openLeagueId)
             {
@@ -743,7 +601,13 @@
                 projectionBaselineDetail = string.Empty;
                 loadedProjectionPlayerId = null;
                 loadedProjectionLeagueId = null;
-                if (activeTab == "Projection")
+                assessment = null;
+                loadedAssessmentPlayerId = null;
+                if (activeTab is "Overview" or "Intelligence")
+                {
+                    EnsureAssessment();
+                }
+                else if (activeTab == "Projection")
                 {
                     EnsurePlayerProjection();
                 }
@@ -761,9 +625,9 @@
     private void SelectTab(string tab)
     {
         activeTab = tab;
-        if (tab == "Intelligence")
+        if (tab is "Overview" or "Intelligence")
         {
-            EnsurePlayerProfile();
+            EnsureAssessment();
         }
 
         if (tab == "Projection")
@@ -780,11 +644,30 @@
         {
             EnsurePlayerInjuries();
         }
+    }
 
-        if (tab == "Overview")
+    private void EnsureAssessment()
+    {
+        if (Overlay.Context is not { } context)
         {
-            EnsurePlayerNews();
+            return;
         }
+
+        if (loadedAssessmentPlayerId == context.Player.Id && assessment is not null)
+        {
+            return;
+        }
+
+        assessment = AssessmentService.GetAssessment(context.Player.Id);
+        playerProfile = assessment.Profile;
+        injuryProfile = assessment.InjuryProfile;
+        playerProjection = assessment.Projection;
+        statisticalContext = assessment.StatisticalContext;
+        loadedAssessmentPlayerId = context.Player.Id;
+        loadedPlayerId = context.Player.Id;
+        loadedInjuriesPlayerId = context.Player.Id;
+        loadedProjectionPlayerId = context.Player.Id;
+        loadedProjectionLeagueId = context.League?.Id;
     }
 
     private void EnsurePlayerProfile()
