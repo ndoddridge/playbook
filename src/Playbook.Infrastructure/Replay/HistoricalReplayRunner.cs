@@ -15,6 +15,7 @@ public sealed class HistoricalReplayRunner : IHistoricalReplayRunner
 {
     private readonly IHistoricalSnapshotSource _source;
     private readonly IHistoricalSnapshotBuilder _builder;
+    private readonly IHistoricalWeekDataValidator _validator;
     private readonly IHistoricalKnowledgeFactory _knowledgeFactory;
     private readonly IDecisionEngine _decisionEngine;
     private readonly IDecisionRecordStore _recordStore;
@@ -23,6 +24,7 @@ public sealed class HistoricalReplayRunner : IHistoricalReplayRunner
     public HistoricalReplayRunner(
         IHistoricalSnapshotSource source,
         IHistoricalSnapshotBuilder builder,
+        IHistoricalWeekDataValidator validator,
         IHistoricalKnowledgeFactory knowledgeFactory,
         IDecisionEngine decisionEngine,
         IDecisionRecordStore recordStore,
@@ -30,6 +32,7 @@ public sealed class HistoricalReplayRunner : IHistoricalReplayRunner
     {
         _source = source;
         _builder = builder;
+        _validator = validator;
         _knowledgeFactory = knowledgeFactory;
         _decisionEngine = decisionEngine;
         _recordStore = recordStore;
@@ -51,9 +54,13 @@ public sealed class HistoricalReplayRunner : IHistoricalReplayRunner
         if (raw is null)
         {
             throw new InvalidOperationException(
-                $"No historical fixture available for season={request.Season} week={request.Week} " +
-                $"(fixtureId={request.FixtureId ?? "default"}). v1 ships only the controlled 2018 Week 7 sample.");
+                $"No historical data available for season={request.Season} week={request.Week} " +
+                $"(fixtureId={request.FixtureId ?? "default"}). " +
+                "Use fixtureId=controlled-2018-w7 for the synthetic leakage fixture, " +
+                "or omit fixtureId to load real nflverse weeks when supported.");
         }
+
+        _validator.ValidateOrThrow(raw);
 
         // 1–2. Load + enforce cutoff. Outcomes stay segregated.
         var (snapshot, outcomes) = _builder.Build(raw);

@@ -30,6 +30,22 @@ public static class HistoricalReplayCommands
             },
             cancellationToken);
 
+    /// <summary>Real nflverse-backed 2018 Week 7 replay (not the synthetic leakage fixture).</summary>
+    public static Task<HistoricalReplayReport> RunReal2018Week7Async(
+        IServiceProvider services,
+        ScoringType scoringType = ScoringType.Ppr,
+        CancellationToken cancellationToken = default) =>
+        RunAsync(
+            services,
+            new HistoricalReplayRequest
+            {
+                Season = 2018,
+                Week = 7,
+                ScoringType = scoringType,
+                FixtureId = "nflverse"
+            },
+            cancellationToken);
+
     public static Task<HistoricalReplayReport> RunAsync(
         IServiceProvider services,
         int season,
