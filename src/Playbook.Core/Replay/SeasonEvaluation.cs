@@ -20,6 +20,13 @@ public sealed class MultiWeekReplayRequest
     public DecisionKind DecisionKind { get; init; } = DecisionKind.StartSit;
 
     /// <summary>
+    /// Candidate universe for historical evaluation. Default LabRoster preserves
+    /// the frozen 2018 benchmark. Use ExpandedSkillUniverse for coverage measurement.
+    /// </summary>
+    public HistoricalCandidateUniverse CandidateUniverse { get; init; } =
+        HistoricalCandidateUniverse.LabRoster;
+
+    /// <summary>
     /// When true, weeks that fail (e.g. insufficient lab roster) are recorded as skips
     /// instead of aborting the season run.
     /// </summary>

@@ -56,6 +56,7 @@ public sealed class HistoricalReplayRunner : IHistoricalReplayRunner
                 request.Week,
                 request.ScoringType,
                 request.FixtureId,
+                request.CandidateUniverse,
                 cancellationToken)
             .ConfigureAwait(false);
 

@@ -1,5 +1,6 @@
 using Playbook.Application.Replay;
 using Playbook.Core.Leagues;
+using Playbook.Core.Replay;
 using Playbook.Infrastructure.Replay.Nflverse;
 
 namespace Playbook.Infrastructure.Replay;
@@ -17,11 +18,26 @@ public sealed class CompositeHistoricalSnapshotSource : IHistoricalSnapshotSourc
         _providers = providers;
     }
 
-    public async Task<HistoricalRawWeekData?> GetRawWeekAsync(
+    public Task<HistoricalRawWeekData?> GetRawWeekAsync(
         int season,
         int week,
         ScoringType scoringType,
         string? fixtureId = null,
+        CancellationToken cancellationToken = default) =>
+        GetRawWeekAsync(
+            season,
+            week,
+            scoringType,
+            fixtureId,
+            HistoricalCandidateUniverse.LabRoster,
+            cancellationToken);
+
+    public async Task<HistoricalRawWeekData?> GetRawWeekAsync(
+        int season,
+        int week,
+        ScoringType scoringType,
+        string? fixtureId,
+        HistoricalCandidateUniverse candidateUniverse,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -54,7 +70,8 @@ public sealed class CompositeHistoricalSnapshotSource : IHistoricalSnapshotSourc
                 continue;
             }
 
-            var weekData = await provider.GetWeekAsync(season, week, scoringType, cancellationToken)
+            var weekData = await provider
+                .GetWeekAsync(season, week, scoringType, candidateUniverse, cancellationToken)
                 .ConfigureAwait(false);
             if (weekData is not null)
             {

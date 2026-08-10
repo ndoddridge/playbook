@@ -39,10 +39,18 @@ public sealed class NflverseHistoricalDataProvider : IHistoricalDataProvider
     public bool Supports(int season, int week) =>
         season >= 2002 && week is >= 1 and <= 18;
 
+    public Task<HistoricalRawWeekData?> GetWeekAsync(
+        int season,
+        int week,
+        ScoringType scoringType,
+        CancellationToken cancellationToken = default) =>
+        GetWeekAsync(season, week, scoringType, HistoricalCandidateUniverse.LabRoster, cancellationToken);
+
     public async Task<HistoricalRawWeekData?> GetWeekAsync(
         int season,
         int week,
         ScoringType scoringType,
+        HistoricalCandidateUniverse candidateUniverse,
         CancellationToken cancellationToken = default)
     {
         if (!Supports(season, week))
@@ -113,18 +121,35 @@ public sealed class NflverseHistoricalDataProvider : IHistoricalDataProvider
             .ConfigureAwait(false);
 
         var ranked = BuildRankedCandidates(identities, priorStats, scoringType);
-        var rosterPlayers = SelectLabRoster(ranked);
-        if (rosterPlayers.Count < 4)
+        var labRoster = SelectLabRoster(ranked);
+        if (labRoster.Count < 4)
         {
             throw new InvalidOperationException(
                 $"Insufficient pre-week production history to build a lab roster for {season} week {week}.");
         }
 
+        // LabRoster: Players == fantasy-shaped lab roster (frozen benchmark).
+        // ExpandedSkillUniverse: Players = all ACT skill identities; Start/Sit roster =
+        // all of those identities with the same starter counts and uncapped bench.
+        var evaluationPlayers = candidateUniverse == HistoricalCandidateUniverse.ExpandedSkillUniverse
+            ? ranked
+            : labRoster;
+        var rosterPlayers = candidateUniverse == HistoricalCandidateUniverse.ExpandedSkillUniverse
+            ? SelectExpandedStartSitRoster(ranked)
+            : labRoster;
+
+        if (rosterPlayers.Count < 4)
+        {
+            throw new InvalidOperationException(
+                $"Insufficient candidates for Start/Sit roster under {candidateUniverse} for {season} week {week}.");
+        }
+
         var players = new List<HistoricalRawPlayerRecord>();
         var outcomes = new List<HistoricalPlayerOutcome>();
         var rosterSlots = new List<HistoricalRosterSlot>();
+        var rosterById = rosterPlayers.ToDictionary(c => c.Identity.PlaybookId);
 
-        foreach (var candidate in rosterPlayers)
+        foreach (var candidate in evaluationPlayers)
         {
             var id = candidate.Identity;
             priorStats.TryGetValue(id.GsisId, out var priorWeeks);
@@ -256,11 +281,14 @@ public sealed class NflverseHistoricalDataProvider : IHistoricalDataProvider
                     : null
             });
 
-            rosterSlots.Add(new HistoricalRosterSlot
+            if (rosterById.TryGetValue(id.PlaybookId, out var rosterMember))
             {
-                PlayerId = id.PlaybookId,
-                IsStarter = candidate.IsStarter
-            });
+                rosterSlots.Add(new HistoricalRosterSlot
+                {
+                    PlayerId = id.PlaybookId,
+                    IsStarter = rosterMember.IsStarter
+                });
+            }
 
             if (outcomeWeeks is { Count: > 0 })
             {
@@ -283,21 +311,42 @@ public sealed class NflverseHistoricalDataProvider : IHistoricalDataProvider
             }
         }
 
+        // Preserve SelectLabRoster emission order for LabRoster (frozen 2018 lock).
+        // Expanded only: stable order by position / starter / id.
+        if (candidateUniverse == HistoricalCandidateUniverse.ExpandedSkillUniverse)
+        {
+            rosterSlots = rosterSlots
+                .OrderBy(s => players.First(p => p.PlayerId == s.PlayerId).Position)
+                .ThenByDescending(s => s.IsStarter)
+                .ThenBy(s => s.PlayerId)
+                .ToList();
+            players = players
+                .OrderBy(p => p.Position)
+                .ThenBy(p => p.PlayerName, StringComparer.Ordinal)
+                .ThenBy(p => p.PlayerId)
+                .ToList();
+        }
+
         var unavailableSources = new List<string>
         {
             "External as-of projection archive: UNAVAILABLE — using reconstructed historical baseline projections (pre-cutoff only)",
-            "Historical fantasy league ownership: UNAVAILABLE — using reconstructed lab roster from weeks 1.." + (week - 1) + " production",
+            candidateUniverse == HistoricalCandidateUniverse.ExpandedSkillUniverse
+                ? "Historical fantasy league ownership: UNAVAILABLE — Start/Sit uses expanded ACT skill universe with reconstructed starter flags from weeks 1.." + (week - 1) + " production (not real league ownership)"
+                : "Historical fantasy league ownership: UNAVAILABLE — using reconstructed lab roster from weeks 1.." + (week - 1) + " production",
             "News archive: UNAVAILABLE",
             "Week " + week + " depth charts: unused for pre-game (no trustworthy cutoff) — week " + Math.Max(1, week - 1) + " depth used instead (PARTIAL)",
-            "Week " + week + " snap counts: post-game — excluded from pre-game context"
+            "Week " + week + " snap counts: post-game — excluded from pre-game context",
+            $"HistoricalCandidateUniverse={candidateUniverse}; labRosterCap={labRoster.Count}; players={players.Count}; startSitRoster={rosterSlots.Count}"
         };
 
         _logger.LogInformation(
-            "Built nflverse historical week {Season} W{Week} cutoff={Cutoff:u} roster={Roster} outcomes={Outcomes}",
+            "Built nflverse historical week {Season} W{Week} universe={Universe} cutoff={Cutoff:u} players={Players} roster={Roster} outcomes={Outcomes}",
             season,
             week,
+            candidateUniverse,
             cutoff,
             players.Count,
+            rosterSlots.Count,
             outcomes.Count);
 
         return new HistoricalRawWeekData
@@ -306,7 +355,9 @@ public sealed class NflverseHistoricalDataProvider : IHistoricalDataProvider
             Week = week,
             InformationCutoff = cutoff,
             ScoringType = scoringType,
-            LeagueName = $"nflverse Replay Lab ({season} W{week})",
+            LeagueName = candidateUniverse == HistoricalCandidateUniverse.ExpandedSkillUniverse
+                ? $"nflverse Expanded Eval ({season} W{week})"
+                : $"nflverse Replay Lab ({season} W{week})",
             LeagueId = Guid.Parse("f2018000-0000-4000-8000-000000000007"),
             SelectedRosterId = 1,
             TeamName = "Historical Replay Lab",
@@ -315,7 +366,9 @@ public sealed class NflverseHistoricalDataProvider : IHistoricalDataProvider
             OpponentRoster = [],
             Outcomes = outcomes,
             UnavailableSources = unavailableSources,
-            SourceLabel = $"{ProviderKey}-{season}-w{week}"
+            SourceLabel = candidateUniverse == HistoricalCandidateUniverse.ExpandedSkillUniverse
+                ? $"{ProviderKey}-expanded-{season}-w{week}"
+                : $"{ProviderKey}-{season}-w{week}"
         };
     }
 
@@ -751,6 +804,34 @@ public sealed class NflverseHistoricalDataProvider : IHistoricalDataProvider
         Take(Position.RB, starters: 2, total: 5);
         Take(Position.WR, starters: 3, total: 6);
         Take(Position.TE, starters: 1, total: 3);
+        return selected
+            .OrderBy(c => c.Identity.Position)
+            .ThenByDescending(c => c.IsStarter)
+            .ThenBy(c => c.Identity.GsisId, StringComparer.Ordinal)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Expanded Start/Sit board: every ACT skill identity for the week, with the same
+    /// reconstructed starter counts (QB1/RB2/WR3/TE1) and uncapped same-position bench.
+    /// Still not real league ownership — ownership remains UNAVAILABLE.
+    /// </summary>
+    private static List<RosterCandidate> SelectExpandedStartSitRoster(IReadOnlyList<RosterCandidate> ranked)
+    {
+        var selected = new List<RosterCandidate>();
+        void Assign(Position pos, int starters)
+        {
+            var pool = ranked.Where(c => c.Identity.Position == pos).ToList();
+            for (var i = 0; i < pool.Count; i++)
+            {
+                selected.Add(pool[i] with { IsStarter = i < starters });
+            }
+        }
+
+        Assign(Position.QB, starters: 1);
+        Assign(Position.RB, starters: 2);
+        Assign(Position.WR, starters: 3);
+        Assign(Position.TE, starters: 1);
         return selected
             .OrderBy(c => c.Identity.Position)
             .ThenByDescending(c => c.IsStarter)

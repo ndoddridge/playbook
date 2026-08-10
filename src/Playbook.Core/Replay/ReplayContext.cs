@@ -49,6 +49,13 @@ public sealed class HistoricalReplayRequest
     public string? FixtureId { get; init; }
 
     public DecisionKind DecisionKind { get; init; } = DecisionKind.StartSit;
+
+    /// <summary>
+    /// Candidate universe for historical evaluation. Default LabRoster preserves
+    /// the frozen 2018 benchmark. Use ExpandedSkillUniverse for coverage measurement.
+    /// </summary>
+    public HistoricalCandidateUniverse CandidateUniverse { get; init; } =
+        HistoricalCandidateUniverse.LabRoster;
 }
 
 /// <summary>Availability classification for historical data domains.</summary>

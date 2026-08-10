@@ -45,10 +45,12 @@ public sealed class QuickPicksHistoricalEvaluationRunner : IQuickPicksHistorical
         string? fixtureId = "nflverse",
         ScoringType scoringType = ScoringType.Ppr,
         KnowledgeImpactGroup? enhancedGroups = null,
+        HistoricalCandidateUniverse candidateUniverse = HistoricalCandidateUniverse.LabRoster,
         CancellationToken cancellationToken = default)
     {
         ConfigureMode(mode, enhancedGroups);
-        var graded = await EvaluateWeekCoreAsync(season, week, scoringType, fixtureId, mode, cancellationToken)
+        var graded = await EvaluateWeekCoreAsync(
+                season, week, scoringType, fixtureId, mode, candidateUniverse, cancellationToken)
             .ConfigureAwait(false);
         return QuickPickHistoricalGrader.BuildScorecard(
             season, mode, _knowledgeState.ActiveGroups, graded);
@@ -60,6 +62,7 @@ public sealed class QuickPicksHistoricalEvaluationRunner : IQuickPicksHistorical
         string? fixtureId = "nflverse",
         ScoringType scoringType = ScoringType.Ppr,
         KnowledgeImpactGroup? enhancedGroups = null,
+        HistoricalCandidateUniverse candidateUniverse = HistoricalCandidateUniverse.LabRoster,
         CancellationToken cancellationToken = default)
     {
         ConfigureMode(mode, enhancedGroups);
@@ -72,7 +75,7 @@ public sealed class QuickPicksHistoricalEvaluationRunner : IQuickPicksHistorical
         {
             cancellationToken.ThrowIfCancellationRequested();
             var weekGraded = await EvaluateWeekCoreAsync(
-                    season, week, scoringType, fixtureId, mode, cancellationToken)
+                    season, week, scoringType, fixtureId, mode, candidateUniverse, cancellationToken)
                 .ConfigureAwait(false);
             if (weekGraded.Count == 0)
             {
@@ -299,9 +302,11 @@ public sealed class QuickPicksHistoricalEvaluationRunner : IQuickPicksHistorical
         ScoringType scoringType,
         string? fixtureId,
         QuickPickMode mode,
+        HistoricalCandidateUniverse candidateUniverse,
         CancellationToken cancellationToken)
     {
-        var raw = await _source.GetRawWeekAsync(season, week, scoringType, fixtureId, cancellationToken)
+        var raw = await _source
+            .GetRawWeekAsync(season, week, scoringType, fixtureId, candidateUniverse, cancellationToken)
             .ConfigureAwait(false);
         if (raw is null)
         {

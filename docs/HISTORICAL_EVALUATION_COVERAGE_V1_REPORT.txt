@@ -1,0 +1,60 @@
+# Historical Evaluation Coverage Report — historical-evaluation-coverage-v1
+GeneratedAt: 2026-08-10 01:29:38Z
+HoldoutIsolated: True
+Frozen2018BenchmarkUnchanged: True
+
+## Development (frozen-benchmark season; counts only): 2018 W1-17
+
+| Metric | BEFORE (LabRoster) | AFTER (ExpandedSkillUniverse) | Δ |
+|---|---:|---:|---:|
+| Weeks loaded | 17 | 17 | 0 |
+| Distinct players | 61 | 653 | +592 |
+| Player-weeks | 289 | 8026 | +7737 |
+| Players w/ valid projection | 272 | 6206 | +5934 |
+| Players w/ week outcome | 277 | 5011 | +4734 |
+| Start/Sit candidates | 289 | 8026 | +7737 |
+| Start/Sit predictions | 99 | 111 | +12 |
+| Start/Sit graded | 94 | 105 | +11 |
+| Quick Picks candidates | 612 | 16889 | +16277 |
+| Quick Picks predictions | 576 | 12233 | +11657 |
+| Quick Picks graded | 549 | 9120 | +8571 |
+
+### Exclusions by reason (AFTER − BEFORE where applicable)
+
+| Reason | BEFORE | AFTER |
+|---|---:|---:|
+| NonSkillPosition | 0 | 0 |
+| NonActiveRosterStatus | 0 | 0 |
+| OutsideLabRosterCap | 7737 | 0 |
+| NoPriorRegGames | 17 | 1820 |
+| NoValidProjection | 17 | 1820 |
+| NoWeekOutcome | 12 | 3015 |
+| NoPositiveMarketProjection | 36 | 4656 |
+
+## Holdout (isolated; coverage counts only — not used for tuning): 2024 W1-17
+
+| Metric | BEFORE (LabRoster) | AFTER (ExpandedSkillUniverse) | Δ |
+|---|---:|---:|---:|
+| Weeks loaded | 17 | 17 | 0 |
+| Distinct players | 68 | 640 | +572 |
+| Player-weeks | 289 | 7069 | +6780 |
+| Players w/ valid projection | 272 | 5697 | +5425 |
+| Players w/ week outcome | 282 | 4983 | +4701 |
+| Start/Sit candidates | 289 | 7069 | +6780 |
+| Start/Sit predictions | 100 | 111 | +11 |
+| Start/Sit graded | 96 | 108 | +12 |
+| Quick Picks candidates | 612 | 14847 | +14235 |
+| Quick Picks predictions | 576 | 11128 | +10552 |
+| Quick Picks graded | 572 | 9108 | +8536 |
+
+### Exclusions by reason (AFTER − BEFORE where applicable)
+
+| Reason | BEFORE | AFTER |
+|---|---:|---:|
+| NonSkillPosition | 0 | 0 |
+| NonActiveRosterStatus | 0 | 0 |
+| OutsideLabRosterCap | 6780 | 0 |
+| NoPriorRegGames | 17 | 1372 |
+| NoValidProjection | 17 | 1372 |
+| NoWeekOutcome | 7 | 2086 |
+| NoPositiveMarketProjection | 36 | 3719 |

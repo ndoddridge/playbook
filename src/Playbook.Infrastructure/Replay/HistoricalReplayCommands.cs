@@ -261,11 +261,31 @@ public static class HistoricalReplayCommands
         string? fixtureId = "nflverse",
         ScoringType scoringType = ScoringType.Ppr,
         KnowledgeImpactGroup? enhancedGroups = null,
+        HistoricalCandidateUniverse candidateUniverse = HistoricalCandidateUniverse.LabRoster,
         CancellationToken cancellationToken = default)
     {
         var runner = services.GetRequiredService<IQuickPicksHistoricalEvaluationRunner>();
         return runner.RunWeekAsync(
-            season, week, mode, fixtureId, scoringType, enhancedGroups, cancellationToken);
+            season,
+            week,
+            mode,
+            fixtureId,
+            scoringType,
+            enhancedGroups,
+            candidateUniverse,
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Coverage expansion measurement: LabRoster vs ExpandedSkillUniverse counts only.
+    /// Does not tune models. Preserves 2024 holdout isolation (reported separately).
+    /// </summary>
+    public static Task<HistoricalEvaluationCoverageReport> RunHistoricalEvaluationCoverageAsync(
+        IServiceProvider services,
+        CancellationToken cancellationToken = default)
+    {
+        var runner = services.GetRequiredService<HistoricalEvaluationCoverageRunner>();
+        return runner.RunOfficialCoverageAsync(cancellationToken);
     }
 
     /// <summary>

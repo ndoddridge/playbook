@@ -17,6 +17,18 @@ public interface IHistoricalDataProvider
         int season,
         int week,
         ScoringType scoringType,
+        CancellationToken cancellationToken = default) =>
+        GetWeekAsync(season, week, scoringType, HistoricalCandidateUniverse.LabRoster, cancellationToken);
+
+    /// <summary>
+    /// Load a historical week with an explicit candidate universe.
+    /// Default remains <see cref="HistoricalCandidateUniverse.LabRoster"/> for frozen benchmarks.
+    /// </summary>
+    Task<HistoricalRawWeekData?> GetWeekAsync(
+        int season,
+        int week,
+        ScoringType scoringType,
+        HistoricalCandidateUniverse candidateUniverse,
         CancellationToken cancellationToken = default);
 }
 
