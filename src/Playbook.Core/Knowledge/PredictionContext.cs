@@ -45,6 +45,12 @@ public sealed class PredictionContext
 
     public string? MarketLabel { get; init; }
 
+    /// <summary>
+    /// Nearest-peer projection/ranking gap in prediction units (fantasy points or counting-stat units).
+    /// Used by margin-gated knowledge transforms. Null when no peer exists.
+    /// </summary>
+    public double? ComparativeMargin { get; init; }
+
     /// <summary>Decision-context stamp when fantasy decisions are in scope.</summary>
     public DecisionContext? DecisionContext { get; init; }
 

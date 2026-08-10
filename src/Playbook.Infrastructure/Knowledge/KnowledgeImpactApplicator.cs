@@ -6,11 +6,12 @@ using Playbook.Core.Predictions;
 namespace Playbook.Infrastructure.Knowledge;
 
 /// <summary>
-/// Explicit knowledge-group transforms for Knowledge Impact Experiment V1.
+/// Explicit knowledge-group transforms for Knowledge Impact experiments.
 ///
 /// Transformations (Enhanced only):
 /// - Usage: keep OpportunityScore / UsageScore (AssessValues already reads them).
 /// - RecentForm: bounded OpportunityScore delta from RecentProductionScore thresholds.
+/// - RecentFormThinMargin: same RecentForm deltas, only when ComparativeMargin is thin.
 /// - RoleHealth: keep Health signals; bounded OpportunityScore delta from RoleNote heuristics.
 ///
 /// Baseline: strip Usage/Opportunity/RecentProduction/Role/Health knowledge inputs
@@ -26,17 +27,33 @@ public sealed class KnowledgeImpactApplicator : IKnowledgeImpactApplicator
     }
 
     public PlayerKnowledge ApplyToPlayerKnowledge(PlayerKnowledge source) =>
+        ApplyToPlayerKnowledge(source, comparativeMargin: null);
+
+    public PlayerKnowledge ApplyToPlayerKnowledge(PlayerKnowledge source, double? comparativeMargin) =>
         _state.Mode switch
         {
             KnowledgeMode.Passthrough => source,
             KnowledgeMode.Baseline => ToBaseline(source),
-            KnowledgeMode.Enhanced => ToEnhanced(source, _state.ActiveGroups),
+            KnowledgeMode.Enhanced => ToEnhanced(
+                source, _state.ActiveGroups, comparativeMargin, _state.ThinMarginMaxPoints),
             _ => source
         };
 
     public IReadOnlyList<PlayerKnowledge> ApplyToPlayerKnowledgeBatch(
-        IReadOnlyList<PlayerKnowledge> source) =>
-        source.Select(ApplyToPlayerKnowledge).ToList();
+        IReadOnlyList<PlayerKnowledge> source)
+    {
+        if (_state.Mode != KnowledgeMode.Enhanced ||
+            !_state.ActiveGroups.HasFlag(KnowledgeImpactGroup.RecentFormThinMargin))
+        {
+            return source.Select(p => ApplyToPlayerKnowledge(p)).ToList();
+        }
+
+        var margins = ComputeNearestProjectionMargins(source);
+        return source
+            .Select(p => ApplyToPlayerKnowledge(
+                p, margins.TryGetValue(p.PlayerId, out var m) ? m : null))
+            .ToList();
+    }
 
     public Prediction ApplyToQuickPickPrediction(Prediction source, PredictionContext? knowledgeContext)
     {
@@ -66,7 +83,21 @@ public sealed class KnowledgeImpactApplicator : IKnowledgeImpactApplicator
             }
         }
 
-        if (_state.ActiveGroups.HasFlag(KnowledgeImpactGroup.RecentForm))
+        var applyRecentForm =
+            _state.ActiveGroups.HasFlag(KnowledgeImpactGroup.RecentForm) ||
+            (_state.ActiveGroups.HasFlag(KnowledgeImpactGroup.RecentFormThinMargin) &&
+             IsThinMargin(knowledgeContext.ComparativeMargin, _state.ThinMarginMaxPoints));
+
+        if (_state.ActiveGroups.HasFlag(KnowledgeImpactGroup.RecentFormThinMargin) &&
+            !IsThinMargin(knowledgeContext.ComparativeMargin, _state.ThinMarginMaxPoints))
+        {
+            notes.Add(
+                $"RecentFormThinMargin gate closed: margin=" +
+                $"{knowledgeContext.ComparativeMargin?.ToString("0.###") ?? "n/a"} " +
+                $"(max={_state.ThinMarginMaxPoints:0.###})");
+        }
+
+        if (applyRecentForm)
         {
             var form = knowledgeContext.Knowledge.Evidence
                 .FirstOrDefault(e => e.Aspect == KnowledgeAspect.RecentProduction && !e.IsUnavailableMarker);
@@ -155,7 +186,6 @@ public sealed class KnowledgeImpactApplicator : IKnowledgeImpactApplicator
                 SignalType.Outlook))
             .ToList();
 
-        // Keep projection / floor / ceiling / coverage / news / volatility / matchup.
         var facts = source.Facts
             .Where(f =>
                 !f.Key.StartsWith("opportunity", StringComparison.OrdinalIgnoreCase) &&
@@ -177,9 +207,20 @@ public sealed class KnowledgeImpactApplicator : IKnowledgeImpactApplicator
     }
 
     /// <summary>Pure Enhanced transform for tests / offline use.</summary>
-    public static PlayerKnowledge ToEnhanced(PlayerKnowledge source, KnowledgeImpactGroup groups)
+    public static PlayerKnowledge ToEnhanced(PlayerKnowledge source, KnowledgeImpactGroup groups) =>
+        ToEnhanced(
+            source,
+            groups,
+            comparativeMargin: null,
+            thinMarginMax: FrozenRecentFormThinMarginExperimentV1.ThinMarginMaxPoints);
+
+    /// <summary>Enhanced transform with optional comparative margin for thin-margin gating.</summary>
+    public static PlayerKnowledge ToEnhanced(
+        PlayerKnowledge source,
+        KnowledgeImpactGroup groups,
+        double? comparativeMargin,
+        double thinMarginMax)
     {
-        // Start from baseline (no groups), then re-apply selected groups explicitly.
         var working = ToBaseline(source);
         var opportunity = working.OpportunityScore;
         var usage = working.UsageScore;
@@ -213,7 +254,9 @@ public sealed class KnowledgeImpactApplicator : IKnowledgeImpactApplicator
             confidence = Math.Clamp(confidence + 5, 15, 90);
         }
 
-        if (groups.HasFlag(KnowledgeImpactGroup.RecentForm))
+        var recentFormActive = groups.HasFlag(KnowledgeImpactGroup.RecentForm);
+        var thinMarginActive = groups.HasFlag(KnowledgeImpactGroup.RecentFormThinMargin);
+        if (recentFormActive || thinMarginActive)
         {
             RemoveMissing(missing, "Recent production");
             foreach (var s in source.Signals.Where(s => s.Type == SignalType.RecentProduction))
@@ -227,33 +270,51 @@ public sealed class KnowledgeImpactApplicator : IKnowledgeImpactApplicator
                 facts.Add(f);
             }
 
+            var gateOpen = recentFormActive || IsThinMargin(comparativeMargin, thinMarginMax);
+            if (thinMarginActive && !gateOpen)
+            {
+                transformNotes.Add(
+                    $"RecentFormThinMargin gate closed: margin=" +
+                    $"{comparativeMargin?.ToString("0.###") ?? "n/a"} (max={thinMarginMax:0.###})");
+            }
+
             var prod = ExtractRecentProduction(source);
             if (prod is int score)
             {
-                var before = opportunity ?? 50;
-                if (score >= FrozenKnowledgeImpactExperimentV1.RecentFormHighThreshold)
+                if (!gateOpen)
                 {
-                    opportunity = Math.Clamp(
-                        before + FrozenKnowledgeImpactExperimentV1.RecentFormOpportunityDelta,
-                        0,
-                        100);
-                    transformNotes.Add(
-                        $"RecentForm+: prod={score} Opportunity {before}→{opportunity} " +
-                        $"(+{FrozenKnowledgeImpactExperimentV1.RecentFormOpportunityDelta})");
-                }
-                else if (score <= FrozenKnowledgeImpactExperimentV1.RecentFormLowThreshold)
-                {
-                    opportunity = Math.Clamp(
-                        before - FrozenKnowledgeImpactExperimentV1.RecentFormOpportunityDelta,
-                        0,
-                        100);
-                    transformNotes.Add(
-                        $"RecentForm-: prod={score} Opportunity {before}→{opportunity} " +
-                        $"(-{FrozenKnowledgeImpactExperimentV1.RecentFormOpportunityDelta})");
+                    transformNotes.Add($"RecentFormThinMargin~: prod={score} no opportunity delta (gate closed)");
                 }
                 else
                 {
-                    transformNotes.Add($"RecentForm~: prod={score} no opportunity delta");
+                    var before = opportunity ?? 50;
+                    var label = thinMarginActive ? "RecentFormThinMargin" : "RecentForm";
+                    if (score >= FrozenKnowledgeImpactExperimentV1.RecentFormHighThreshold)
+                    {
+                        opportunity = Math.Clamp(
+                            before + FrozenKnowledgeImpactExperimentV1.RecentFormOpportunityDelta,
+                            0,
+                            100);
+                        transformNotes.Add(
+                            $"{label}+: prod={score} margin={comparativeMargin?.ToString("0.###") ?? "n/a"} " +
+                            $"Opportunity {before}→{opportunity} " +
+                            $"(+{FrozenKnowledgeImpactExperimentV1.RecentFormOpportunityDelta})");
+                    }
+                    else if (score <= FrozenKnowledgeImpactExperimentV1.RecentFormLowThreshold)
+                    {
+                        opportunity = Math.Clamp(
+                            before - FrozenKnowledgeImpactExperimentV1.RecentFormOpportunityDelta,
+                            0,
+                            100);
+                        transformNotes.Add(
+                            $"{label}-: prod={score} margin={comparativeMargin?.ToString("0.###") ?? "n/a"} " +
+                            $"Opportunity {before}→{opportunity} " +
+                            $"(-{FrozenKnowledgeImpactExperimentV1.RecentFormOpportunityDelta})");
+                    }
+                    else
+                    {
+                        transformNotes.Add($"{label}~: prod={score} no opportunity delta");
+                    }
                 }
             }
         }
@@ -288,8 +349,11 @@ public sealed class KnowledgeImpactApplicator : IKnowledgeImpactApplicator
             }
         }
 
-        // Matchup intentionally ignored — insufficient historical coverage.
         _ = groups.HasFlag(KnowledgeImpactGroup.Matchup);
+
+        var sourceId = thinMarginActive
+            ? FrozenRecentFormThinMarginExperimentV1.ExperimentId
+            : FrozenKnowledgeImpactExperimentV1.ExperimentId;
 
         foreach (var note in transformNotes)
         {
@@ -297,13 +361,45 @@ public sealed class KnowledgeImpactApplicator : IKnowledgeImpactApplicator
             {
                 Key = "knowledge_impact.transform",
                 Statement = note,
-                Source = FrozenKnowledgeImpactExperimentV1.ExperimentId,
+                Source = sourceId,
                 ObservedAt = source.InformationCutoff ?? source.GeneratedAt,
                 Status = EvidenceStatus.Known
             });
         }
 
         return Clone(source, facts, signals, opportunity, usage, healthLabel, missing, confidence);
+    }
+
+    public static bool IsThinMargin(double? comparativeMargin, double thinMarginMax) =>
+        comparativeMargin is double m && m < thinMarginMax;
+
+    /// <summary>
+    /// Nearest same-position projected-points gap. Null when fewer than two projected peers.
+    /// </summary>
+    public static IReadOnlyDictionary<Guid, double?> ComputeNearestProjectionMargins(
+        IReadOnlyList<PlayerKnowledge> source)
+    {
+        var result = new Dictionary<Guid, double?>();
+        foreach (var group in source.GroupBy(p => p.PositionLabel ?? "?"))
+        {
+            var withProj = group.Where(p => p.ProjectedPoints is not null).ToList();
+            foreach (var player in group)
+            {
+                if (player.ProjectedPoints is null || withProj.Count < 2)
+                {
+                    result[player.PlayerId] = null;
+                    continue;
+                }
+
+                var proj = (double)player.ProjectedPoints.Value;
+                var nearest = withProj
+                    .Where(o => o.PlayerId != player.PlayerId)
+                    .Min(o => Math.Abs((double)o.ProjectedPoints!.Value - proj));
+                result[player.PlayerId] = nearest;
+            }
+        }
+
+        return result;
     }
 
     private static int? ExtractRecentProduction(PlayerKnowledge source)
