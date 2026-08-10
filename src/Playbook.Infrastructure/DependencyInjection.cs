@@ -1,4 +1,5 @@
 using Playbook.Application.Abstractions;
+using Playbook.Application.Replay;
 using Playbook.Application.Injuries;
 using Playbook.Application.Injuries.Interfaces;
 using Playbook.Application.Intelligence;
@@ -16,6 +17,7 @@ using Playbook.Application.Recommendations;
 using Playbook.Application.Stats;
 using Playbook.Application.Stats.Interfaces;
 using Playbook.Infrastructure.Decisions;
+using Playbook.Infrastructure.Replay;
 using Playbook.Infrastructure.Hosting;
 using Playbook.Infrastructure.Injuries;
 using Playbook.Infrastructure.Intelligence.Services;
@@ -124,6 +126,16 @@ public static class DependencyInjection
         services.AddSingleton<IDecisionEngine, DecisionEngine>();
         services.AddSingleton<IFantasyTeamIntelligenceService, FantasyTeamIntelligenceService>();
         services.AddSingleton<IWeeklyMatchupGamePlanService, WeeklyMatchupGamePlanService>();
+        RegisterHistoricalReplay(services);
+    }
+
+    private static void RegisterHistoricalReplay(IServiceCollection services)
+    {
+        services.AddSingleton<IHistoricalSnapshotSource, FixtureHistoricalSnapshotSource>();
+        services.AddSingleton<IHistoricalSnapshotBuilder, HistoricalSnapshotBuilder>();
+        services.AddSingleton<IHistoricalKnowledgeFactory, HistoricalKnowledgeFactory>();
+        services.AddSingleton<IDecisionOutcomeEvaluator, StartSitOutcomeEvaluator>();
+        services.AddSingleton<IHistoricalReplayRunner, HistoricalReplayRunner>();
     }
 
     private static void RegisterProjections(IServiceCollection services)
