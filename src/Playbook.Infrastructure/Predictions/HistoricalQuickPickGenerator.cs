@@ -31,8 +31,8 @@ public sealed class HistoricalQuickPickGenerator
         HistoricalSnapshot snapshot,
         QuickPickMode mode)
     {
-        var drafts = new List<(QuickPickHistoricalPrediction Pred, double SortScore)>();
-
+        // Pass 1: collect cutoff-safe candidates (needed for ComparativeMargin peers).
+        var candidates = new List<(HistoricalPlayerState Player, PredictionMarketType Market, double Projected, int? Confidence)>();
         foreach (var player in snapshot.Players.OrderBy(p => p.PlayerName, StringComparer.Ordinal)
                      .ThenBy(p => p.PlayerId))
         {
@@ -44,52 +44,61 @@ public sealed class HistoricalQuickPickGenerator
                     continue;
                 }
 
-                var confidence = player.ProjectionConfidence;
-                var baseRanking = projected.Value;
-                var knowledgeAttached = false;
-                PredictionContext? knowledgeContext = null;
-                var rankingScore = baseRanking;
-
-                if (mode == QuickPickMode.Enhanced)
-                {
-                    knowledgeContext = _sharedKnowledge.BuildHistoricalPredictionContext(
-                        snapshot,
-                        player.PlayerId,
-                        PredictionType.QuickPick);
-                    knowledgeAttached = true;
-
-                    // Bridge into the live ApplyToQuickPickPrediction surface so Enhanced
-                    // uses the same frozen knowledge applicator (Allowed groups may be None).
-                    var bridge = BuildBridgePrediction(
-                        snapshot, player, market, projected.Value, confidence, baseRanking);
-                    var adjusted = _knowledgeImpact.ApplyToQuickPickPrediction(
-                        bridge, knowledgeContext);
-                    // Map OpportunityScore delta back onto ranking score units.
-                    var oppDelta = (double)(adjusted.OpportunityScore - bridge.OpportunityScore);
-                    rankingScore = baseRanking + oppDelta;
-                }
-
-                drafts.Add((new QuickPickHistoricalPrediction
-                {
-                    Season = snapshot.Season,
-                    Week = snapshot.Week,
-                    PlayerId = player.PlayerId,
-                    PlayerName = player.PlayerName,
-                    Position = player.Position,
-                    Team = player.Team,
-                    PredictionType = QuickPickHistoricalGrading.PredictionTypeLabel,
-                    Market = market,
-                    ProjectedValue = projected.Value,
-                    RankInMarket = 0, // assigned below
-                    RankingScore = rankingScore,
-                    Confidence = confidence,
-                    KnowledgeContext = knowledgeContext,
-                    KnowledgeAttached = knowledgeAttached,
-                    CutoffTimestamp = snapshot.InformationCutoff,
-                    Mode = mode,
-                    EvaluatorVersion = FrozenQuickPicksHistoricalEvaluationV1.EvaluatorVersion
-                }, rankingScore));
+                candidates.Add((player, market, projected.Value, player.ProjectionConfidence));
             }
+        }
+
+        var margins = ComputeMarketMargins(candidates);
+        var drafts = new List<(QuickPickHistoricalPrediction Pred, double SortScore)>();
+
+        foreach (var (player, market, projected, confidence) in candidates)
+        {
+            var baseRanking = projected;
+            var knowledgeAttached = false;
+            PredictionContext? knowledgeContext = null;
+            var rankingScore = baseRanking;
+
+            if (mode == QuickPickMode.Enhanced)
+            {
+                var baseContext = _sharedKnowledge.BuildHistoricalPredictionContext(
+                    snapshot,
+                    player.PlayerId,
+                    PredictionType.QuickPick);
+                var margin = margins.GetValueOrDefault((player.PlayerId, market));
+                knowledgeContext = WithComparativeMargin(baseContext, margin);
+                knowledgeAttached = true;
+
+                // Bridge into the live ApplyToQuickPickPrediction surface so Enhanced
+                // uses the same frozen knowledge applicator (Allowed groups may be None).
+                var bridge = BuildBridgePrediction(
+                    snapshot, player, market, projected, confidence, baseRanking);
+                var adjusted = _knowledgeImpact.ApplyToQuickPickPrediction(
+                    bridge, knowledgeContext);
+                // Map OpportunityScore delta back onto ranking score units.
+                var oppDelta = (double)(adjusted.OpportunityScore - bridge.OpportunityScore);
+                rankingScore = baseRanking + oppDelta;
+            }
+
+            drafts.Add((new QuickPickHistoricalPrediction
+            {
+                Season = snapshot.Season,
+                Week = snapshot.Week,
+                PlayerId = player.PlayerId,
+                PlayerName = player.PlayerName,
+                Position = player.Position,
+                Team = player.Team,
+                PredictionType = QuickPickHistoricalGrading.PredictionTypeLabel,
+                Market = market,
+                ProjectedValue = projected,
+                RankInMarket = 0, // assigned below
+                RankingScore = rankingScore,
+                Confidence = confidence,
+                KnowledgeContext = knowledgeContext,
+                KnowledgeAttached = knowledgeAttached,
+                CutoffTimestamp = snapshot.InformationCutoff,
+                Mode = mode,
+                EvaluatorVersion = FrozenQuickPicksHistoricalEvaluationV1.EvaluatorVersion
+            }, rankingScore));
         }
 
         // Assign ranks within market: highest RankingScore first; ties broken by name/id.
@@ -240,4 +249,53 @@ public sealed class HistoricalQuickPickGenerator
         Array.Copy(bytes, guidBytes, 16);
         return new Guid(guidBytes);
     }
+
+    private static Dictionary<(Guid PlayerId, PredictionMarketType Market), double?> ComputeMarketMargins(
+        IReadOnlyList<(HistoricalPlayerState Player, PredictionMarketType Market, double Projected, int? Confidence)> candidates)
+    {
+        var result = new Dictionary<(Guid, PredictionMarketType), double?>();
+        foreach (var marketGroup in candidates.GroupBy(c => c.Market))
+        {
+            var peers = marketGroup.ToList();
+            foreach (var c in peers)
+            {
+                if (peers.Count < 2)
+                {
+                    result[(c.Player.PlayerId, c.Market)] = null;
+                    continue;
+                }
+
+                var nearest = peers
+                    .Where(o => o.Player.PlayerId != c.Player.PlayerId)
+                    .Min(o => Math.Abs(o.Projected - c.Projected));
+                result[(c.Player.PlayerId, c.Market)] = nearest;
+            }
+        }
+
+        return result;
+    }
+
+    private static PredictionContext WithComparativeMargin(PredictionContext source, double? margin) =>
+        new()
+        {
+            PredictionType = source.PredictionType,
+            Season = source.Season,
+            Week = source.Week,
+            InformationCutoff = source.InformationCutoff,
+            PlayerId = source.PlayerId,
+            PlayerName = source.PlayerName,
+            Position = source.Position,
+            Team = source.Team,
+            OpponentTeam = source.OpponentTeam,
+            ScoringType = source.ScoringType,
+            LeagueId = source.LeagueId,
+            Knowledge = source.Knowledge,
+            ProjectedPoints = source.ProjectedPoints,
+            ProjectionConfidence = source.ProjectionConfidence,
+            MarketLine = source.MarketLine,
+            MarketLabel = source.MarketLabel,
+            ComparativeMargin = margin,
+            DecisionContext = source.DecisionContext,
+            GeneratedAt = source.GeneratedAt
+        };
 }

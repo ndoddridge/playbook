@@ -217,6 +217,18 @@ public static class HistoricalReplayCommands
     }
 
     /// <summary>
+    /// RecentForm Thin-Margin Experiment V1: Baseline vs Enhanced(RecentFormThinMargin).
+    /// Development first, freeze, ONE 2024 holdout. Production default unchanged.
+    /// </summary>
+    public static Task<KnowledgeImpactExperimentReport> RunRecentFormThinMarginExperimentAsync(
+        IServiceProvider services,
+        CancellationToken cancellationToken = default)
+    {
+        var runner = services.GetRequiredService<Knowledge.KnowledgeImpactExperimentRunner>();
+        return runner.RunOfficialRecentFormThinMarginExperimentAsync(cancellationToken);
+    }
+
+    /// <summary>
     /// Quick Picks Historical Evaluation V1: Baseline then Enhanced (observational),
     /// development seasons first, then ONE 2024 holdout.
     /// </summary>

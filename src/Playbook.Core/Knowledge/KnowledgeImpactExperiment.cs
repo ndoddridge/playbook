@@ -41,6 +41,12 @@ public enum KnowledgeImpactGroup
     /// </summary>
     Matchup = 8,
 
+    /// <summary>
+    /// RecentForm Opportunity deltas applied only when ComparativeMargin is thin.
+    /// Same thresholds/deltas as RecentForm; gate is the sole experimental variable.
+    /// </summary>
+    RecentFormThinMargin = 16,
+
     AllSupported = RecentForm | Usage | RoleHealth
 }
 

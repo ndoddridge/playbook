@@ -302,6 +302,268 @@ public sealed class KnowledgeImpactExperimentRunner
             policyState.Mode = previousPolicy;
             knowledgeState.Mode = previousKnowledgeMode;
             knowledgeState.ActiveGroups = previousGroups;
+            knowledgeState.ConfigurePassthrough();
+        }
+    }
+
+    /// <summary>
+    /// RecentForm Thin-Margin Experiment V1: Baseline vs Enhanced(RecentFormThinMargin).
+    /// Development seasons first (deterministic check), freeze gate/constants, ONE 2024 holdout.
+    /// Does not re-enable Usage/RoleHealth. Production default restored to Passthrough.
+    /// </summary>
+    public async Task<KnowledgeImpactExperimentReport> RunOfficialRecentFormThinMarginExperimentAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var developmentSeasons = FrozenRecentFormThinMarginExperimentV1.DevelopmentSeasons.ToList();
+        var holdout = FrozenRecentFormThinMarginExperimentV1.HoldoutSeason;
+        var groups = FrozenRecentFormThinMarginExperimentV1.ExperimentalGroups;
+
+        var projectionState = _services.GetRequiredService<HistoricalProjectionExperimentState>();
+        var policyState = _services.GetRequiredService<ConfidenceAwareDecisionPolicyState>();
+        var knowledgeState = _services.GetRequiredService<KnowledgeImpactExperimentState>();
+
+        var previousProjection = projectionState.PrimaryMode;
+        var previousPolicy = policyState.Mode;
+        var previousKnowledgeMode = knowledgeState.Mode;
+        var previousGroups = knowledgeState.ActiveGroups;
+
+        projectionState.PrimaryMode = HistoricalProjectionPrimaryMode.ProjectionV2;
+        policyState.Mode = ConfidenceAwareDecisionPolicyMode.Off;
+
+        try
+        {
+            AssertFrozenLayersUnchanged();
+            AssertThinMarginExperimentFrozen();
+
+            var seasonRunner = _services.GetRequiredService<IMultiWeekHistoricalReplayRunner>();
+            var calendar = _services.GetRequiredService<IHistoricalSeasonCalendar>();
+
+            _logger.LogInformation("RecentFormThinMargin: development BASELINE");
+            var baselineDevCards = await RunSeasonsAsync(
+                    seasonRunner, calendar, developmentSeasons,
+                    KnowledgeMode.Baseline, KnowledgeImpactGroup.None, knowledgeState, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (baselineDevCards.Any(c => c.Season == holdout))
+            {
+                throw new InvalidOperationException("Holdout leaked into thin-margin development set.");
+            }
+
+            // Determinism: re-run first development season Baseline.
+            var basRepeat = await RunSeasonsAsync(
+                    seasonRunner, calendar, [developmentSeasons[0]],
+                    KnowledgeMode.Baseline, KnowledgeImpactGroup.None, knowledgeState, cancellationToken)
+                .ConfigureAwait(false);
+            AssertSeasonCardDeterministic(baselineDevCards[0], basRepeat[0], "Baseline");
+
+            _logger.LogInformation("RecentFormThinMargin: development ENHANCED");
+            var enhancedDevCards = await RunSeasonsAsync(
+                    seasonRunner, calendar, developmentSeasons,
+                    KnowledgeMode.Enhanced, groups, knowledgeState, cancellationToken)
+                .ConfigureAwait(false);
+
+            var enhRepeat = await RunSeasonsAsync(
+                    seasonRunner, calendar, [developmentSeasons[0]],
+                    KnowledgeMode.Enhanced, groups, knowledgeState, cancellationToken)
+                .ConfigureAwait(false);
+            AssertSeasonCardDeterministic(enhancedDevCards[0], enhRepeat[0], "Enhanced ThinMargin");
+
+            var foldDeltas = new List<double>();
+            var looSummaries = new List<string>();
+            foreach (var valSeason in developmentSeasons)
+            {
+                var baseTot = TotalDecisionValue(baselineDevCards.Where(c => c.Season == valSeason));
+                var enhTot = TotalDecisionValue(enhancedDevCards.Where(c => c.Season == valSeason));
+                var delta = enhTot - baseTot;
+                foldDeltas.Add(delta);
+                looSummaries.Add(
+                    $"RecentFormThinMargin val={valSeason}: baseTot={baseTot:0.00} enhTot={enhTot:0.00} Δ={delta:0.00}");
+            }
+
+            var meanDelta = foldDeltas.Average();
+            looSummaries.Add($"devMeanΔ={meanDelta:0.00} thinMarginMax={FrozenRecentFormThinMarginExperimentV1.ThinMarginMaxPoints}");
+
+            var developmentBaseline = BuildScopeMetrics(
+                "DEV BASELINE", KnowledgeMode.Baseline, KnowledgeImpactGroup.None,
+                baselineDevCards, baselineDevCards);
+            var developmentEnhanced = BuildScopeMetrics(
+                "DEV ENHANCED ThinMargin", KnowledgeMode.Enhanced, groups,
+                enhancedDevCards, baselineDevCards);
+
+            // Freeze before holdout.
+            AssertThinMarginExperimentFrozen();
+            AssertFrozenLayersUnchanged();
+
+            _logger.LogInformation("RecentFormThinMargin: official holdout {Season} BASELINE", holdout);
+            var holdoutBaselineCards = await RunSeasonsAsync(
+                    seasonRunner, calendar, [holdout],
+                    KnowledgeMode.Baseline, KnowledgeImpactGroup.None, knowledgeState, cancellationToken)
+                .ConfigureAwait(false);
+
+            _logger.LogInformation("RecentFormThinMargin: official holdout {Season} ENHANCED", holdout);
+            var holdoutEnhancedCards = await RunSeasonsAsync(
+                    seasonRunner, calendar, [holdout],
+                    KnowledgeMode.Enhanced, groups, knowledgeState, cancellationToken)
+                .ConfigureAwait(false);
+
+            var holdoutBaseline = BuildScopeMetrics(
+                "HOLDOUT BASELINE", KnowledgeMode.Baseline, KnowledgeImpactGroup.None,
+                holdoutBaselineCards, holdoutBaselineCards);
+            var holdoutEnhanced = BuildScopeMetrics(
+                "HOLDOUT ENHANCED ThinMargin", KnowledgeMode.Enhanced, groups,
+                holdoutEnhancedCards, holdoutBaselineCards);
+
+            var failureNotes = BuildFailureAnalysis(
+                holdoutBaselineCards, holdoutEnhancedCards, holdoutBaseline, holdoutEnhanced);
+            failureNotes = failureNotes
+                .Append(FrozenRecentFormThinMarginExperimentV1.MappingSummary)
+                .ToList();
+
+            var holdDelta = (holdoutEnhanced.TotalDecisionValue ?? 0) - (holdoutBaseline.TotalDecisionValue ?? 0);
+            var changeRate = (holdoutEnhanced.ChangeRatePercent ?? 0) / 100.0;
+            var rejectedReenabled =
+                groups.HasFlag(KnowledgeImpactGroup.Usage) ||
+                groups.HasFlag(KnowledgeImpactGroup.RoleHealth);
+
+            ProjectionExperimentVerdict verdict;
+            string rationale;
+            if (rejectedReenabled || groups != KnowledgeImpactGroup.RecentFormThinMargin)
+            {
+                verdict = ProjectionExperimentVerdict.Regression;
+                rationale = "INVALID — experiment must isolate RecentFormThinMargin without rejected transforms.";
+            }
+            else if (holdDelta >= KnowledgeImpactSuccessCriteria.MinHoldoutTotalValueImprovement &&
+                     changeRate >= KnowledgeImpactSuccessCriteria.MinHoldoutChangeRate)
+            {
+                verdict = ProjectionExperimentVerdict.Improvement;
+                rationale =
+                    $"Holdout total decision value improved by {holdDelta:0.00} with change rate {changeRate:0.0%}. " +
+                    "Freeze RecentFormThinMargin as next candidate; keep production Passthrough until accepted. " +
+                    $"Dev mean Δ={meanDelta:0.00} (informational).";
+            }
+            else if (holdDelta <= -KnowledgeImpactSuccessCriteria.MinHoldoutTotalValueImprovement &&
+                     changeRate >= KnowledgeImpactSuccessCriteria.MinHoldoutChangeRate)
+            {
+                verdict = ProjectionExperimentVerdict.Regression;
+                rationale =
+                    $"Holdout total decision value worsened by {holdDelta:0.00} (change rate {changeRate:0.0%}). " +
+                    "Reject RecentFormThinMargin. Production remains Passthrough. " +
+                    $"Dev mean Δ={meanDelta:0.00} (informational).";
+            }
+            else
+            {
+                verdict = ProjectionExperimentVerdict.NoMaterialImprovement;
+                rationale =
+                    $"Holdout Δ={holdDelta:0.00}, changeRate={changeRate:0.0%} did not meet success criteria " +
+                    $"(need Δ≥{KnowledgeImpactSuccessCriteria.MinHoldoutTotalValueImprovement} and " +
+                    $"change≥{KnowledgeImpactSuccessCriteria.MinHoldoutChangeRate:0%}). " +
+                    "Recommendation: DISABLED. Production remains Passthrough. " +
+                    $"Dev mean Δ={meanDelta:0.00} (informational).";
+            }
+
+            var ablation = new KnowledgeImpactAblationRow
+            {
+                GroupName = "RecentFormThinMargin",
+                Group = groups,
+                CoverageNote =
+                    "RecentForm deltas gated by nearest same-position projection margin < 3.0 " +
+                    "(weak-margin bucket convention).",
+                Development = developmentEnhanced,
+                Holdout = holdoutEnhanced,
+                Verdict = verdict,
+                VerdictRationale = rationale
+            };
+
+            return new KnowledgeImpactExperimentReport
+            {
+                GeneratedAt = DateTimeOffset.UtcNow,
+                Hypothesis = FrozenRecentFormThinMarginExperimentV1.Hypothesis,
+                SuccessCriteriaText = KnowledgeImpactSuccessCriteria.Text,
+                DevelopmentSeasons = developmentSeasons,
+                HoldoutSeason = holdout,
+                UsedHoldoutDuringFitting = false,
+                ProjectionV2Unchanged = true,
+                ConfidenceV2Unchanged = true,
+                DecisionPolicyV1Unchanged = true,
+                AvailableSignalNotes =
+                [
+                    "RecentFormThinMargin uses existing RecentProductionScore + ComparativeMargin.",
+                    "ComparativeMargin = nearest same-position ProjectedPoints gap (Start/Sit batch).",
+                    "Quick Picks path uses same gate via PredictionContext.ComparativeMargin (same-market gap).",
+                    "Usage / RoleHealth / Matchup not enabled."
+                ],
+                DataCoverageNotes =
+                [
+                    FrozenRecentFormThinMarginExperimentV1.MappingSummary,
+                    "ThinMarginMaxPoints=3.0 pre-registered from RecommendationMargin weak(<3) bucket; not fit on 2024."
+                ],
+                LooFoldSummaries = looSummaries,
+                FrozenGroups = groups,
+                DevelopmentBaseline = developmentBaseline,
+                DevelopmentEnhanced = developmentEnhanced,
+                HoldoutBaseline = holdoutBaseline,
+                HoldoutEnhanced = holdoutEnhanced,
+                AblationRows = [ablation],
+                FailureAnalysisNotes = failureNotes,
+                QuickPicksEvaluationNote =
+                    "Transform is prediction-type agnostic at the shared applicator. " +
+                    "This official holdout measures Start/Sit decision value. " +
+                    "QP can consume the same RecentFormThinMargin group via ComparativeMargin.",
+                Verdict = verdict,
+                VerdictRationale = rationale
+            };
+        }
+        finally
+        {
+            projectionState.PrimaryMode = previousProjection;
+            policyState.Mode = previousPolicy;
+            knowledgeState.Mode = previousKnowledgeMode;
+            knowledgeState.ActiveGroups = previousGroups;
+            knowledgeState.ConfigurePassthrough();
+        }
+    }
+
+    private static void AssertThinMarginExperimentFrozen()
+    {
+        if (FrozenRecentFormThinMarginExperimentV1.ExperimentalGroups !=
+            KnowledgeImpactGroup.RecentFormThinMargin)
+        {
+            throw new InvalidOperationException("Thin-margin experiment groups mutated.");
+        }
+
+        if (Math.Abs(FrozenRecentFormThinMarginExperimentV1.ThinMarginMaxPoints - 3.0) > 1e-9 ||
+            FrozenRecentFormThinMarginExperimentV1.HighThreshold != 65 ||
+            FrozenRecentFormThinMarginExperimentV1.LowThreshold != 35 ||
+            FrozenRecentFormThinMarginExperimentV1.StartSitOpportunityDelta != 6)
+        {
+            throw new InvalidOperationException("Thin-margin / RecentForm constants retuned before holdout.");
+        }
+
+        if (FrozenRecentFormThinMarginExperimentV1.HoldoutSeason != 2024)
+        {
+            throw new InvalidOperationException("Holdout season mutated.");
+        }
+    }
+
+    private static void AssertSeasonCardDeterministic(
+        SeasonScorecard a,
+        SeasonScorecard b,
+        string label)
+    {
+        if (Math.Abs((a.DecisionAccuracyPercent ?? -1) - (b.DecisionAccuracyPercent ?? -1)) > 1e-9 ||
+            Math.Abs((a.CurrentModelMae ?? -1) - (b.CurrentModelMae ?? -1)) > 1e-9 ||
+            a.AllGrades.Count != b.AllGrades.Count)
+        {
+            throw new InvalidOperationException($"Non-deterministic season replay ({label}).");
+        }
+
+        var aTot = a.AllGrades.Where(g => g.ActualDecisionDifferential is not null)
+            .Sum(g => g.ActualDecisionDifferential!.Value);
+        var bTot = b.AllGrades.Where(g => g.ActualDecisionDifferential is not null)
+            .Sum(g => g.ActualDecisionDifferential!.Value);
+        if (Math.Abs(aTot - bTot) > 1e-6)
+        {
+            throw new InvalidOperationException($"Non-deterministic decision value ({label}).");
         }
     }
 
@@ -321,6 +583,7 @@ public sealed class KnowledgeImpactExperimentRunner
         else if (mode == KnowledgeMode.Enhanced)
         {
             knowledgeState.ConfigureEnhanced(groups);
+            knowledgeState.ThinMarginMaxPoints = FrozenRecentFormThinMarginExperimentV1.ThinMarginMaxPoints;
         }
         else
         {
