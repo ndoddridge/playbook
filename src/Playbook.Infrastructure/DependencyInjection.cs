@@ -1,3 +1,4 @@
+using Playbook.Application.Abstractions;
 using Playbook.Application.Injuries;
 using Playbook.Application.Injuries.Interfaces;
 using Playbook.Application.Intelligence;
@@ -14,6 +15,7 @@ using Playbook.Application.Projections.Interfaces;
 using Playbook.Application.Recommendations;
 using Playbook.Application.Stats;
 using Playbook.Application.Stats.Interfaces;
+using Playbook.Infrastructure.Decisions;
 using Playbook.Infrastructure.Hosting;
 using Playbook.Infrastructure.Injuries;
 using Playbook.Infrastructure.Intelligence.Services;
@@ -117,6 +119,9 @@ public static class DependencyInjection
         services.AddSingleton<IIntelligenceAggregator, IntelligenceAggregator>();
         services.AddSingleton<IIntelligenceService, IntelligenceService>();
         services.AddSingleton<IPlayerIntelligenceAssessmentService, PlayerIntelligenceAssessmentService>();
+        services.AddSingleton<IDecisionRecordStore, InMemoryDecisionRecordStore>();
+        services.AddSingleton<IPlayerKnowledgeComposer, PlayerKnowledgeComposer>();
+        services.AddSingleton<IDecisionEngine, DecisionEngine>();
         services.AddSingleton<IFantasyTeamIntelligenceService, FantasyTeamIntelligenceService>();
         services.AddSingleton<IWeeklyMatchupGamePlanService, WeeklyMatchupGamePlanService>();
     }

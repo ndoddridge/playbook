@@ -1,7 +1,9 @@
+using Playbook.Application.Abstractions;
 using Playbook.Application.Intelligence.Interfaces;
 using Playbook.Application.Leagues;
 using Playbook.Application.Players;
 using Playbook.Application.Projections.Interfaces;
+using Playbook.Core.Decisions;
 using Playbook.Core.Intelligence.Models;
 using Playbook.Core.Leagues;
 using Playbook.Core.Players;
@@ -11,6 +13,7 @@ namespace Playbook.Infrastructure.Intelligence.Services;
 
 /// <summary>
 /// Fantasy team intelligence composed from existing assessment + projection services.
+/// Start/Sit recommendations are produced by the centralized decision engine.
 /// Invalidates whenever league / owned-team context changes.
 /// </summary>
 public sealed class FantasyTeamIntelligenceService : IFantasyTeamIntelligenceService
@@ -19,6 +22,8 @@ public sealed class FantasyTeamIntelligenceService : IFantasyTeamIntelligenceSer
     private readonly IPlayerService _players;
     private readonly IPlayerIntelligenceAssessmentService _assessments;
     private readonly IProjectionService _projections;
+    private readonly IPlayerKnowledgeComposer _knowledgeComposer;
+    private readonly IDecisionEngine _decisionEngine;
     private readonly object _gate = new();
 
     private FantasyTeamIntelligenceReport? _cached;
@@ -28,12 +33,16 @@ public sealed class FantasyTeamIntelligenceService : IFantasyTeamIntelligenceSer
         ILeagueState leagueState,
         IPlayerService players,
         IPlayerIntelligenceAssessmentService assessments,
-        IProjectionService projections)
+        IProjectionService projections,
+        IPlayerKnowledgeComposer knowledgeComposer,
+        IDecisionEngine decisionEngine)
     {
         _leagueState = leagueState;
         _players = players;
         _assessments = assessments;
         _projections = projections;
+        _knowledgeComposer = knowledgeComposer;
+        _decisionEngine = decisionEngine;
         _leagueState.Changed += OnLeagueContextChanged;
     }
 
@@ -137,7 +146,8 @@ public sealed class FantasyTeamIntelligenceService : IFantasyTeamIntelligenceSer
                 unavailable);
         }
 
-        var startSit = BuildStartSit(rows);
+        var decisionContext = DecisionContext.FromLeague(league, team, DecisionKind.StartSit);
+        var startSit = BuildStartSitViaEngine(rows, decisionContext);
         var alerts = BuildAlerts(rows, startSit);
         var rosterIntel = BuildRosterIntelligence(rows, alerts);
         var (strengths, weaknesses, concerns) = BuildStrengthWeakness(rows);
@@ -202,251 +212,31 @@ public sealed class FantasyTeamIntelligenceService : IFantasyTeamIntelligenceSer
             GeneratedAt = now
         };
 
-    private static IReadOnlyList<StartSitRecommendation> BuildStartSit(IReadOnlyList<RosterRow> rows)
+    private IReadOnlyList<StartSitRecommendation> BuildStartSitViaEngine(
+        IReadOnlyList<RosterRow> rows,
+        DecisionContext decisionContext)
     {
-        var recommendations = new List<StartSitRecommendation>();
-
-        foreach (var group in rows.GroupBy(r => r.Player.Position).OrderBy(g => PositionOrder(g.Key)))
-        {
-            if (group.Key is Position.K or Position.DST)
-            {
-                continue;
-            }
-
-            var ranked = group
-                .Select(r => (Row: r, Score: DecisionScore(r), Insufficient: IsInsufficient(r)))
-                .OrderByDescending(x => x.Score)
-                .ThenByDescending(x => x.Row.Projection?.ProjectedFantasyPoints ?? -1)
-                .ThenBy(x => x.Row.Player.FullName)
-                .ToList();
-
-            if (ranked.Count == 0)
-            {
-                continue;
-            }
-
-            var best = ranked[0];
-            recommendations.Add(ToStartSit(StartSitAction.Start, best.Row, best.Score, best.Insufficient, ranked));
-
-            foreach (var sit in ranked.Skip(1).Take(2))
-            {
-                // Only recommend Sit when there is a meaningful alternative or clear concern.
-                if (sit.Insufficient && best.Insufficient)
-                {
-                    continue;
-                }
-
-                if (sit.Score >= best.Score - 1.5 && !HasMaterialConcern(sit.Row))
-                {
-                    continue;
-                }
-
-                recommendations.Add(ToStartSit(StartSitAction.Sit, sit.Row, sit.Score, sit.Insufficient, ranked));
-            }
-        }
-
-        // Also flag starters who score clearly below a same-position bench option.
-        foreach (var starter in rows.Where(r => r.IsStarter))
-        {
-            var betterBench = rows
-                .Where(r => !r.IsStarter && r.Player.Position == starter.Player.Position)
-                .Select(r => (Row: r, Score: DecisionScore(r)))
-                .Where(x => x.Score >= DecisionScore(starter) + 3)
-                .OrderByDescending(x => x.Score)
-                .FirstOrDefault();
-
-            if (betterBench.Row is null)
-            {
-                continue;
-            }
-
-            if (recommendations.Any(r => r.PlayerId == starter.Player.Id && r.Action == StartSitAction.Sit))
-            {
-                continue;
-            }
-
-            var reasons = BuildReasons(StartSitAction.Sit, starter, DecisionScore(starter), rows.Where(r => r.Player.Position == starter.Player.Position).ToList());
-            reasons.Insert(0, $"{betterBench.Row.Player.FullName} currently grades higher for this lineup decision.");
-            recommendations.Add(new StartSitRecommendation
-            {
-                Action = StartSitAction.Sit,
-                PlayerId = starter.Player.Id,
-                PlayerName = starter.Player.FullName,
-                PositionLabel = starter.Player.Position.ToString(),
-                ProjectionSummary = FormatProjection(starter.Projection),
-                Confidence = Math.Clamp(starter.Assessment.AssessmentConfidence - 5, 20, 90),
-                Reasons = reasons.Take(3).ToList(),
-                InsufficientData = IsInsufficient(starter)
-            });
-        }
-
-        return recommendations
-            .GroupBy(r => (r.Action, r.PlayerId))
-            .Select(g => g.First())
-            .OrderBy(r => r.Action == StartSitAction.Start ? 0 : 1)
-            .ThenByDescending(r => r.Confidence)
-            .Take(10)
+        var knowledge = rows
+            .Select(r => _knowledgeComposer.ComposeAsync(r.Player, decisionContext).GetAwaiter().GetResult())
             .ToList();
+
+        var candidates = rows
+            .Select(r => new StartSitCandidate
+            {
+                PlayerId = r.Player.Id,
+                PlayerName = r.Player.FullName,
+                Position = r.Player.Position,
+                IsStarter = r.IsStarter
+            })
+            .ToList();
+
+        var batch = _decisionEngine
+            .EvaluateStartSitAsync(knowledge, candidates, decisionContext)
+            .GetAwaiter()
+            .GetResult();
+
+        return batch.Recommendations;
     }
-
-    private static StartSitRecommendation ToStartSit(
-        StartSitAction action,
-        RosterRow row,
-        double score,
-        bool insufficient,
-        IReadOnlyList<(RosterRow Row, double Score, bool Insufficient)> ranked)
-    {
-        var peers = ranked.Select(x => x.Row).ToList();
-        return new StartSitRecommendation
-        {
-            Action = action,
-            PlayerId = row.Player.Id,
-            PlayerName = row.Player.FullName,
-            PositionLabel = row.Player.Position.ToString(),
-            ProjectionSummary = FormatProjection(row.Projection),
-            Confidence = insufficient
-                ? Math.Clamp(row.Assessment.AssessmentConfidence, 15, 55)
-                : Math.Clamp(
-                    (int)Math.Round((row.Assessment.AssessmentConfidence + (row.Projection?.Confidence ?? 40)) / 2.0),
-                    25,
-                    95),
-            Reasons = BuildReasons(action, row, score, peers),
-            InsufficientData = insufficient
-        };
-    }
-
-    private static List<string> BuildReasons(
-        StartSitAction action,
-        RosterRow row,
-        double score,
-        IReadOnlyList<RosterRow> peers)
-    {
-        var reasons = new List<string>();
-        var a = row.Assessment;
-
-        if (IsInsufficient(row))
-        {
-            reasons.Add("Limited supporting intelligence — treat this lean cautiously.");
-        }
-
-        if (row.Projection is { } p)
-        {
-            reasons.Add($"Projects {p.ProjectedFantasyPoints:0.0} pts (floor {p.Floor:0.0} · ceiling {p.Ceiling:0.0}).");
-        }
-        else
-        {
-            reasons.Add("Projection unavailable for this player.");
-        }
-
-        if (action == StartSitAction.Start)
-        {
-            if (a.OpportunityScore is >= 60)
-            {
-                reasons.Add($"Opportunity score {a.OpportunityScore}/100 supports usage.");
-            }
-
-            if (a.PositiveFactors.Count > 0)
-            {
-                reasons.Add(a.PositiveFactors[0].Text);
-            }
-
-            if (peers.Count > 1)
-            {
-                reasons.Add($"Best currently graded {row.Player.Position} on your roster.");
-            }
-        }
-        else
-        {
-            if (HasMaterialConcern(row))
-            {
-                var concern = a.NegativeFactors.FirstOrDefault()?.Text
-                              ?? a.HealthStatusLabel;
-                reasons.Add(concern);
-            }
-
-            if (a.OpportunityScore is <= 40)
-            {
-                reasons.Add($"Opportunity only {a.OpportunityScore}/100.");
-            }
-
-            var better = peers
-                .Where(p => p.Player.Id != row.Player.Id)
-                .OrderByDescending(DecisionScore)
-                .FirstOrDefault();
-            if (better is not null && DecisionScore(better) > score)
-            {
-                reasons.Add($"{better.Player.FullName} is the stronger {row.Player.Position} option right now.");
-            }
-        }
-
-        // Prefer intelligence-backed reasons over pure projection rank.
-        if (reasons.Count < 2 && a.KeyFactors.Count > 0)
-        {
-            reasons.Add(a.KeyFactors[0].Text);
-        }
-
-        return reasons.Distinct(StringComparer.OrdinalIgnoreCase).Take(3).ToList();
-    }
-
-    private static double DecisionScore(RosterRow row)
-    {
-        var a = row.Assessment;
-        var points = (double)(row.Projection?.ProjectedFantasyPoints ?? 0);
-        var opportunity = (a.OpportunityScore ?? 50) / 100.0 * 10.0;
-        var usage = (a.UsageScore ?? 50) / 100.0 * 8.0;
-        var intel = a.AssessmentConfidence / 100.0 * 5.0;
-        var health = HealthAdjustment(a);
-        var outlook = a.Outlook switch
-        {
-            PlayerOutlook.Strong => 4,
-            PlayerOutlook.Positive => 2,
-            PlayerOutlook.Concerning => -5,
-            PlayerOutlook.Unknown => -2,
-            _ => 0
-        };
-
-        // Projection matters, but material health/outlook can overturn raw points.
-        return (points * 0.55) + opportunity + usage + intel + health + outlook;
-    }
-
-    private static double HealthAdjustment(PlayerIntelligenceAssessment a)
-    {
-        if (a.InjuryProfile?.CurrentInjury is not null)
-        {
-            return -12;
-        }
-
-        if (a.InjuryProfile is { UnconfirmedSignals.Count: > 0 })
-        {
-            return -5;
-        }
-
-        if (a.HealthStatusLabel.Contains("Limited information", StringComparison.OrdinalIgnoreCase) ||
-            a.HealthStatusLabel.Contains("Unknown", StringComparison.OrdinalIgnoreCase))
-        {
-            return -1;
-        }
-
-        if (a.HealthStatusLabel.Contains("Healthy", StringComparison.OrdinalIgnoreCase))
-        {
-            return 2;
-        }
-
-        return 0;
-    }
-
-    private static bool HasMaterialConcern(RosterRow row) =>
-        row.Assessment.Outlook == PlayerOutlook.Concerning ||
-        row.Assessment.InjuryProfile?.CurrentInjury is not null ||
-        row.Assessment.NegativeFactors.Any(f =>
-            f.Text.Contains("injury", StringComparison.OrdinalIgnoreCase) ||
-            f.Text.Contains("Health", StringComparison.OrdinalIgnoreCase) ||
-            f.Text.Contains("Reduced", StringComparison.OrdinalIgnoreCase));
-
-    private static bool IsInsufficient(RosterRow row) =>
-        row.Assessment.AssessmentConfidence < 40 ||
-        row.Projection is null ||
-        row.Assessment.UnavailableSignals.Count >= 3;
 
     private static IReadOnlyList<TeamRosterAlert> BuildAlerts(
         IReadOnlyList<RosterRow> rows,
@@ -776,17 +566,6 @@ public sealed class FantasyTeamIntelligenceService : IFantasyTeamIntelligenceSer
         LeagueType.Dynasty => "Dynasty",
         LeagueType.Keeper => "Keeper",
         _ => type.ToString()
-    };
-
-    private static int PositionOrder(Position position) => position switch
-    {
-        Position.QB => 0,
-        Position.RB => 1,
-        Position.WR => 2,
-        Position.TE => 3,
-        Position.K => 4,
-        Position.DST => 5,
-        _ => 9
     };
 
     private sealed record RosterRow(
