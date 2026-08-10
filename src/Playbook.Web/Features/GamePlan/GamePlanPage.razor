@@ -1,0 +1,345 @@
+@page "/game-plan"
+@using Playbook.Application.Intelligence.Interfaces
+@using Playbook.Application.Leagues
+@using Playbook.Application.Players
+@using Playbook.Core.Intelligence.Models
+@using Playbook.Core.Leagues
+@using Playbook.Web.Features.League.Models
+@inject ILeagueState LeagueState
+@inject IWeeklyMatchupGamePlanService GamePlan
+@inject IPlayerOverlayState Overlay
+@implements IDisposable
+
+<PageTitle>Game Plan — Playbook</PageTitle>
+
+<section class="pb-page gp-page">
+    <header class="pb-page__header gp-page__header">
+        <h1 class="pb-page__title">Game Plan</h1>
+        <p class="pb-page__subtitle">How am I positioned this week, and what should I do to improve my chances of winning?</p>
+    </header>
+
+    @if (isRefreshing)
+    {
+        <p class="pb-empty">Refreshing this week's matchup…</p>
+    }
+    else if (plan is null)
+    {
+        <p class="pb-empty">Game plan is unavailable.</p>
+    }
+    else if (!plan.HasMatchup)
+    {
+        <p class="pb-empty">@plan.StatusMessage</p>
+    }
+    else
+    {
+        <section class="gp-hero" aria-label="Matchup overview">
+            <div class="gp-hero__meta">
+                <span class="gp-eyebrow">Week @plan.Week · @plan.ScoringLabel</span>
+                <span class="league-source-badge @(plan.OpponentSource == MatchupOpponentSource.DerivedDemo ? "league-source-badge--mock" : "league-source-badge--live")">
+                    @(plan.OpponentSource == MatchupOpponentSource.DerivedDemo ? "Derived pairing" : "Live matchup")
+                </span>
+            </div>
+
+            <div class="gp-scoreboard">
+                <div class="gp-scoreboard__side">
+                    <span class="gp-eyebrow">My team</span>
+                    <strong class="gp-scoreboard__name">@plan.MyTeamName</strong>
+                    <span class="gp-scoreboard__pts">@(plan.MyProjectedScore?.ToString("0.0") ?? "—")</span>
+                    <span class="gp-muted">projected</span>
+                </div>
+                <div class="gp-scoreboard__mid">
+                    <span class="gp-scoreboard__vs">vs</span>
+                    <span class="gp-scoreboard__diff">
+                        @(plan.ProjectionDifference is decimal d ? d.ToString("+0.0;-0.0;0.0") : "—")
+                    </span>
+                </div>
+                <div class="gp-scoreboard__side gp-scoreboard__side--opp">
+                    <span class="gp-eyebrow">Opponent</span>
+                    <strong class="gp-scoreboard__name">@plan.OpponentTeamName</strong>
+                    <span class="gp-scoreboard__pts">@(plan.OpponentProjectedScore?.ToString("0.0") ?? "—")</span>
+                    <span class="gp-muted">projected</span>
+                </div>
+            </div>
+
+            <div class="gp-outlook gp-outlook--@plan.Assessment.ToString().ToLowerInvariant()">
+                <span class="gp-eyebrow">Winning outlook</span>
+                <strong class="gp-outlook__label">@plan.AssessmentLabel</strong>
+                <p class="gp-outlook__summary">@plan.AssessmentSummary</p>
+                <div class="gp-outlook__chips">
+                    <span>@plan.AdvantageLabel</span>
+                    <span>Confidence @plan.MatchupConfidence%</span>
+                    <span>@plan.VolatilityLabel</span>
+                </div>
+                <p class="gp-muted">@plan.ConfidenceNote</p>
+            </div>
+        </section>
+
+        <section class="gp-section" aria-labelledby="gp-swings-title">
+            <h2 id="gp-swings-title" class="gp-section__title">Key matchup swings</h2>
+            <p class="gp-section__lead">What is most likely to decide this week.</p>
+            @if (plan.KeySwings.Count == 0)
+            {
+                <p class="gp-muted">No clear swing factors from current data.</p>
+            }
+            else
+            {
+                <ul class="gp-list">
+                    @foreach (var swing in plan.KeySwings)
+                    {
+                        <li class="gp-item">
+                            <div class="gp-item__top">
+                                <span class="gp-chip">@swing.SideLabel</span>
+                                <span class="gp-muted">@swing.Category</span>
+                            </div>
+                            <strong>
+                                @if (swing.PlayerId is Guid pid)
+                                {
+                                    <button type="button" class="gp-link" @onclick="() => OpenPlayer(pid)">@swing.Title</button>
+                                }
+                                else
+                                {
+                                    @swing.Title
+                                }
+                            </strong>
+                            <p>@swing.Detail</p>
+                        </li>
+                    }
+                </ul>
+            }
+        </section>
+
+        <div class="gp-split">
+            <section class="gp-section" aria-labelledby="gp-risks-title">
+                <h2 id="gp-risks-title" class="gp-section__title">Biggest risks</h2>
+                <p class="gp-section__lead">What is working against you.</p>
+                @if (plan.BiggestRisks.Count == 0)
+                {
+                    <p class="gp-muted">No prioritized risks from current data.</p>
+                }
+                else
+                {
+                    <ul class="gp-bullets gp-bullets--risk">
+                        @foreach (var risk in plan.BiggestRisks)
+                        {
+                            <li>
+                                <strong>
+                                    @if (risk.PlayerId is Guid pid)
+                                    {
+                                        <button type="button" class="gp-link" @onclick="() => OpenPlayer(pid)">@risk.Title</button>
+                                    }
+                                    else
+                                    {
+                                        @risk.Title
+                                    }
+                                </strong>
+                                <span>@risk.Detail</span>
+                            </li>
+                        }
+                    </ul>
+                }
+            </section>
+
+            <section class="gp-section" aria-labelledby="gp-adv-title">
+                <h2 id="gp-adv-title" class="gp-section__title">Biggest advantages</h2>
+                <p class="gp-section__lead">Why you can feel good about the matchup.</p>
+                @if (plan.BiggestAdvantages.Count == 0)
+                {
+                    <p class="gp-muted">No prioritized advantages from current data.</p>
+                }
+                else
+                {
+                    <ul class="gp-bullets gp-bullets--adv">
+                        @foreach (var adv in plan.BiggestAdvantages)
+                        {
+                            <li>
+                                <strong>
+                                    @if (adv.PlayerId is Guid pid)
+                                    {
+                                        <button type="button" class="gp-link" @onclick="() => OpenPlayer(pid)">@adv.Title</button>
+                                    }
+                                    else
+                                    {
+                                        @adv.Title
+                                    }
+                                </strong>
+                                <span>@adv.Detail</span>
+                            </li>
+                        }
+                    </ul>
+                }
+            </section>
+        </div>
+
+        <section class="gp-section" aria-labelledby="gp-lineup-title">
+            <h2 id="gp-lineup-title" class="gp-section__title">Lineup impact</h2>
+            <p class="gp-section__lead">What to do — and why it matters to this matchup.</p>
+            @if (plan.LineupImpact.Count == 0)
+            {
+                <p class="gp-muted">No start/sit leans available for this roster yet.</p>
+            }
+            else
+            {
+                <ul class="gp-list">
+                    @foreach (var rec in plan.LineupImpact)
+                    {
+                        <li class="gp-item gp-item--@rec.Action.ToString().ToLowerInvariant()">
+                            <div class="gp-item__top">
+                                <span class="gp-chip gp-chip--@rec.Action.ToString().ToLowerInvariant()">@rec.Action</span>
+                                <span class="gp-muted">@rec.PositionLabel · Confidence @rec.Confidence%</span>
+                            </div>
+                            <strong>
+                                <button type="button" class="gp-link" @onclick="() => OpenPlayer(rec.PlayerId)">@rec.PlayerName</button>
+                            </strong>
+                            <p class="gp-item__proj">@(rec.ProjectionSummary ?? "Projection unavailable")</p>
+                            <p><span class="gp-eyebrow">Why it matters</span> @rec.MatchupRelevance</p>
+                            <ul class="gp-mini">
+                                <li><strong>If started:</strong> @rec.IfStarted</li>
+                                <li><strong>If sat:</strong> @rec.IfSat</li>
+                            </ul>
+                            @if (rec.InsufficientData)
+                            {
+                                <p class="gp-muted">Insufficient data — treat this lean cautiously.</p>
+                            }
+                            <ul class="gp-bullets gp-bullets--compact">
+                                @foreach (var reason in rec.Reasons.Take(3))
+                                {
+                                    <li>@reason</li>
+                                }
+                            </ul>
+                        </li>
+                    }
+                </ul>
+            }
+        </section>
+
+        <section class="gp-section" aria-labelledby="gp-scout-title">
+            <h2 id="gp-scout-title" class="gp-section__title">Opponent scout</h2>
+            <p class="gp-section__lead">Actionable view of @plan.OpponentScout.TeamName.</p>
+            <div class="gp-split">
+                <div>
+                    <h3 class="gp-eyebrow">Strengths</h3>
+                    @if (plan.OpponentScout.Strengths.Count == 0)
+                    {
+                        <p class="gp-muted">No clear strengths supported yet.</p>
+                    }
+                    else
+                    {
+                        <ul class="gp-bullets">
+                            @foreach (var s in plan.OpponentScout.Strengths)
+                            {
+                                <li>@s</li>
+                            }
+                        </ul>
+                    }
+                </div>
+                <div>
+                    <h3 class="gp-eyebrow">Weaknesses</h3>
+                    @if (plan.OpponentScout.Weaknesses.Count == 0)
+                    {
+                        <p class="gp-muted">No clear weaknesses supported yet.</p>
+                    }
+                    else
+                    {
+                        <ul class="gp-bullets">
+                            @foreach (var w in plan.OpponentScout.Weaknesses)
+                            {
+                                <li>@w</li>
+                            }
+                        </ul>
+                    }
+                </div>
+            </div>
+
+            @if (plan.OpponentScout.BiggestThreats.Count > 0)
+            {
+                <h3 class="gp-eyebrow" style="margin-top:1rem;">Biggest threats</h3>
+                <ul class="gp-list">
+                    @foreach (var threat in plan.OpponentScout.BiggestThreats)
+                    {
+                        <li class="gp-item">
+                            <strong>
+                                @if (threat.PlayerId is Guid pid)
+                                {
+                                    <button type="button" class="gp-link" @onclick="() => OpenPlayer(pid)">@threat.Title</button>
+                                }
+                                else
+                                {
+                                    @threat.Title
+                                }
+                            </strong>
+                            <p>@threat.Detail</p>
+                        </li>
+                    }
+                </ul>
+            }
+
+            @if (plan.OpponentScout.RelevantNews.Count > 0)
+            {
+                <h3 class="gp-eyebrow" style="margin-top:1rem;">Relevant news</h3>
+                <ul class="gp-bullets">
+                    @foreach (var news in plan.OpponentScout.RelevantNews)
+                    {
+                        <li>
+                            <strong>@news.Title</strong>
+                            <span>@news.Detail</span>
+                        </li>
+                    }
+                </ul>
+            }
+
+            <p class="gp-muted" style="margin-top:0.75rem;">@plan.OpponentScout.StatusMessage</p>
+        </section>
+
+        @if (plan.UnavailableSignals.Count > 0)
+        {
+            <section class="gp-section gp-section--secondary">
+                <h2 class="gp-section__title">Data limits</h2>
+                <ul class="gp-bullets">
+                    @foreach (var missing in plan.UnavailableSignals)
+                    {
+                        <li>@missing</li>
+                    }
+                </ul>
+            </section>
+        }
+
+        <p class="gp-footnote">@plan.StatusMessage · Updated @plan.GeneratedAt.ToLocalTime().ToString("MMM d, h:mm tt")</p>
+    }
+</section>
+
+@code {
+    private WeeklyMatchupGamePlan? plan;
+    private bool isRefreshing;
+    private PersonalizedAnalysisContext _boundContext;
+
+    protected override void OnInitialized()
+    {
+        LeagueState.Changed += OnLeagueChanged;
+        Reload();
+    }
+
+    private void OnLeagueChanged() => InvokeAsync(() =>
+    {
+        isRefreshing = true;
+        plan = null;
+        StateHasChanged();
+        Reload();
+        isRefreshing = false;
+        StateHasChanged();
+    });
+
+    private void Reload()
+    {
+        _boundContext = PersonalizedAnalysisContext.FromState(LeagueState);
+        plan = GamePlan.GetPlan();
+        if (plan is not null &&
+            !_boundContext.Matches(plan.LeagueId, plan.SelectedRosterId))
+        {
+            plan = GamePlan.GetPlan();
+        }
+    }
+
+    private void OpenPlayer(Guid playerId) => Overlay.Open(playerId);
+
+    public void Dispose() => LeagueState.Changed -= OnLeagueChanged;
+}

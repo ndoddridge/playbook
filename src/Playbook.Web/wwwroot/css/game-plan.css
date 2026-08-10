@@ -1,0 +1,303 @@
+/* Weekly Matchup / Game Plan — decision hierarchy, mobile-first */
+
+.gp-page {
+    display: flex;
+    flex-direction: column;
+    gap: var(--pb-space-5);
+    min-width: 0;
+}
+
+.gp-page__header {
+    position: sticky;
+    top: 0;
+    z-index: 6;
+    margin: 0 calc(var(--pb-space-3) * -1);
+    padding: var(--pb-space-3);
+    background: color-mix(in srgb, var(--pb-color-bg) 92%, transparent);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid transparent;
+}
+
+.gp-hero {
+    padding: var(--pb-space-4);
+    border: 1px solid var(--pb-color-border);
+    border-radius: var(--pb-radius-lg);
+    background:
+        linear-gradient(165deg, rgba(62, 207, 142, 0.1), transparent 40%),
+        var(--pb-color-surface);
+}
+
+.gp-hero__meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: var(--pb-space-4);
+}
+
+.gp-scoreboard {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    gap: 0.75rem;
+    align-items: start;
+}
+
+.gp-scoreboard__side {
+    min-width: 0;
+}
+
+.gp-scoreboard__side--opp {
+    text-align: right;
+}
+
+.gp-scoreboard__name {
+    display: block;
+    margin-top: 0.2rem;
+    font-size: 0.95rem;
+    overflow-wrap: anywhere;
+}
+
+.gp-scoreboard__pts {
+    display: block;
+    margin-top: 0.35rem;
+    font-size: 1.7rem;
+    font-weight: var(--pb-weight-bold);
+    letter-spacing: -0.02em;
+    color: #7dffc0;
+}
+
+.gp-scoreboard__side--opp .gp-scoreboard__pts {
+    color: #f3c96a;
+}
+
+.gp-scoreboard__mid {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
+    padding-top: 1.4rem;
+}
+
+.gp-scoreboard__vs {
+    color: #c3ccd6;
+    font-size: 0.7rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.gp-scoreboard__diff {
+    font-family: var(--pb-font-mono);
+    font-size: 0.85rem;
+    color: #eef1f4;
+}
+
+.gp-outlook {
+    margin-top: var(--pb-space-4);
+    padding-top: var(--pb-space-4);
+    border-top: 1px solid var(--pb-color-border);
+}
+
+.gp-outlook__label {
+    display: block;
+    margin-top: 0.15rem;
+    font-size: 1.35rem;
+}
+
+.gp-outlook--favorable .gp-outlook__label { color: #7dffc0; }
+.gp-outlook--competitive .gp-outlook__label { color: #f3c96a; }
+.gp-outlook--challenging .gp-outlook__label { color: #f0a0a0; }
+.gp-outlook--unknown .gp-outlook__label { color: #c3ccd6; }
+
+.gp-outlook__summary {
+    margin: 0.45rem 0 0.65rem;
+    color: #eef1f4;
+    font-size: var(--pb-text-sm);
+    line-height: 1.4;
+}
+
+.gp-outlook__chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-bottom: 0.45rem;
+}
+
+.gp-outlook__chips span,
+.gp-chip {
+    display: inline-flex;
+    padding: 0.15rem 0.45rem;
+    border-radius: var(--pb-radius-sm);
+    border: 1px solid var(--pb-color-border-strong);
+    background: rgba(0, 0, 0, 0.2);
+    color: #d7dee6;
+    font-size: 0.68rem;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+}
+
+.gp-chip--start {
+    color: #7dffc0;
+    border-color: rgba(62, 207, 142, 0.45);
+    background: rgba(62, 207, 142, 0.14);
+}
+
+.gp-chip--sit {
+    color: #f0a0a0;
+    border-color: rgba(224, 107, 107, 0.45);
+    background: rgba(224, 107, 107, 0.14);
+}
+
+.gp-section__title {
+    margin: 0 0 0.25rem;
+    font-size: var(--pb-text-md);
+    font-weight: var(--pb-weight-semibold);
+}
+
+.gp-section__lead {
+    margin: 0 0 var(--pb-space-3);
+    color: #c3ccd6;
+    font-size: 0.82rem;
+}
+
+.gp-section--secondary {
+    opacity: 0.95;
+}
+
+.gp-split {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: var(--pb-space-4);
+}
+
+.gp-eyebrow {
+    display: block;
+    margin: 0 0 0.35rem;
+    color: #c3ccd6;
+    font-size: 0.65rem;
+    font-weight: var(--pb-weight-semibold);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.gp-muted {
+    margin: 0;
+    color: #c3ccd6;
+    font-size: var(--pb-text-sm);
+}
+
+.gp-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+}
+
+.gp-item {
+    padding: 0.75rem 0.8rem;
+    border: 1px solid var(--pb-color-border);
+    border-radius: var(--pb-radius-md);
+    background: var(--pb-color-bg-elevated);
+    min-width: 0;
+}
+
+.gp-item__top {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 0.65rem;
+    align-items: center;
+    margin-bottom: 0.3rem;
+}
+
+.gp-item p {
+    margin: 0.3rem 0 0;
+    color: #d7dee6;
+    font-size: 0.84rem;
+    line-height: 1.4;
+}
+
+.gp-item__proj {
+    color: #c3ccd6 !important;
+    font-size: 0.78rem !important;
+}
+
+.gp-bullets {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+}
+
+.gp-bullets li {
+    position: relative;
+    padding-left: 0.85rem;
+    font-size: 0.86rem;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+}
+
+.gp-bullets li::before {
+    content: "•";
+    position: absolute;
+    left: 0;
+    color: var(--pb-color-accent);
+}
+
+.gp-bullets--risk li::before { color: #f0a0a0; }
+.gp-bullets--adv li::before { color: #7dffc0; }
+
+.gp-bullets span {
+    display: block;
+    margin-top: 0.1rem;
+    color: #c3ccd6;
+    font-size: 0.8rem;
+}
+
+.gp-bullets--compact li {
+    font-size: 0.8rem;
+    color: #d7dee6;
+}
+
+.gp-mini {
+    list-style: none;
+    margin: 0.45rem 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    font-size: 0.8rem;
+    color: #d7dee6;
+}
+
+.gp-link {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: #eef1f4;
+    font: inherit;
+    font-weight: var(--pb-weight-semibold);
+    text-align: left;
+    text-decoration: underline;
+    text-decoration-color: color-mix(in srgb, var(--pb-color-accent) 45%, transparent);
+    text-underline-offset: 0.18em;
+    cursor: pointer;
+}
+
+.gp-link:hover {
+    color: var(--pb-color-accent);
+}
+
+.gp-footnote {
+    margin: 0;
+    color: #8a93a0;
+    font-size: 0.72rem;
+}
+
+@media (min-width: 720px) {
+    .gp-split {
+        grid-template-columns: 1fr 1fr;
+    }
+}
