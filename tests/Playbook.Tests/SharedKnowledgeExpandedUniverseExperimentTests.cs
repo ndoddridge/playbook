@@ -132,73 +132,11 @@ public class SharedKnowledgeExpandedUniverseExperimentTests
         var outPath = Path.Combine(AppContext.BaseDirectory, "SHARED_KNOWLEDGE_EXPANDED_UNIVERSE_V1_REPORT.txt");
         await File.WriteAllTextAsync(outPath, text);
 
+        // Machine report only — keep the curated docs/*.md conclusions intact.
         var docsDir = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "docs"));
         Directory.CreateDirectory(docsDir);
         await File.WriteAllTextAsync(
             Path.Combine(docsDir, "SHARED_KNOWLEDGE_EXPANDED_UNIVERSE_V1_REPORT.txt"),
             text);
-        await File.WriteAllTextAsync(
-            Path.Combine(docsDir, "SHARED_KNOWLEDGE_EXPANDED_UNIVERSE_EXPERIMENT_V1.md"),
-            BuildDoc(report));
     }
-
-    private static string BuildDoc(SharedKnowledgeExpandedUniverseExperimentReport report) =>
-        $"""
-        # Shared Knowledge × Expanded Universe Experiment V1
-
-        **ExperimentId:** `{report.ExperimentId}`  
-        **Date:** {report.GeneratedAt:yyyy-MM-dd}  
-        **Status:** Complete — **{report.Verdict}**
-
-        ## Question
-
-        Does assembled shared knowledge (production `Passthrough`) improve prediction/decision quality
-        vs stripped `Baseline` when evaluation uses `ExpandedSkillUniverse`?
-
-        ## Protocol
-
-        - Control: `KnowledgeMode.Baseline`, ActiveGroups=None
-        - Treatment: `KnowledgeMode.Passthrough`, ActiveGroups=None
-        - Universe: `ExpandedSkillUniverse`
-        - Dev seasons: 2015/2018/2021 (informational folds; no parameter selection)
-        - Holdout: 2024 once
-        - Rejected transforms stay off (Usage / RoleHealth / RecentForm / ThinMargin / DataSufficiencyTrust)
-        - Projection V2 / Confidence V2 / Decision Policy V1 unchanged
-        - Frozen 2018 LabRoster benchmark path untouched
-
-        ## Verdict
-
-        **{report.Verdict}**
-
-        {report.VerdictRationale}
-
-        ## Start/Sit holdout
-
-        | Metric | Baseline | Passthrough | Δ |
-        |---|---:|---:|---:|
-        | Graded | {report.HoldoutBaseline.GradedDecisions} | {report.HoldoutTreatment.GradedDecisions} | — |
-        | Accuracy | {report.HoldoutBaseline.AccuracyPercent:0.0}% | {report.HoldoutTreatment.AccuracyPercent:0.0}% | — |
-        | Total DV | {report.HoldoutBaseline.TotalDecisionValue:0.00} | {report.HoldoutTreatment.TotalDecisionValue:0.00} | {(report.HoldoutTreatment.TotalDecisionValue ?? 0) - (report.HoldoutBaseline.TotalDecisionValue ?? 0):0.00} |
-        | Change rate | — | {report.HoldoutTreatment.ChangeRatePercent:0.0}% | — |
-        | Proj MAE | {report.HoldoutBaseline.ProjectionMae:0.00} | {report.HoldoutTreatment.ProjectionMae:0.00} | — |
-
-        Candidates: {report.HoldoutStartSitCandidates}. Usable knowledge rate: {report.HoldoutCoverage.UsableKnowledgeRatePercent:0.0}%.
-
-        ## Quick Picks holdout
-
-        | Metric | Baseline | Treatment | Δ |
-        |---|---:|---:|---:|
-        | Predictions | {report.HoldoutQuickPicksBaseline.PredictionsEvaluated} | {report.HoldoutQuickPicksTreatment.PredictionsEvaluated} | — |
-        | MAE | {report.HoldoutQuickPicksBaseline.MeanAbsoluteError:0.000} | {report.HoldoutQuickPicksTreatment.MeanAbsoluteError:0.000} | — |
-        | Top5 | {report.HoldoutQuickPicksBaseline.Top5HitRate:0.0}% | {report.HoldoutQuickPicksTreatment.Top5HitRate:0.0}% | — |
-        | Ranks changed | — | {report.HoldoutQuickPicksTreatment.RanksChangedVsControl} | — |
-
-        ## Production
-
-        Remains `KnowledgeMode.Passthrough`. No rejected transform re-enabled.
-
-        ## Full machine report
-
-        See `SHARED_KNOWLEDGE_EXPANDED_UNIVERSE_V1_REPORT.txt`.
-        """;
 }
