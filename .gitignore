@@ -481,3 +481,7 @@ $RECYCLE.BIN/
 # Vim temporary swap files
 *.swp
 **/data/player-stats-cache*.json
+
+# Research workbench local artifacts (keep README)
+research-runs/*
+!research-runs/README.md
