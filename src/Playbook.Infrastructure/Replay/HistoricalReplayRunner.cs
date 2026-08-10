@@ -20,6 +20,7 @@ public sealed class HistoricalReplayRunner : IHistoricalReplayRunner
     private readonly IHistoricalWeekDataValidator _validator;
     private readonly IHistoricalKnowledgeFactory _knowledgeFactory;
     private readonly ISharedKnowledgeModel _sharedKnowledge;
+    private readonly IKnowledgeImpactApplicator _knowledgeImpact;
     private readonly IDecisionEngine _decisionEngine;
     private readonly IDecisionRecordStore _recordStore;
     private readonly IDecisionOutcomeEvaluator _evaluator;
@@ -30,6 +31,7 @@ public sealed class HistoricalReplayRunner : IHistoricalReplayRunner
         IHistoricalWeekDataValidator validator,
         IHistoricalKnowledgeFactory knowledgeFactory,
         ISharedKnowledgeModel sharedKnowledge,
+        IKnowledgeImpactApplicator knowledgeImpact,
         IDecisionEngine decisionEngine,
         IDecisionRecordStore recordStore,
         IDecisionOutcomeEvaluator evaluator)
@@ -39,6 +41,7 @@ public sealed class HistoricalReplayRunner : IHistoricalReplayRunner
         _validator = validator;
         _knowledgeFactory = knowledgeFactory;
         _sharedKnowledge = sharedKnowledge;
+        _knowledgeImpact = knowledgeImpact;
         _decisionEngine = decisionEngine;
         _recordStore = recordStore;
         _evaluator = evaluator;
@@ -89,11 +92,16 @@ public sealed class HistoricalReplayRunner : IHistoricalReplayRunner
             KnowledgeTemporalGuard.AssertNoFutureLeak(ctx.Knowledge, snapshot.InformationCutoff);
         }
 
-        var knowledge = predictionContexts
+        var assembledKnowledge = predictionContexts
             .Select(c => c.PlayerKnowledge
                 ?? throw new InvalidOperationException(
                     $"Shared knowledge missing DecisionPlayerKnowledge for {c.PlayerName}."))
             .ToList();
+        AssertKnowledgeRespectsCutoff(assembledKnowledge, snapshot.InformationCutoff);
+
+        // 5b. Knowledge Impact Experiment: Baseline strips groups; Enhanced applies transforms.
+        // Projection V2 / Confidence V2 / Decision Policy V1 formulas remain unchanged.
+        var knowledge = _knowledgeImpact.ApplyToPlayerKnowledgeBatch(assembledKnowledge);
         AssertKnowledgeRespectsCutoff(knowledge, snapshot.InformationCutoff);
 
         // 6–7. Decisions via centralized engine + immutable records.

@@ -17,6 +17,7 @@ using Playbook.Application.Recommendations;
 using Playbook.Application.Stats;
 using Playbook.Application.Stats.Interfaces;
 using Playbook.Application.Knowledge;
+using Playbook.Core.Knowledge;
 using Playbook.Core.Replay;
 using Playbook.Infrastructure.Decisions;
 using Playbook.Infrastructure.Knowledge;
@@ -164,6 +165,9 @@ public static class DependencyInjection
         services.AddSingleton<IHistoricalSnapshotBuilder, HistoricalSnapshotBuilder>();
         services.AddSingleton<IHistoricalKnowledgeFactory, HistoricalKnowledgeFactory>();
         services.AddSingleton<ISharedKnowledgeModel, SharedKnowledgeModel>();
+        services.AddSingleton<KnowledgeImpactExperimentState>();
+        services.AddSingleton<IKnowledgeImpactApplicator, KnowledgeImpactApplicator>();
+        services.AddSingleton<KnowledgeImpactExperimentRunner>();
         services.AddSingleton<IDecisionOutcomeEvaluator, StartSitOutcomeEvaluator>();
         services.AddSingleton<IHistoricalReplayRunner, HistoricalReplayRunner>();
         services.AddSingleton<IMultiWeekHistoricalReplayRunner, MultiWeekHistoricalReplayRunner>();
