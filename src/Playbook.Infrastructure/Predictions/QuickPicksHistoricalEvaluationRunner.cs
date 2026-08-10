@@ -410,32 +410,40 @@ public sealed class QuickPicksHistoricalEvaluationRunner : IQuickPicksHistorical
 
         var maeDelta = hold.BaselineMeanAbsoluteError - hold.EnhancedMeanAbsoluteError; // + = improvement
         var top5Delta = hold.EnhancedTop5HitRate - hold.BaselineTop5HitRate; // + = improvement
-        var changeRate = hold.PercentChanged;
+        var rankChangeRate = hold.PercentRanksChanged;
 
-        if (hold.PredictionsIdentical || changeRate < QuickPicksRecentFormVerdictRules.MinMaterialChangeRatePercent)
+        if (hold.PredictionsIdentical ||
+            rankChangeRate < QuickPicksRecentFormVerdictRules.MinMaterialRankChangeRatePercent)
         {
-            return "NEUTRAL — RecentForm did not materially change holdout Quick Picks " +
-                   $"(changeRate={changeRate:0.00}%, MAE Δ={maeDelta:0.000}). " +
+            return "NEUTRAL — RecentForm did not materially change holdout Quick Pick ranks " +
+                   $"(rankChangeRate={rankChangeRate:0.00}%, scoreChangeRate={hold.PercentChanged:0.00}%, " +
+                   $"MAE Δ={maeDelta:0.000}, Top5 Δ={top5Delta:0.0}pp). " +
                    "Recommendation: DISABLED. Production default remains Passthrough.";
         }
 
-        if (maeDelta >= QuickPicksRecentFormVerdictRules.MinHoldoutMaeImprovement && top5Delta >= -1.0)
+        var maeImproved = maeDelta >= QuickPicksRecentFormVerdictRules.MinHoldoutMaeImprovement;
+        var top5Improved = top5Delta >= QuickPicksRecentFormVerdictRules.MinHoldoutTop5ImprovementPp;
+        var top5Regressed = top5Delta <= -QuickPicksRecentFormVerdictRules.MinHoldoutTop5RegressionPp;
+        var maeRegressed = maeDelta <= -QuickPicksRecentFormVerdictRules.MinHoldoutMaeRegression;
+
+        if ((maeImproved || top5Improved) && !top5Regressed && !maeRegressed)
         {
-            return "IMPROVEMENT — RecentForm reduced holdout MAE with material prediction changes " +
-                   $"and no unacceptable Top-5 regression (MAE Δ={maeDelta:0.000}, Top5 Δ={top5Delta:0.0}pp). " +
+            return "IMPROVEMENT — RecentForm improved holdout Quick Picks with material rank changes " +
+                   $"(MAE Δ={maeDelta:0.000}, Top5 Δ={top5Delta:0.0}pp, rankChangeRate={rankChangeRate:0.00}%). " +
                    "Recommendation: ENABLED (behind experiment mode; production default still unchanged until accepted).";
         }
 
-        if (maeDelta <= -QuickPicksRecentFormVerdictRules.MinHoldoutMaeRegression)
+        if (maeRegressed || top5Regressed)
         {
-            return "REGRESSION — RecentForm worsened holdout MAE " +
-                   $"(MAE Δ={maeDelta:0.000}, changeRate={changeRate:0.00}%). " +
+            return "REGRESSION — RecentForm worsened holdout Quick Picks " +
+                   $"(MAE Δ={maeDelta:0.000}, Top5 Δ={top5Delta:0.0}pp, rankChangeRate={rankChangeRate:0.00}%). " +
                    "Recommendation: DISABLED.";
         }
 
         return "NEUTRAL — holdout differences were negligible under verdict rules " +
-               $"(MAE Δ={maeDelta:0.000}, Top5 Δ={top5Delta:0.0}pp, changeRate={changeRate:0.00}%). " +
-               $"Dev MAE Δ={dev.BaselineMeanAbsoluteError - dev.EnhancedMeanAbsoluteError:0.000} (informational only). " +
+               $"(MAE Δ={maeDelta:0.000}, Top5 Δ={top5Delta:0.0}pp, rankChangeRate={rankChangeRate:0.00}%, " +
+               $"scoreChangeRate={hold.PercentChanged:0.00}%). " +
+               $"Dev rankChangeRate={dev.PercentRanksChanged:0.00}% (informational only). " +
                "Recommendation: DISABLED.";
     }
 

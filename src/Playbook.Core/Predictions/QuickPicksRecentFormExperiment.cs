@@ -58,12 +58,21 @@ public static class QuickPicksRecentFormVerdictRules
     /// <summary>Minimum holdout MAE increase to count as regression.</summary>
     public const double MinHoldoutMaeRegression = 0.25;
 
-    /// <summary>Minimum share of predictions that must change for a non-neutral material claim.</summary>
-    public const double MinMaterialChangeRatePercent = 1.0;
+    /// <summary>
+    /// RecentForm adjusts RankingScore, not ProjectedValue — MAE is often invariant.
+    /// Top-5 hit-rate improvement (percentage points) is the ranking co-primary.
+    /// </summary>
+    public const double MinHoldoutTop5ImprovementPp = 1.0;
+
+    public const double MinHoldoutTop5RegressionPp = 1.0;
+
+    /// <summary>Minimum share of predictions whose rank must change for a material claim.</summary>
+    public const double MinMaterialRankChangeRatePercent = 1.0;
 
     public const string Text =
-        "IMPROVEMENT if holdout MAE improves by >=0.25 without Top-5 regression >1.0pp and change rate >=1%. " +
-        "REGRESSION if holdout MAE worsens by >=0.25. " +
-        "NEUTRAL otherwise (including identical predictions). " +
+        "IMPROVEMENT if holdout shows material rank changes (>=1%) AND " +
+        "(MAE improves by >=0.25 OR Top-5 improves by >=1.0pp) without Top-5 regression >1.0pp. " +
+        "REGRESSION if holdout MAE worsens by >=0.25 OR Top-5 worsens by >=1.0pp with material rank changes. " +
+        "NEUTRAL otherwise (including score-only shifts that do not move ranks). " +
         "Development alone never determines success. Production default stays Passthrough.";
 }

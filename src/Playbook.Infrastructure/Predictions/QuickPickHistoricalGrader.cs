@@ -224,6 +224,7 @@ public static class QuickPickHistoricalGrader
         }
 
         var unchanged = keys.Count - changed.Count;
+        var ranksChanged = changed.Count(c => c.BaselineRank != c.EnhancedRank);
         var baseMae = keys.Count == 0 ? 0 : keys.Average(k => baseline[k].AbsoluteError);
         var enhMae = keys.Count == 0 ? 0 : keys.Average(k => enhanced[k].AbsoluteError);
         var baseTop5 = HitRate(keys.Select(k => baseline[k]).Where(g => g.InProjectedTop5).ToList());
@@ -238,7 +239,9 @@ public static class QuickPickHistoricalGrader
             PredictionsCompared = keys.Count,
             PredictionsChanged = changed.Count,
             PredictionsUnchanged = unchanged,
+            RanksChanged = ranksChanged,
             PercentChanged = keys.Count == 0 ? 0 : 100.0 * changed.Count / keys.Count,
+            PercentRanksChanged = keys.Count == 0 ? 0 : 100.0 * ranksChanged / keys.Count,
             AverageMagnitudeOfChange = changed.Count == 0 ? 0 : changed.Average(c => c.Magnitude),
             BaselineMeanAbsoluteError = baseMae,
             EnhancedMeanAbsoluteError = enhMae,
