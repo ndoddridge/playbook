@@ -311,17 +311,21 @@ public sealed class NflverseHistoricalDataProvider : IHistoricalDataProvider
             }
         }
 
-        // Deterministic ordering for expanded sets (lab roster already ordered).
-        rosterSlots = rosterSlots
-            .OrderBy(s => players.First(p => p.PlayerId == s.PlayerId).Position)
-            .ThenByDescending(s => s.IsStarter)
-            .ThenBy(s => s.PlayerId)
-            .ToList();
-        players = players
-            .OrderBy(p => p.Position)
-            .ThenBy(p => p.PlayerName, StringComparer.Ordinal)
-            .ThenBy(p => p.PlayerId)
-            .ToList();
+        // Preserve SelectLabRoster emission order for LabRoster (frozen 2018 lock).
+        // Expanded only: stable order by position / starter / id.
+        if (candidateUniverse == HistoricalCandidateUniverse.ExpandedSkillUniverse)
+        {
+            rosterSlots = rosterSlots
+                .OrderBy(s => players.First(p => p.PlayerId == s.PlayerId).Position)
+                .ThenByDescending(s => s.IsStarter)
+                .ThenBy(s => s.PlayerId)
+                .ToList();
+            players = players
+                .OrderBy(p => p.Position)
+                .ThenBy(p => p.PlayerName, StringComparer.Ordinal)
+                .ThenBy(p => p.PlayerId)
+                .ToList();
+        }
 
         var unavailableSources = new List<string>
         {

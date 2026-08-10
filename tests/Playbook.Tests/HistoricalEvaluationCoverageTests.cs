@@ -155,8 +155,7 @@ public class HistoricalEvaluationCoverageTests
     public async Task Official_Coverage_Report_Writes_Before_After_And_Keeps_Holdout_Isolated()
     {
         using var provider = TestServiceFactory.CreateProvider(PlayerDataProviderKind.Mock);
-        // Use a thin probe season-week pair via MeasureSeasonAsync for speed in suite;
-        // full official report is generated in the dedicated coverage script/test below for W7+doc.
+        // Thin probe for suite speed; full W1–17 report is produced by Generate_Full_Coverage_Report.
         var runner = provider.GetRequiredService<HistoricalEvaluationCoverageRunner>();
         var dev = await runner.MeasureSeasonAsync(2018, 6, 7, "Dev probe", CancellationToken.None);
         var hold = await runner.MeasureSeasonAsync(2024, 6, 7, "Holdout probe", CancellationToken.None);
@@ -183,5 +182,26 @@ public class HistoricalEvaluationCoverageTests
         // Production knowledge mode untouched.
         var state = provider.GetRequiredService<KnowledgeImpactExperimentState>();
         Assert.Equal(KnowledgeMode.Passthrough, state.Mode);
+    }
+
+    [Fact]
+    public async Task Generate_Full_Coverage_Report_2018_And_2024()
+    {
+        using var provider = TestServiceFactory.CreateProvider(PlayerDataProviderKind.Mock);
+        var report = await HistoricalReplayCommands.RunHistoricalEvaluationCoverageAsync(provider);
+        Assert.True(report.HoldoutIsolated);
+        Assert.True(report.Frozen2018BenchmarkUnchanged);
+        Assert.True(report.Development.After.PlayerWeeks > report.Development.Before.PlayerWeeks);
+        Assert.True(report.Holdout.After.PlayerWeeks > report.Holdout.Before.PlayerWeeks);
+
+        var text = report.ToReportText();
+        var outPath = Path.Combine(AppContext.BaseDirectory, "HISTORICAL_EVALUATION_COVERAGE_V1_REPORT.txt");
+        await File.WriteAllTextAsync(outPath, text);
+
+        var docsDir = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "docs"));
+        Directory.CreateDirectory(docsDir);
+        await File.WriteAllTextAsync(
+            Path.Combine(docsDir, "HISTORICAL_EVALUATION_COVERAGE_V1_REPORT.txt"),
+            text);
     }
 }
