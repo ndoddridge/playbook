@@ -9,6 +9,7 @@
 @import url("css/dev-status.css");
 @import url("css/news.css");
 @import url("css/quick-picks.css");
+@import url("css/team-intelligence.css");
 
 h1:focus {
     outline: none;

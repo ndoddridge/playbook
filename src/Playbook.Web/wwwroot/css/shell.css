@@ -111,7 +111,7 @@
     border-bottom: 1px solid var(--pb-color-border);
     background: var(--pb-color-topbar);
     backdrop-filter: blur(12px);
-    /* Above Player Overlay so league switching remains available while a player is open. */
+    /* Below Player Overlay (z-index 100) so sticky top chrome never covers player identity. */
     z-index: 90;
 }
 
@@ -275,7 +275,8 @@
         min-height: var(--pb-topbar-height);
         padding: 0.4rem var(--pb-space-3);
         gap: var(--pb-space-2);
-        overflow: hidden;
+        /* Must stay visible so the league switcher dropdown is not clipped. */
+        overflow: visible;
     }
 
     .app-topbar__left,

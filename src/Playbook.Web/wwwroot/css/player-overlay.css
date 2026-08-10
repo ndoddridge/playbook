@@ -3,7 +3,8 @@
 .player-overlay {
     position: fixed;
     inset: 0;
-    z-index: 80;
+    /* Above shell top bar (z-index 90) so player identity never sits underneath sticky chrome. */
+    z-index: 100;
     display: grid;
     place-items: center;
     padding: max(var(--pb-space-4), env(safe-area-inset-top, 0px))
@@ -231,24 +232,25 @@
 
 @media (max-width: 640px) {
     .player-overlay {
-        /* Sit below shell safe-area + top bar so sticky top chrome never covers the player card. */
-        top: calc(env(safe-area-inset-top, 0px) + var(--pb-topbar-height));
-        right: 0;
-        bottom: 0;
-        left: 0;
+        /* Full-viewport sheet above the shell top bar — player name never sits underneath it. */
+        inset: 0;
+        top: 0;
         padding: 0;
-        place-items: end stretch;
+        place-items: stretch;
     }
 
     .player-overlay__panel {
         width: 100%;
         max-width: 100%;
-        height: calc(100dvh - env(safe-area-inset-top, 0px) - var(--pb-topbar-height));
-        max-height: calc(100dvh - env(safe-area-inset-top, 0px) - var(--pb-topbar-height));
-        border-radius: var(--pb-radius-xl) var(--pb-radius-xl) 0 0;
-        border-left: 0;
-        border-right: 0;
-        border-bottom: 0;
+        height: 100dvh;
+        max-height: 100dvh;
+        border-radius: 0;
+        border: 0;
+    }
+
+    .player-overlay__chrome {
+        /* Own the device safe-area so identity/tabs start below the notch, not under OS chrome. */
+        padding-top: env(safe-area-inset-top, 0px);
     }
 
     .player-overlay__header {
@@ -284,8 +286,8 @@
 
     @media (max-width: 640px) {
         .player-overlay__panel {
-            height: calc(100vh - env(safe-area-inset-top, 0px) - var(--pb-topbar-height));
-            max-height: calc(100vh - env(safe-area-inset-top, 0px) - var(--pb-topbar-height));
+            height: 100vh;
+            max-height: 100vh;
         }
     }
 }

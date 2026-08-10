@@ -28,6 +28,10 @@ public static class PlayerOverlayLayoutRules
     /// </summary>
     public const string TabsOverflowStrategy = "scroll-x";
 
+    /// <summary>
+    /// Player overlay must paint above the shell top bar and own safe-area inset
+    /// so player identity never sits underneath sticky chrome.
+    /// </summary>
     public static bool ModalClearsFixedTopBar(string overlayCss)
     {
         if (string.IsNullOrWhiteSpace(overlayCss))
@@ -35,11 +39,11 @@ public static class PlayerOverlayLayoutRules
             return false;
         }
 
-        // Must clear shell safe-area + top bar on mobile — never sit under sticky chrome.
-        return overlayCss.Contains("var(--pb-topbar-height)", StringComparison.Ordinal)
-               && overlayCss.Contains("safe-area-inset-top", StringComparison.Ordinal)
-               && overlayCss.Contains("100dvh", StringComparison.Ordinal)
-               && overlayCss.Contains("top: calc(", StringComparison.Ordinal);
+        var aboveTopBar = overlayCss.Contains("z-index: 100", StringComparison.Ordinal);
+        var ownsSafeArea = overlayCss.Contains("safe-area-inset-top", StringComparison.Ordinal);
+        var fullViewportMobile = overlayCss.Contains("100dvh", StringComparison.Ordinal) ||
+                                 overlayCss.Contains("height: 100vh", StringComparison.Ordinal);
+        return aboveTopBar && ownsSafeArea && fullViewportMobile;
     }
 
     public static bool TabStripFitsWithoutHorizontalPageOverflow(
