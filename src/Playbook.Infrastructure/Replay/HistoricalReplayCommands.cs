@@ -241,6 +241,19 @@ public static class HistoricalReplayCommands
     }
 
     /// <summary>
+    /// Shared Knowledge × Expanded Universe V1: Baseline vs Passthrough on ExpandedSkillUniverse.
+    /// No rejected Enhanced transforms. Development folds informational; ONE 2024 holdout.
+    /// </summary>
+    public static Task<SharedKnowledgeExpandedUniverseExperimentReport>
+        RunSharedKnowledgeExpandedUniverseExperimentAsync(
+            IServiceProvider services,
+            CancellationToken cancellationToken = default)
+    {
+        var runner = services.GetRequiredService<Knowledge.SharedKnowledgeExpandedUniverseExperimentRunner>();
+        return runner.RunOfficialExperimentAsync(cancellationToken);
+    }
+
+    /// <summary>
     /// Quick Picks Historical Evaluation V1: Baseline then Enhanced (observational),
     /// development seasons first, then ONE 2024 holdout.
     /// </summary>

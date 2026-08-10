@@ -915,6 +915,24 @@ public sealed class KnowledgeImpactExperimentRunner
         }
     }
 
+    private Task<List<SeasonScorecard>> RunSeasonsAsync(
+        IMultiWeekHistoricalReplayRunner seasonRunner,
+        IHistoricalSeasonCalendar calendar,
+        IReadOnlyList<int> seasons,
+        KnowledgeMode mode,
+        KnowledgeImpactGroup groups,
+        KnowledgeImpactExperimentState knowledgeState,
+        CancellationToken cancellationToken) =>
+        RunSeasonsAsync(
+            seasonRunner,
+            calendar,
+            seasons,
+            mode,
+            groups,
+            knowledgeState,
+            HistoricalCandidateUniverse.LabRoster,
+            cancellationToken);
+
     private async Task<List<SeasonScorecard>> RunSeasonsAsync(
         IMultiWeekHistoricalReplayRunner seasonRunner,
         IHistoricalSeasonCalendar calendar,
@@ -922,6 +940,7 @@ public sealed class KnowledgeImpactExperimentRunner
         KnowledgeMode mode,
         KnowledgeImpactGroup groups,
         KnowledgeImpactExperimentState knowledgeState,
+        HistoricalCandidateUniverse candidateUniverse,
         CancellationToken cancellationToken)
     {
         if (mode == KnowledgeMode.Baseline)
@@ -946,8 +965,8 @@ public sealed class KnowledgeImpactExperimentRunner
             var end = await calendar.GetRegularSeasonEndWeekAsync(season, cancellationToken)
                 .ConfigureAwait(false);
             _logger.LogInformation(
-                "KnowledgeImpact: season {Season} mode={Mode} groups={Groups}",
-                season, mode, groups);
+                "KnowledgeImpact: season {Season} mode={Mode} groups={Groups} universe={Universe}",
+                season, mode, groups, candidateUniverse);
             cards.Add(await seasonRunner.RunAsync(
                     new MultiWeekReplayRequest
                     {
@@ -955,7 +974,8 @@ public sealed class KnowledgeImpactExperimentRunner
                         StartWeek = 1,
                         EndWeek = end,
                         FixtureId = "nflverse",
-                        ContinueOnWeekFailure = true
+                        ContinueOnWeekFailure = true,
+                        CandidateUniverse = candidateUniverse
                     },
                     cancellationToken)
                 .ConfigureAwait(false));

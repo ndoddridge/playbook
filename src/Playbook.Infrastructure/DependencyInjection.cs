@@ -168,6 +168,7 @@ public static class DependencyInjection
         services.AddSingleton<KnowledgeImpactExperimentState>();
         services.AddSingleton<IKnowledgeImpactApplicator, KnowledgeImpactApplicator>();
         services.AddSingleton<KnowledgeImpactExperimentRunner>();
+        services.AddSingleton<SharedKnowledgeExpandedUniverseExperimentRunner>();
         services.AddSingleton<HistoricalQuickPickGenerator>();
         services.AddSingleton<IQuickPicksHistoricalEvaluationRunner, QuickPicksHistoricalEvaluationRunner>();
         services.AddSingleton<IDecisionOutcomeEvaluator, StartSitOutcomeEvaluator>();
