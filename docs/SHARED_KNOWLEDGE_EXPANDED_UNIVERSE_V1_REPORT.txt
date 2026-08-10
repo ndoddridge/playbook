@@ -1,0 +1,85 @@
+SHARED KNOWLEDGE × EXPANDED UNIVERSE EXPERIMENT — V1
+ExperimentId: shared-knowledge-expanded-universe-v1
+Generated: 2026-08-10 01:50:41Z
+CandidateUniverse: ExpandedSkillUniverse
+Control=Baseline Treatment=Passthrough Groups=None
+Holdout used during fitting: False
+Projection V2 unchanged: True
+Confidence V2 unchanged: True
+Decision Policy V1 unchanged: True
+Rejected transforms disabled: True
+
+HYPOTHESIS
+  On the expanded ACT skill evaluation surface, assembled shared knowledge as production already consumes it (KnowledgeMode.Passthrough) improves Start/Sit decision value versus the stripped Baseline control — without re-enabling any previously rejected Enhanced transforms.
+
+SUCCESS CRITERIA
+  SUCCESS for a knowledge group (or frozen Enhanced set) requires: (1) Dev LOOCV mean total decision value improves by >=15 vs Baseline; (2) Official 2024 total decision value improves by >=20 vs Baseline; (3) >=5% of holdout graded decisions change vs Baseline; (4) Projection V2, Confidence V2, and Decision Policy V1 unchanged. Tiny fluctuations are NOT improvement.
+
+DEVELOPMENT FOLDS (informational — no parameter selection)
+  Passthrough vs Baseline val=2015: baseTot=-29.00 treatTot=-37.90 Δ=-8.90
+  Passthrough vs Baseline val=2018: baseTot=224.70 treatTot=400.00 Δ=175.30
+  Passthrough vs Baseline val=2021: baseTot=43.20 treatTot=-0.10 Δ=-43.30
+  FROZEN (no parameter selection): Control=Baseline Treatment=Passthrough Groups=None Universe=ExpandedSkillUniverse meanDevΔ=41.03
+  DEV BASELINE (control): mode=Baseline groups=None n=234 changed=0 (0%) acc=50.4% avgVal=1.02 tot=238.90 worst=-42.10 mae=5.24 bias=1.39
+  DEV PASSTHROUGH (treatment): mode=Passthrough groups=None n=266 changed=220 (94%) acc=55.6% avgVal=1.36 tot=362.00 worst=-42.10 mae=5.24 bias=1.39
+  DEV Start/Sit candidates (player-weeks on roster): 23072
+  DEV knowledge coverage: candidates=23072 usable=21744 (94.2%) projectionOnly/unknown=1328 opp=18165 usage=18165 form=18165 role=20433 health≠Healthy=395 suff=13124 lim=5041 insuff=4907
+    · Matchup/team environment aspects: UNAVAILABLE historically.
+    · News archive: UNAVAILABLE — not fabricated.
+    · Real fantasy league ownership: UNAVAILABLE.
+    · Prop lines / as-of vendor projections: UNAVAILABLE.
+    · Baseline strips Opportunity/Usage/RecentProduction/Role/Health even when present.
+    · Passthrough keeps assembled knowledge; Enhanced rejected transforms remain off.
+  category[DataSufficiency:Sufficient]: baseN=196 treatN=220 baseTot=145.20 treatTot=305.40 Δ=160.20 baseAcc=48% treatAcc=55%
+  category[DataSufficiency:Limited]: baseN=29 treatN=37 baseTot=105.00 treatTot=67.90 Δ=-37.10 baseAcc=62.1% treatAcc=56.8%
+  category[DataSufficiency:Insufficient]: baseN=9 treatN=9 baseTot=-11.30 treatTot=-11.30 Δ=0.00 baseAcc=66.7% treatAcc=66.7%
+  category[DataSufficiency:Unknown]: baseN=0 treatN=0 baseTot=n/a treatTot=n/a Δ=0.00 baseAcc=n/a treatAcc=n/a
+
+OFFICIAL HOLDOUT 2024
+  HOLDOUT BASELINE: mode=Baseline groups=None n=89 changed=0 (0%) acc=57.3% avgVal=1.92 tot=170.60 worst=-27.70 mae=4.98 bias=1.49
+  HOLDOUT PASSTHROUGH: mode=Passthrough groups=None n=107 changed=78 (87.6%) acc=55.1% avgVal=0.87 tot=93.30 worst=-36.70 mae=4.98 bias=1.49
+  Δ total decision value (treatment−control): -77.30
+  Change rate: 87.6% (78/89)
+  HOLDOUT Start/Sit candidates: 7508
+  HOLDOUT knowledge coverage: candidates=7508 usable=7095 (94.5%) projectionOnly/unknown=413 opp=6102 usage=6102 form=6102 role=6585 health≠Healthy=41 suff=4434 lim=1668 insuff=1406
+    · Matchup/team environment aspects: UNAVAILABLE historically.
+    · News archive: UNAVAILABLE — not fabricated.
+    · Real fantasy league ownership: UNAVAILABLE.
+    · Prop lines / as-of vendor projections: UNAVAILABLE.
+    · Baseline strips Opportunity/Usage/RecentProduction/Role/Health even when present.
+    · Passthrough keeps assembled knowledge; Enhanced rejected transforms remain off.
+  category[DataSufficiency:Sufficient]: baseN=78 treatN=94 baseTot=155.70 treatTot=5.90 Δ=-149.80 baseAcc=56.4% treatAcc=48.9%
+  category[DataSufficiency:Limited]: baseN=9 treatN=11 baseTot=-17.70 treatTot=54.80 Δ=72.50 baseAcc=55.6% treatAcc=100%
+  category[DataSufficiency:Insufficient]: baseN=2 treatN=2 baseTot=32.60 treatTot=32.60 Δ=0.00 baseAcc=100% treatAcc=100%
+  category[DataSufficiency:Unknown]: baseN=0 treatN=0 baseTot=n/a treatTot=n/a Δ=0.00 baseAcc=n/a treatAcc=n/a
+
+HOLDOUT CONFIDENCE BUCKETS (Baseline)
+  0-20%: n=91 graded=88 success=58% avgVal=2.03
+  20-40%: n=1 graded=1 success=0% avgVal=-8.10
+  40-60%: n=0 graded=0 success=n/a avgVal=n/a
+  60-80%: n=0 graded=0 success=n/a avgVal=n/a
+  80-100%: n=0 graded=0 success=n/a avgVal=n/a
+HOLDOUT CONFIDENCE BUCKETS (Passthrough)
+  0-20%: n=23 graded=20 success=95% avgVal=6.00
+  20-40%: n=87 graded=87 success=46% avgVal=-0.31
+  40-60%: n=0 graded=0 success=n/a avgVal=n/a
+  60-80%: n=0 graded=0 success=n/a avgVal=n/a
+  80-100%: n=0 graded=0 success=n/a avgVal=n/a
+
+QUICK PICKS (ExpandedSkillUniverse)
+  DEV QP BASELINE: preds=27102 MAE=15.844 Top5=22.3% Top10=35.2% rankMAE=53.09 conf=70.50 ranksChanged=0 (0%) knowledgeAttached=0
+  DEV QP PASSTHROUGH-ATTACHED: preds=27102 MAE=15.844 Top5=22.3% Top10=35.2% rankMAE=53.09 conf=70.50 ranksChanged=0 (0%) knowledgeAttached=27102
+  HOLDOUT QP BASELINE: preds=9726 MAE=15.178 Top5=21.0% Top10=31.7% rankMAE=48.51 conf=71.20 ranksChanged=0 (0%) knowledgeAttached=0
+  HOLDOUT QP PASSTHROUGH-ATTACHED: preds=9726 MAE=15.178 Top5=21.0% Top10=31.7% rankMAE=48.51 conf=71.20 ranksChanged=0 (0%) knowledgeAttached=9726
+
+FAILURE ANALYSIS
+  - Holdout total decision value baseline=170.60 passthrough=93.30 Δ=-77.30.
+  - Holdout decisions changed vs baseline: 78 (87.6%).
+  - Changed/compared decisions by position: TE:n=1 Δval=7.5; QB:n=1 Δval=20.1; WR:n=5 Δval=15.9; RB:n=2 Δval=-3.4
+  - Control=Baseline (strip Opportunity/Usage/RecentProduction/Role/Health; KnowledgeConfidence−15). Treatment=Passthrough (identity; DecisionEngine reads composed Opportunity/Usage/Health/Role/form). ActiveGroups=None. CandidateUniverse=ExpandedSkillUniverse. Rejected transforms stay off. Frozen 2018 LabRoster benchmark path untouched. Quick Picks: Baseline ranking vs knowledge-attached Passthrough applicator (expected ranking identity; coverage/confidence reported).
+  - Quick Picks ExpandedSkillUniverse: holdout MAE 15.178→15.178; Top5 21.0%→21.0%; ranksChanged=0 (0%). Enhanced+None attaches knowledge with ranking identity (no rejected transforms).
+  - Dev mean Δ total decision value=41.03 (informational; no candidate search).
+
+VERDICT
+  Regression
+  REGRESSION: holdout Δ=-77.30 (≤ −20) with change 87.6%. Do not treat Passthrough shared knowledge as an improvement signal on ExpandedSkillUniverse. Production remains Passthrough (status quo).
