@@ -66,6 +66,15 @@ public static class QuickPickSearch
             .ToList();
     }
 
+    /// <summary>
+    /// Strength-rank eligible props, then select the best diverse Top Picks subset.
+    /// </summary>
+    public static IReadOnlyList<Prediction> SelectDiverseTop(
+        IEnumerable<Prediction> source,
+        int count,
+        Func<Prediction, bool>? predicate = null) =>
+        QuickPickDiversity.SelectTop(RankEligible(source, predicate), count);
+
     private static bool TouchesTeam(Prediction p, string abbreviation) =>
         string.Equals(p.TeamName, abbreviation, StringComparison.OrdinalIgnoreCase) ||
         string.Equals(p.Event.HomeTeam, abbreviation, StringComparison.OrdinalIgnoreCase) ||

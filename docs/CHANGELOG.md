@@ -2,6 +2,15 @@
 
 All notable project changes are recorded here.
 
+## [Unreleased] — Top Picks diversity (de-dupe alternate lines)
+
+### Fixed / Changed
+
+- Top Picks uses diversity-aware selection: alternate lines of the same team/player/market opportunity no longer consume multiple slots
+- Near-duplicates are deferred to Watch instead of padding Top Picks
+- Soft penalties prefer distinct teams/players/markets/matchups while still ranking true strength first
+- Underlying confidence / edge / probability / projections unchanged
+
 ## [Unreleased] — Quick Picks final polish (search aliases + Top Picks)
 
 ### Fixed / Changed

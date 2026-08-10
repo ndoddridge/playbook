@@ -62,34 +62,41 @@ public sealed class QuickPickFilters
     /// Rank eligible (live/mock) props for Top Picks / Watch using existing opportunity scores.
     /// Does not alter confidence or probability — ranking only.
     /// </summary>
-    public IReadOnlyList<Prediction> RankEligible(IEnumerable<Prediction> source)
+    public IReadOnlyList<Prediction> RankEligible(IEnumerable<Prediction> source) =>
+        QuickPickSearch.RankEligible(source, BuildPredicate());
+
+    /// <summary>
+    /// Best diverse Top Picks from filtered eligible props (near-duplicates deferred to Watch).
+    /// </summary>
+    public IReadOnlyList<Prediction> SelectDiverseTop(IEnumerable<Prediction> source, int count) =>
+        QuickPickSearch.SelectDiverseTop(source, count, BuildPredicate());
+
+    private Func<Prediction, bool> BuildPredicate()
     {
         var term = Search.Trim();
-        return QuickPickSearch.RankEligible(
-            source,
-            p =>
+        return p =>
+        {
+            if (term.Length > 0 && !QuickPickSearch.Matches(p, term))
             {
-                if (term.Length > 0 && !QuickPickSearch.Matches(p, term))
-                {
-                    return false;
-                }
+                return false;
+            }
 
-                if (Market is PredictionMarketType market && p.Market != market)
-                {
-                    return false;
-                }
+            if (Market is PredictionMarketType market && p.Market != market)
+            {
+                return false;
+            }
 
-                if (Direction is PredictionDirection direction && p.Direction != direction)
-                {
-                    return false;
-                }
+            if (Direction is PredictionDirection direction && p.Direction != direction)
+            {
+                return false;
+            }
 
-                if (MinConfidence > 0 && p.Confidence < MinConfidence)
-                {
-                    return false;
-                }
+            if (MinConfidence > 0 && p.Confidence < MinConfidence)
+            {
+                return false;
+            }
 
-                return true;
-            });
+            return true;
+        };
     }
 }
