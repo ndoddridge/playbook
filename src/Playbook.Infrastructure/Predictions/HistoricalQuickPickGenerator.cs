@@ -169,6 +169,14 @@ public sealed class HistoricalQuickPickGenerator
             _ => null
         };
 
+    /// <summary>
+    /// Neutral OpportunityScore used as the ApplyToQuickPickPrediction bridge base.
+    /// Knowledge deltas (±0.6 RecentForm, etc.) are transferred onto RankingScore as:
+    /// RankingScore = ProjectedValue + (AdjustedOpportunity − BridgeBaseOpportunity).
+    /// Using a fixed mid-scale base avoids saturating Clamp(yards, 0, 100) for pass-yard markets.
+    /// </summary>
+    public const decimal BridgeBaseOpportunityScore = 50m;
+
     private static Prediction BuildBridgePrediction(
         HistoricalSnapshot snapshot,
         HistoricalPlayerState player,
@@ -177,8 +185,8 @@ public sealed class HistoricalQuickPickGenerator
         int? confidence,
         double rankingScore)
     {
-        // OpportunityScore bridge: clamp ranking-derived score into 0–100 for applicator deltas.
-        var opp = (decimal)Math.Clamp(rankingScore, 0, 100);
+        _ = rankingScore; // Ranking uses ProjectedValue; knowledge deltas apply via OpportunityScore.
+        var opp = BridgeBaseOpportunityScore;
         var eventId =
             $"hist-qp-{snapshot.Season}-w{snapshot.Week}-{player.PlayerId:N}-{market}";
         // Deterministic prediction id from event + market (no Guid.NewGuid).
@@ -214,7 +222,7 @@ public sealed class HistoricalQuickPickGenerator
             [
                 $"Historical QP generator {FrozenQuickPicksHistoricalEvaluationV1.EvaluatorVersion}",
                 $"Projected={projected:0.##}",
-                $"BridgeOpportunityScore={opp:0.##}"
+                $"BridgeOpportunityScore={opp:0.##} (neutral base for knowledge deltas)"
             ],
             Source = "historical-quick-picks",
             LineFreshness = PropLineFreshness.Mock,

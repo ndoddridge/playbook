@@ -1,3 +1,4 @@
+using Playbook.Core.Knowledge;
 using Playbook.Core.Leagues;
 using Playbook.Core.Predictions;
 
@@ -16,6 +17,7 @@ public interface IQuickPicksHistoricalEvaluationRunner
         QuickPickMode mode,
         string? fixtureId = "nflverse",
         ScoringType scoringType = ScoringType.Ppr,
+        KnowledgeImpactGroup? enhancedGroups = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>Evaluate one season under Baseline or Enhanced mode.</summary>
@@ -24,6 +26,7 @@ public interface IQuickPicksHistoricalEvaluationRunner
         QuickPickMode mode,
         string? fixtureId = "nflverse",
         ScoringType scoringType = ScoringType.Ppr,
+        KnowledgeImpactGroup? enhancedGroups = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -31,5 +34,13 @@ public interface IQuickPicksHistoricalEvaluationRunner
     /// then exactly one 2024 holdout. Must not use 2024 during development.
     /// </summary>
     Task<QuickPicksHistoricalEvaluationReport> RunOfficialEvaluationAsync(
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Quick Picks RecentForm Experiment V1: Baseline vs Enhanced(RecentForm only).
+    /// Development first (deterministic), freeze, then exactly one 2024 holdout.
+    /// Does not change production KnowledgeMode default.
+    /// </summary>
+    Task<QuickPicksHistoricalEvaluationReport> RunOfficialRecentFormExperimentAsync(
         CancellationToken cancellationToken = default);
 }

@@ -207,6 +207,18 @@ public sealed class QuickPickChangeRecord
     public required int EnhancedRankError { get; init; }
 
     public required string LedgerClass { get; init; }
+
+    public double? ActualValue { get; init; }
+
+    public int? Confidence { get; init; }
+
+    public int? KnowledgeConfidence { get; init; }
+
+    public double? RecentFormValue { get; init; }
+
+    public string? RecentFormStatement { get; init; }
+
+    public string? RecentFormDirection { get; init; }
 }
 
 public sealed class QuickPickChangeAnalysis
@@ -217,7 +229,12 @@ public sealed class QuickPickChangeAnalysis
 
     public required int PredictionsUnchanged { get; init; }
 
+    /// <summary>Subset of changed predictions where RankInMarket differed.</summary>
+    public required int RanksChanged { get; init; }
+
     public required double PercentChanged { get; init; }
+
+    public required double PercentRanksChanged { get; init; }
 
     public required double AverageMagnitudeOfChange { get; init; }
 
@@ -353,6 +370,7 @@ public sealed class QuickPicksHistoricalEvaluationReport
         sb.AppendLine(
             $"  compared={a.PredictionsCompared} changed={a.PredictionsChanged} " +
             $"unchanged={a.PredictionsUnchanged} pctChanged={a.PercentChanged:0.00}% " +
+            $"ranksChanged={a.RanksChanged} ({a.PercentRanksChanged:0.00}%) " +
             $"avgMagnitude={a.AverageMagnitudeOfChange:0.000} identical={a.PredictionsIdentical}");
         sb.AppendLine(
             $"  MAE baseline→enhanced: {a.BaselineMeanAbsoluteError:0.000} → {a.EnhancedMeanAbsoluteError:0.000}");
@@ -361,6 +379,22 @@ public sealed class QuickPicksHistoricalEvaluationReport
         sb.AppendLine(
             $"  Value baseline→enhanced: {a.BaselineTotalPredictionValue:0.0} → {a.EnhancedTotalPredictionValue:0.0}");
         sb.AppendLine($"  ledger HELPED={a.Helped.Count} HURT={a.Hurt.Count} NEUTRAL={a.Neutral.Count}");
+        foreach (var c in a.BestChanges.Take(5))
+        {
+            sb.AppendLine(
+                $"  BEST {c.LedgerClass}: {c.Season} W{c.Week} {c.PlayerName} {c.Market} " +
+                $"rank {c.BaselineRank}→{c.EnhancedRank} (err {c.BaselineRankError}→{c.EnhancedRankError}) " +
+                $"form={c.RecentFormValue?.ToString("0") ?? "n/a"} actual={c.ActualValue:0.#}");
+        }
+
+        foreach (var c in a.WorstChanges.Take(5))
+        {
+            sb.AppendLine(
+                $"  WORST {c.LedgerClass}: {c.Season} W{c.Week} {c.PlayerName} {c.Market} " +
+                $"rank {c.BaselineRank}→{c.EnhancedRank} (err {c.BaselineRankError}→{c.EnhancedRankError}) " +
+                $"form={c.RecentFormValue?.ToString("0") ?? "n/a"} actual={c.ActualValue:0.#}");
+        }
+
         sb.AppendLine();
     }
 }

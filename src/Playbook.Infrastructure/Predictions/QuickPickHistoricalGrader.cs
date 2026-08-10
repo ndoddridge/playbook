@@ -172,6 +172,10 @@ public static class QuickPickHistoricalGrader
             var ledger = QuickPickHistoricalGrading.ClassifyLedger(
                 b.RankAbsoluteError, e.RankAbsoluteError, magnitude);
 
+            var form = e.Prediction.KnowledgeContext?.Knowledge.Evidence
+                .FirstOrDefault(ev =>
+                    ev.Aspect == KnowledgeAspect.RecentProduction && !ev.IsUnavailableMarker);
+
             var record = new QuickPickChangeRecord
             {
                 Season = b.Prediction.Season,
@@ -191,7 +195,13 @@ public static class QuickPickHistoricalGrader
                 EnhancedAbsoluteError = e.AbsoluteError,
                 BaselineRankError = b.RankAbsoluteError,
                 EnhancedRankError = e.RankAbsoluteError,
-                LedgerClass = ledger
+                LedgerClass = ledger,
+                ActualValue = e.ActualValue,
+                Confidence = e.Prediction.Confidence,
+                KnowledgeConfidence = e.Prediction.KnowledgeContext?.Knowledge.KnowledgeConfidence,
+                RecentFormValue = form?.Value,
+                RecentFormStatement = form?.Statement,
+                RecentFormDirection = form?.Direction.ToString()
             };
 
             if (magnitude > 1e-9)
@@ -214,6 +224,7 @@ public static class QuickPickHistoricalGrader
         }
 
         var unchanged = keys.Count - changed.Count;
+        var ranksChanged = changed.Count(c => c.BaselineRank != c.EnhancedRank);
         var baseMae = keys.Count == 0 ? 0 : keys.Average(k => baseline[k].AbsoluteError);
         var enhMae = keys.Count == 0 ? 0 : keys.Average(k => enhanced[k].AbsoluteError);
         var baseTop5 = HitRate(keys.Select(k => baseline[k]).Where(g => g.InProjectedTop5).ToList());
@@ -228,7 +239,9 @@ public static class QuickPickHistoricalGrader
             PredictionsCompared = keys.Count,
             PredictionsChanged = changed.Count,
             PredictionsUnchanged = unchanged,
+            RanksChanged = ranksChanged,
             PercentChanged = keys.Count == 0 ? 0 : 100.0 * changed.Count / keys.Count,
+            PercentRanksChanged = keys.Count == 0 ? 0 : 100.0 * ranksChanged / keys.Count,
             AverageMagnitudeOfChange = changed.Count == 0 ? 0 : changed.Average(c => c.Magnitude),
             BaselineMeanAbsoluteError = baseMae,
             EnhancedMeanAbsoluteError = enhMae,
