@@ -2,6 +2,7 @@ using Playbook.Application.Abstractions;
 using Playbook.Core.Decisions;
 using Playbook.Core.Intelligence.Models;
 using Playbook.Core.Players;
+using Playbook.Core.Replay;
 
 namespace Playbook.Infrastructure.Decisions;
 
@@ -206,6 +207,7 @@ public sealed class DecisionEngine : IDecisionEngine
                 PositionLabel = source.PositionLabel,
                 Recommendation = recommendation,
                 Confidence = source.Confidence,
+                CalibratedConfidence = source.CalibratedConfidence,
                 Values = source.Values,
                 Facts = source.Facts,
                 Inferences = source.Inferences,
@@ -235,6 +237,7 @@ public sealed class DecisionEngine : IDecisionEngine
             DecisionType = context.DecisionKind,
             Recommendation = result.Recommendation,
             Confidence = result.Confidence,
+            CalibratedConfidence = result.CalibratedConfidence,
             LeagueId = context.LeagueId,
             SelectedRosterId = context.SelectedRosterId,
             LeagueName = context.LeagueName,
@@ -293,6 +296,9 @@ public sealed class DecisionEngine : IDecisionEngine
         var conflicts = DetectConflicts(knowledge.Signals);
         var inferences = BuildInferences(knowledge, supporting, opposing);
         var confidence = ComputeDecisionConfidence(knowledge, supporting, opposing, conflicts, unknowns);
+        // Experiment 2: informational calibrated confidence. Applied AFTER recommendation derivation
+        // and never fed into AssessValues / DeriveRecommendation.
+        var calibratedConfidence = FrozenDecisionConfidenceCalibrationV2.Apply(confidence);
         var provisional = knowledge.OverallStatus is EvidenceStatus.Unknown or EvidenceStatus.LowConfidence ||
                           knowledge.KnowledgeConfidence < 40 ||
                           knowledge.ProjectedPoints is null ||
@@ -344,6 +350,7 @@ public sealed class DecisionEngine : IDecisionEngine
             PositionLabel = knowledge.PositionLabel,
             Recommendation = recommendation,
             Confidence = confidence,
+            CalibratedConfidence = calibratedConfidence,
             Values = values,
             Facts = knowledge.Facts,
             Inferences = inferences,

@@ -175,4 +175,16 @@ public static class HistoricalReplayCommands
         var runner = services.GetRequiredService<Calibration.ProjectionCalibrationExperimentRunner>();
         return runner.RunOfficialExperimentAsync(cancellationToken);
     }
+
+    /// <summary>
+    /// Experiment 2: confidence calibration under frozen Projection V2.
+    /// Fits on development seasons only, then ONE 2024 holdout.
+    /// </summary>
+    public static Task<ConfidenceCalibrationExperimentReport> RunConfidenceCalibrationExperimentAsync(
+        IServiceProvider services,
+        CancellationToken cancellationToken = default)
+    {
+        var runner = services.GetRequiredService<Calibration.ConfidenceCalibrationExperimentRunner>();
+        return runner.RunOfficialExperimentAsync(cancellationToken);
+    }
 }
