@@ -98,6 +98,20 @@ public sealed class HistoricalPlayerState
 
     /// <summary>Projection V2 calibrated points (always computed when available).</summary>
     public double? ProjectionV2Points { get; init; }
+
+    /// <summary>
+    /// Cutoff-safe counting-stat projections reconstructed from prior-week features.
+    /// Used by historical Quick Picks evaluation (not fantasy-point projections).
+    /// </summary>
+    public double? ProjectedPassYards { get; init; }
+
+    public double? ProjectedRushYards { get; init; }
+
+    public double? ProjectedReceivingYards { get; init; }
+
+    public double? ProjectedReceptions { get; init; }
+
+    public double? ProjectedPassTouchdowns { get; init; }
 }
 
 public sealed class HistoricalRosterSlot
@@ -132,4 +146,22 @@ public sealed class HistoricalPlayerOutcome
 
     /// <summary>Optional raw note for audits (e.g. game script).</summary>
     public string? Note { get; init; }
+
+    /// <summary>
+    /// Settled counting stats for Week W — attached only after prediction finalization.
+    /// Null when the source does not provide that market.
+    /// </summary>
+    public double? ActualPassYards { get; init; }
+
+    public double? ActualRushYards { get; init; }
+
+    public double? ActualReceivingYards { get; init; }
+
+    public double? ActualReceptions { get; init; }
+
+    public double? ActualPassTouchdowns { get; init; }
+
+    public double? ActualRushTouchdowns { get; init; }
+
+    public double? ActualReceivingTouchdowns { get; init; }
 }

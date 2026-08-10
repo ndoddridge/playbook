@@ -107,7 +107,12 @@ public sealed class HistoricalSnapshotBuilder : IHistoricalSnapshotBuilder
                 ProjectionMethodology = row.ProjectionMethodology,
                 BaselineRecentAveragePoints = row.BaselineRecentAveragePoints,
                 BaselineOpportunityAwarePoints = row.BaselineOpportunityAwarePoints,
-                ProjectionV2Points = row.ProjectionV2Points
+                ProjectionV2Points = row.ProjectionV2Points,
+                ProjectedPassYards = row.ProjectedPassYards,
+                ProjectedRushYards = row.ProjectedRushYards,
+                ProjectedReceivingYards = row.ProjectedReceivingYards,
+                ProjectedReceptions = row.ProjectedReceptions,
+                ProjectedPassTouchdowns = row.ProjectedPassTouchdowns
             });
         }
 

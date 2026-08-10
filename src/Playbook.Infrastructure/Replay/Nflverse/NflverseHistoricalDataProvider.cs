@@ -244,6 +244,15 @@ public sealed class NflverseHistoricalDataProvider : IHistoricalDataProvider
                     : null,
                 ProjectionV2Points = bundle.ProjectionV2 is { IsValid: true }
                     ? bundle.ProjectionV2.ProjectedPoints
+                    : null,
+                // Counting-stat projections from cutoff-safe prior-week feature averages only.
+                ProjectedPassYards = bundle.Features.AvgPassYards,
+                ProjectedRushYards = bundle.Features.AvgRushYards,
+                ProjectedReceivingYards = bundle.Features.AvgReceivingYards,
+                ProjectedReceptions = bundle.Features.AvgReceptions,
+                ProjectedPassTouchdowns = bundle.Features.AvgTouchdowns is double atd &&
+                                          id.Position == Position.QB
+                    ? atd
                     : null
             });
 
@@ -255,13 +264,21 @@ public sealed class NflverseHistoricalDataProvider : IHistoricalDataProvider
 
             if (outcomeWeeks is { Count: > 0 })
             {
-                var actual = (double)LeagueFantasyScoring.Calculate(ToCounting(outcomeWeeks[0]), scoringType);
+                var ow = outcomeWeeks[0];
+                var actual = (double)LeagueFantasyScoring.Calculate(ToCounting(ow), scoringType);
                 outcomes.Add(new HistoricalPlayerOutcome
                 {
                     PlayerId = id.PlaybookId,
                     PlayerName = id.FullName,
                     ActualFantasyPoints = actual,
-                    Note = $"Week {week} actuals revealed post-decision from nflverse player_stats"
+                    Note = $"Week {week} actuals revealed post-decision from nflverse player_stats",
+                    ActualPassYards = ow.PassYards,
+                    ActualRushYards = ow.RushYards,
+                    ActualReceivingYards = ow.ReceivingYards,
+                    ActualReceptions = ow.Receptions,
+                    ActualPassTouchdowns = ow.PassTouchdowns,
+                    ActualRushTouchdowns = ow.RushTouchdowns,
+                    ActualReceivingTouchdowns = ow.ReceivingTouchdowns
                 });
             }
         }

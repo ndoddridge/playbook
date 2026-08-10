@@ -75,7 +75,10 @@ public static class ControlledHistoricalFixture
                     HealthLabel = "Healthy",
                     RoleNote = "Feature back role entering the week",
                     RecentProductionScore = 64,
-                    UnavailableSignals = []
+                    UnavailableSignals = [],
+                    ProjectedRushYards = 72.0,
+                    ProjectedReceivingYards = 18.0,
+                    ProjectedReceptions = 2.5
                 },
                 new HistoricalRawPlayerRecord
                 {
@@ -93,7 +96,10 @@ public static class ControlledHistoricalFixture
                     HealthLabel = "Healthy",
                     RoleNote = "Change-of-pace / pass-down role",
                     RecentProductionScore = 50,
-                    UnavailableSignals = []
+                    UnavailableSignals = [],
+                    ProjectedRushYards = 45.0,
+                    ProjectedReceivingYards = 28.0,
+                    ProjectedReceptions = 3.5
                 },
                 new HistoricalRawPlayerRecord
                 {
@@ -114,7 +120,9 @@ public static class ControlledHistoricalFixture
                     RecentNewsConfirmed = true,
                     RoleNote = "Clear WR1",
                     RecentProductionScore = 78,
-                    UnavailableSignals = []
+                    UnavailableSignals = [],
+                    ProjectedReceivingYards = 85.0,
+                    ProjectedReceptions = 6.5
                 },
                 new HistoricalRawPlayerRecord
                 {
@@ -140,7 +148,9 @@ public static class ControlledHistoricalFixture
                     RecentNewsConfirmed = true,
                     RoleNote = "Secondary receiver",
                     RecentProductionScore = 42,
-                    UnavailableSignals = ["Historical snap share detail"]
+                    UnavailableSignals = ["Historical snap share detail"],
+                    ProjectedReceivingYards = 48.0,
+                    ProjectedReceptions = 3.0
                 },
                 new HistoricalRawPlayerRecord
                 {
@@ -162,7 +172,9 @@ public static class ControlledHistoricalFixture
                     RecentNewsHeadline = "Limited Thursday; expected to play",
                     RecentNewsObservedAt = InformationCutoff.AddHours(-10),
                     RecentNewsConfirmed = true,
-                    UnavailableSignals = ["Historical red-zone share"]
+                    UnavailableSignals = ["Historical red-zone share"],
+                    ProjectedReceivingYards = 42.0,
+                    ProjectedReceptions = 4.0
                 }
             ],
             Outcomes =
@@ -173,33 +185,52 @@ public static class ControlledHistoricalFixture
                     PlayerId = AlphaRbId,
                     PlayerName = "Alpha Runner",
                     ActualFantasyPoints = 8.1,
-                    Note = $"Actuals known {week7ActualsKnownAt:u} — not available at cutoff"
+                    Note = $"Actuals known {week7ActualsKnownAt:u} — not available at cutoff",
+                    ActualRushYards = 38,
+                    ActualReceivingYards = 12,
+                    ActualReceptions = 2,
+                    ActualRushTouchdowns = 0,
+                    ActualReceivingTouchdowns = 0
                 },
                 new HistoricalPlayerOutcome
                 {
                     PlayerId = BravoRbId,
                     PlayerName = "Bravo Backup",
                     ActualFantasyPoints = 17.3,
-                    Note = "Outperformed Alpha despite lower projection"
+                    Note = "Outperformed Alpha despite lower projection",
+                    ActualRushYards = 95,
+                    ActualReceivingYards = 40,
+                    ActualReceptions = 5,
+                    ActualRushTouchdowns = 1,
+                    ActualReceivingTouchdowns = 0
                 },
                 new HistoricalPlayerOutcome
                 {
                     PlayerId = CharlieWrId,
                     PlayerName = "Charlie Target",
-                    ActualFantasyPoints = 22.0
+                    ActualFantasyPoints = 22.0,
+                    ActualReceivingYards = 110,
+                    ActualReceptions = 8,
+                    ActualReceivingTouchdowns = 1
                 },
                 new HistoricalPlayerOutcome
                 {
                     PlayerId = DeltaWrId,
                     PlayerName = "Delta Deep Threat",
                     ActualFantasyPoints = 3.2,
-                    Note = "Future injury designation must not influence pre-game decision"
+                    Note = "Future injury designation must not influence pre-game decision",
+                    ActualReceivingYards = 18,
+                    ActualReceptions = 1,
+                    ActualReceivingTouchdowns = 0
                 },
                 new HistoricalPlayerOutcome
                 {
                     PlayerId = EchoTeId,
                     PlayerName = "Echo Tight End",
-                    ActualFantasyPoints = 11.4
+                    ActualFantasyPoints = 11.4,
+                    ActualReceivingYards = 55,
+                    ActualReceptions = 5,
+                    ActualReceivingTouchdowns = 0
                 }
             ]
         };
