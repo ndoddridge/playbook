@@ -1,10 +1,12 @@
 using Playbook.Application.Abstractions;
 using Playbook.Application.Intelligence.Interfaces;
+using Playbook.Application.Knowledge;
 using Playbook.Application.Leagues;
 using Playbook.Application.Players;
 using Playbook.Application.Projections.Interfaces;
 using Playbook.Core.Decisions;
 using Playbook.Core.Intelligence.Models;
+using Playbook.Core.Knowledge;
 using Playbook.Core.Leagues;
 using Playbook.Core.Players;
 using Playbook.Core.Projections.Models;
@@ -13,7 +15,8 @@ namespace Playbook.Infrastructure.Intelligence.Services;
 
 /// <summary>
 /// Fantasy team intelligence composed from existing assessment + projection services.
-/// Start/Sit recommendations are produced by the centralized decision engine.
+/// Start/Sit recommendations are produced by the centralized decision engine,
+/// consuming PlayerKnowledge via the shared knowledge / PredictionContext layer.
 /// Invalidates whenever league / owned-team context changes.
 /// </summary>
 public sealed class FantasyTeamIntelligenceService : IFantasyTeamIntelligenceService
@@ -23,6 +26,7 @@ public sealed class FantasyTeamIntelligenceService : IFantasyTeamIntelligenceSer
     private readonly IPlayerIntelligenceAssessmentService _assessments;
     private readonly IProjectionService _projections;
     private readonly IPlayerKnowledgeComposer _knowledgeComposer;
+    private readonly ISharedKnowledgeModel _sharedKnowledge;
     private readonly IDecisionEngine _decisionEngine;
     private readonly object _gate = new();
 
@@ -35,6 +39,7 @@ public sealed class FantasyTeamIntelligenceService : IFantasyTeamIntelligenceSer
         IPlayerIntelligenceAssessmentService assessments,
         IProjectionService projections,
         IPlayerKnowledgeComposer knowledgeComposer,
+        ISharedKnowledgeModel sharedKnowledge,
         IDecisionEngine decisionEngine)
     {
         _leagueState = leagueState;
@@ -42,6 +47,7 @@ public sealed class FantasyTeamIntelligenceService : IFantasyTeamIntelligenceSer
         _assessments = assessments;
         _projections = projections;
         _knowledgeComposer = knowledgeComposer;
+        _sharedKnowledge = sharedKnowledge;
         _decisionEngine = decisionEngine;
         _leagueState.Changed += OnLeagueContextChanged;
     }
@@ -216,8 +222,33 @@ public sealed class FantasyTeamIntelligenceService : IFantasyTeamIntelligenceSer
         IReadOnlyList<RosterRow> rows,
         DecisionContext decisionContext)
     {
-        var knowledge = rows
+        // Compose raw player knowledge, then route through shared PredictionContext.
+        var composed = rows
             .Select(r => _knowledgeComposer.ComposeAsync(r.Player, decisionContext).GetAwaiter().GetResult())
+            .ToList();
+
+        var predictionContexts = composed
+            .Select((k, i) => _sharedKnowledge.BuildStartSitPredictionContext(
+                k,
+                decisionContext,
+                team: rows[i].Player.Team,
+                opponentTeam: null))
+            .ToList();
+
+        foreach (var ctx in predictionContexts)
+        {
+            if (ctx.PredictionType != PredictionType.StartSit)
+            {
+                throw new InvalidOperationException("Start/Sit path received non-StartSit PredictionContext.");
+            }
+
+            KnowledgeTemporalGuard.AssertNoFutureLeak(ctx.Knowledge, decisionContext.InformationCutoff);
+        }
+
+        var knowledge = predictionContexts
+            .Select(c => c.PlayerKnowledge
+                ?? throw new InvalidOperationException(
+                    $"Shared knowledge missing DecisionPlayerKnowledge for {c.PlayerName}."))
             .ToList();
 
         var candidates = rows

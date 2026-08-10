@@ -1,14 +1,16 @@
 using Playbook.Application.Abstractions;
+using Playbook.Application.Knowledge;
 using Playbook.Application.Replay;
 using Playbook.Core.Decisions;
 using Playbook.Core.Intelligence.Models;
+using Playbook.Core.Knowledge;
 using Playbook.Core.Replay;
 
 namespace Playbook.Infrastructure.Replay;
 
 /// <summary>
 /// Orchestrates:
-/// snapshot → cutoff filter → knowledge → decision engine → records → outcomes → evaluation.
+/// snapshot → cutoff filter → shared knowledge → decision engine → records → outcomes → evaluation.
 /// Does not bypass the centralized decision engine.
 /// </summary>
 public sealed class HistoricalReplayRunner : IHistoricalReplayRunner
@@ -17,6 +19,7 @@ public sealed class HistoricalReplayRunner : IHistoricalReplayRunner
     private readonly IHistoricalSnapshotBuilder _builder;
     private readonly IHistoricalWeekDataValidator _validator;
     private readonly IHistoricalKnowledgeFactory _knowledgeFactory;
+    private readonly ISharedKnowledgeModel _sharedKnowledge;
     private readonly IDecisionEngine _decisionEngine;
     private readonly IDecisionRecordStore _recordStore;
     private readonly IDecisionOutcomeEvaluator _evaluator;
@@ -26,6 +29,7 @@ public sealed class HistoricalReplayRunner : IHistoricalReplayRunner
         IHistoricalSnapshotBuilder builder,
         IHistoricalWeekDataValidator validator,
         IHistoricalKnowledgeFactory knowledgeFactory,
+        ISharedKnowledgeModel sharedKnowledge,
         IDecisionEngine decisionEngine,
         IDecisionRecordStore recordStore,
         IDecisionOutcomeEvaluator evaluator)
@@ -34,6 +38,7 @@ public sealed class HistoricalReplayRunner : IHistoricalReplayRunner
         _builder = builder;
         _validator = validator;
         _knowledgeFactory = knowledgeFactory;
+        _sharedKnowledge = sharedKnowledge;
         _decisionEngine = decisionEngine;
         _recordStore = recordStore;
         _evaluator = evaluator;
@@ -69,8 +74,26 @@ public sealed class HistoricalReplayRunner : IHistoricalReplayRunner
         // 3. Replay context for the existing decision engine.
         var replay = ReplayContext.FromSnapshot(snapshot, request.DecisionKind);
 
-        // 4–5. Knowledge from snapshot only (not live services).
-        var knowledge = _knowledgeFactory.BuildKnowledge(snapshot, replay.DecisionContext);
+        // 4–5. Shared knowledge model (temporally bounded) → decision PlayerKnowledge.
+        // HistoricalKnowledgeFactory remains the snapshot composer inside SharedKnowledgeModel.
+        _ = _knowledgeFactory;
+        var predictionContexts = snapshot.Players
+            .Select(p => _sharedKnowledge.BuildHistoricalPredictionContext(
+                snapshot,
+                p.PlayerId,
+                PredictionType.StartSit,
+                replay.DecisionContext))
+            .ToList();
+        foreach (var ctx in predictionContexts)
+        {
+            KnowledgeTemporalGuard.AssertNoFutureLeak(ctx.Knowledge, snapshot.InformationCutoff);
+        }
+
+        var knowledge = predictionContexts
+            .Select(c => c.PlayerKnowledge
+                ?? throw new InvalidOperationException(
+                    $"Shared knowledge missing DecisionPlayerKnowledge for {c.PlayerName}."))
+            .ToList();
         AssertKnowledgeRespectsCutoff(knowledge, snapshot.InformationCutoff);
 
         // 6–7. Decisions via centralized engine + immutable records.

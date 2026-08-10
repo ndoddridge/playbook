@@ -16,8 +16,10 @@ using Playbook.Application.Projections.Interfaces;
 using Playbook.Application.Recommendations;
 using Playbook.Application.Stats;
 using Playbook.Application.Stats.Interfaces;
+using Playbook.Application.Knowledge;
 using Playbook.Core.Replay;
 using Playbook.Infrastructure.Decisions;
+using Playbook.Infrastructure.Knowledge;
 using Playbook.Infrastructure.Replay;
 using Playbook.Infrastructure.Replay.Calibration;
 using Playbook.Infrastructure.Replay.Nflverse;
@@ -161,6 +163,7 @@ public static class DependencyInjection
         services.AddSingleton<IHistoricalSnapshotSource, CompositeHistoricalSnapshotSource>();
         services.AddSingleton<IHistoricalSnapshotBuilder, HistoricalSnapshotBuilder>();
         services.AddSingleton<IHistoricalKnowledgeFactory, HistoricalKnowledgeFactory>();
+        services.AddSingleton<ISharedKnowledgeModel, SharedKnowledgeModel>();
         services.AddSingleton<IDecisionOutcomeEvaluator, StartSitOutcomeEvaluator>();
         services.AddSingleton<IHistoricalReplayRunner, HistoricalReplayRunner>();
         services.AddSingleton<IMultiWeekHistoricalReplayRunner, MultiWeekHistoricalReplayRunner>();
