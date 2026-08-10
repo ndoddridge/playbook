@@ -4,6 +4,7 @@
 @using Playbook.Application.Players
 @using Playbook.Core.Intelligence.Models
 @using Playbook.Core.Leagues
+@using Playbook.Core.Replay
 @using Playbook.Web.Features.League.Models
 @inject ILeagueState LeagueState
 @inject IFantasyTeamIntelligenceService TeamIntelligence
@@ -176,7 +177,7 @@
                     {
                         <li class="ti-startsit__item ti-startsit__item--@rec.Action.ToString().ToLowerInvariant()">
                             <div class="ti-startsit__top">
-                                <span class="ti-startsit__action">@rec.Action</span>
+                                <span class="ti-startsit__action">@rec.Action@(TrustSuffix(rec))</span>
                                 <button type="button" class="ti-link ti-startsit__name" @onclick="() => OpenPlayer(rec.PlayerId)">
                                     @rec.PlayerName
                                 </button>
@@ -185,6 +186,10 @@
                             <div class="ti-startsit__metrics">
                                 <span>@(rec.ProjectionSummary ?? "Projection unavailable")</span>
                                 <span>Confidence @rec.Confidence%</span>
+                                @if (rec.CalibratedConfidence is int cal)
+                                {
+                                    <span>Calibrated @cal%</span>
+                                }
                             </div>
                             @if (rec.InsufficientData)
                             {
@@ -303,6 +308,13 @@
     }
 
     private void OpenPlayer(Guid playerId) => Overlay.Open(playerId);
+
+    private static string TrustSuffix(StartSitRecommendation rec) => rec.TrustLabel switch
+    {
+        DecisionTrustLabel.HighTrust => " — HIGH TRUST",
+        DecisionTrustLabel.LowTrust => " — LOW TRUST",
+        _ => string.Empty
+    };
 
     public void Dispose() => LeagueState.Changed -= OnLeagueChanged;
 }

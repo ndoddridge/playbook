@@ -113,6 +113,8 @@ public sealed class StartSitOutcomeEvaluator : IDecisionOutcomeEvaluator
                 Confidence = decision.Confidence,
                 CalibratedConfidence = decision.CalibratedConfidence
                     ?? FrozenDecisionConfidenceCalibrationV2.Apply(decision.Confidence),
+                DecisionValue = decision.DecisionValue,
+                DecisionValueMargin = decision.ComparativeDecisionValueMargin,
                 ExpectedValue = decision.ExpectedValue,
                 ActualFantasyPoints = actualPts,
                 ProjectionAbsoluteError = absErr,
