@@ -40,6 +40,32 @@ public sealed class HistoricalKnowledgeFactory : IHistoricalKnowledgeFactory
             });
 
             var conf = player.ProjectionConfidence ?? 50;
+            if (!string.IsNullOrWhiteSpace(player.ProjectionMethodology))
+            {
+                facts.Add(new KnowledgeFact
+                {
+                    Key = "projection.methodology",
+                    Statement = player.ProjectionMethodology!,
+                    Source = player.ProjectionModelId ?? "HistoricalProjection",
+                    ObservedAt = now,
+                    Status = EvidenceStatus.Known
+                });
+            }
+
+            if (player.ProjectionSourceWeeks.Count > 0)
+            {
+                facts.Add(new KnowledgeFact
+                {
+                    Key = "projection.source_weeks",
+                    Statement =
+                        $"Projection source weeks: [{string.Join(',', player.ProjectionSourceWeeks)}] " +
+                        $"(excludes target week; sufficiency={player.DataSufficiency}).",
+                    Source = "HistoricalFeatureReconstructor",
+                    ObservedAt = now,
+                    Status = EvidenceStatus.Known
+                });
+            }
+
             signals.Add(new KnowledgeSignal
             {
                 Type = SignalType.Projection,
@@ -48,7 +74,7 @@ public sealed class HistoricalKnowledgeFactory : IHistoricalKnowledgeFactory
                 Strength = pts >= 16m || pts <= 5m ? SignalStrength.Strong : SignalStrength.Moderate,
                 Confidence = Math.Clamp(conf, 0, 100),
                 Status = conf >= 55 ? EvidenceStatus.Known : EvidenceStatus.LowConfidence,
-                Source = "HistoricalSnapshot",
+                Source = player.ProjectionModelId ?? "HistoricalSnapshot",
                 Explanation = $"Projection {pts:0.0} pts with confidence {conf}%.",
                 ObservedAt = now,
                 Category = "Projection"

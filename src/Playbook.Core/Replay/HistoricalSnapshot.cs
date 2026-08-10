@@ -83,6 +83,18 @@ public sealed class HistoricalPlayerState
 
     /// <summary>Explicit gaps — do not invent replacements.</summary>
     public IReadOnlyList<string> UnavailableSignals { get; init; } = [];
+
+    public DataSufficiency? DataSufficiency { get; init; }
+
+    public IReadOnlyList<int> ProjectionSourceWeeks { get; init; } = [];
+
+    public string? ProjectionModelId { get; init; }
+
+    public string? ProjectionMethodology { get; init; }
+
+    public double? BaselineRecentAveragePoints { get; init; }
+
+    public double? BaselineOpportunityAwarePoints { get; init; }
 }
 
 public sealed class HistoricalRosterSlot

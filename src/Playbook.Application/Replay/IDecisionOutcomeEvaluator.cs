@@ -12,5 +12,6 @@ public interface IDecisionOutcomeEvaluator
         IReadOnlyList<DecisionRecord> decisions,
         IReadOnlyList<DecisionResult> decisionResults,
         HistoricalWeekOutcomes outcomes,
+        HistoricalSnapshot? snapshot = null,
         double meaningfulMarginPoints = 1.0);
 }

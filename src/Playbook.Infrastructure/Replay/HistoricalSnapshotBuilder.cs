@@ -100,7 +100,13 @@ public sealed class HistoricalSnapshotBuilder : IHistoricalSnapshotBuilder
                 RecentNewsConfirmed = newsConfirmed,
                 RoleNote = row.RoleNote,
                 RecentProductionScore = row.RecentProductionScore,
-                UnavailableSignals = unavailable.Distinct(StringComparer.OrdinalIgnoreCase).ToList()
+                UnavailableSignals = unavailable.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
+                DataSufficiency = row.DataSufficiency,
+                ProjectionSourceWeeks = row.ProjectionSourceWeeks,
+                ProjectionModelId = row.ProjectionModelId,
+                ProjectionMethodology = row.ProjectionMethodology,
+                BaselineRecentAveragePoints = row.BaselineRecentAveragePoints,
+                BaselineOpportunityAwarePoints = row.BaselineOpportunityAwarePoints
             });
         }
 

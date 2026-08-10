@@ -27,6 +27,20 @@ public sealed class ReplayDecisionGrade
 
     public required double? ProjectionSignedError { get; init; }
 
+    public double? ProjectionSquaredError { get; init; }
+
+    public DataSufficiency? DataSufficiency { get; init; }
+
+    public IReadOnlyList<int> ProjectionSourceWeeks { get; init; } = [];
+
+    public double? BaselineRecentAveragePoints { get; init; }
+
+    public double? BaselineOpportunityAwarePoints { get; init; }
+
+    public double? BaselineRecentAbsoluteError { get; init; }
+
+    public double? BaselineOpportunityAbsoluteError { get; init; }
+
     public Guid? AlternativePlayerId { get; init; }
 
     public string? AlternativePlayerName { get; init; }
@@ -81,6 +95,15 @@ public sealed class HistoricalReplayReport
 
     public required double? AverageProjectionAbsoluteError { get; init; }
 
+    public double? AverageProjectionSquaredError { get; init; }
+
+    public double? BaselineRecentAverageMae { get; init; }
+
+    public double? BaselineOpportunityAwareMae { get; init; }
+
+    /// <summary>Which baseline had lower MAE on this replay (or tie).</summary>
+    public string? BetterBaselineLabel { get; init; }
+
     public required double? AverageDecisionDifferential { get; init; }
 
     public required double AverageConfidence { get; init; }
@@ -105,6 +128,9 @@ public sealed class HistoricalReplayReport
             ? "n/a"
             : $"{AverageDecisionDifferential:0.00}";
 
+        var baseA = BaselineRecentAverageMae is null ? "n/a" : $"{BaselineRecentAverageMae:0.00}";
+        var baseB = BaselineOpportunityAwareMae is null ? "n/a" : $"{BaselineOpportunityAwareMae:0.00}";
+
         return
             $"Replay: {Season} Week {Week}{Environment.NewLine}" +
             $"Cutoff: {InformationCutoff:u}{Environment.NewLine}" +
@@ -113,6 +139,9 @@ public sealed class HistoricalReplayReport
             $"Incorrect: {IncorrectCount}{Environment.NewLine}" +
             $"Decision accuracy: {accuracy}{Environment.NewLine}" +
             $"Average projection error: {projErr}{Environment.NewLine}" +
+            $"Baseline A MAE (recent avg): {baseA}{Environment.NewLine}" +
+            $"Baseline B MAE (opportunity-aware): {baseB}{Environment.NewLine}" +
+            $"Better baseline: {BetterBaselineLabel ?? "n/a"}{Environment.NewLine}" +
             $"Average decision value: {decVal}{Environment.NewLine}" +
             $"Average confidence: {AverageConfidence:0.#}";
     }

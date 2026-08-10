@@ -14,19 +14,23 @@ public sealed class StartSitOutcomeEvaluator : IDecisionOutcomeEvaluator
         IReadOnlyList<DecisionRecord> decisions,
         IReadOnlyList<DecisionResult> decisionResults,
         HistoricalWeekOutcomes outcomes,
+        HistoricalSnapshot? snapshot = null,
         double meaningfulMarginPoints = 1.0)
     {
         var resultsById = decisionResults.ToDictionary(r => r.DecisionId);
+        var playersById = snapshot?.Players.ToDictionary(p => p.PlayerId) ?? new Dictionary<Guid, HistoricalPlayerState>();
         var grades = new List<ReplayDecisionGrade>();
 
         foreach (var decision in decisions)
         {
             resultsById.TryGetValue(decision.DecisionId, out var result);
+            playersById.TryGetValue(decision.PlayerId, out var playerState);
 
             outcomes.ByPlayerId.TryGetValue(decision.PlayerId, out var actual);
             double? actualPts = actual?.ActualFantasyPoints;
             double? absErr = actualPts is null ? null : Math.Abs(actualPts.Value - decision.ExpectedValue);
             double? signedErr = actualPts is null ? null : actualPts.Value - decision.ExpectedValue;
+            double? squaredErr = actualPts is null ? null : Math.Pow(actualPts.Value - decision.ExpectedValue, 2);
 
             // Prefer the strongest alternative by expected value among those considered.
             var altResult = decision.AlternativesConsidered
@@ -70,7 +74,6 @@ public sealed class StartSitOutcomeEvaluator : IDecisionOutcomeEvaluator
             else if (decision.Recommendation == DecisionRecommendation.Sit &&
                      altActual is not null)
             {
-                // Sitting is correct when the alternative (or the player started instead) beat this player.
                 differential = altActual.Value - actualPts.Value;
                 marginMattered = Math.Abs(differential.Value) >= meaningfulMarginPoints;
                 wasCorrect = differential >= 0;
@@ -85,6 +88,11 @@ public sealed class StartSitOutcomeEvaluator : IDecisionOutcomeEvaluator
                     $"(abs error {absErr:0.0}). No comparative alternative graded.";
             }
 
+            double? baseA = playerState?.BaselineRecentAveragePoints;
+            double? baseB = playerState?.BaselineOpportunityAwarePoints;
+            double? baseAErr = actualPts is null || baseA is null ? null : Math.Abs(actualPts.Value - baseA.Value);
+            double? baseBErr = actualPts is null || baseB is null ? null : Math.Abs(actualPts.Value - baseB.Value);
+
             grades.Add(new ReplayDecisionGrade
             {
                 DecisionId = decision.DecisionId,
@@ -96,6 +104,13 @@ public sealed class StartSitOutcomeEvaluator : IDecisionOutcomeEvaluator
                 ActualFantasyPoints = actualPts,
                 ProjectionAbsoluteError = absErr,
                 ProjectionSignedError = signedErr,
+                ProjectionSquaredError = squaredErr,
+                DataSufficiency = playerState?.DataSufficiency,
+                ProjectionSourceWeeks = playerState?.ProjectionSourceWeeks ?? [],
+                BaselineRecentAveragePoints = baseA,
+                BaselineOpportunityAwarePoints = baseB,
+                BaselineRecentAbsoluteError = baseAErr,
+                BaselineOpportunityAbsoluteError = baseBErr,
                 AlternativePlayerId = altId,
                 AlternativePlayerName = altName,
                 AlternativeExpectedValue = altExpected,
