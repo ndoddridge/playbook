@@ -20,6 +20,100 @@
     max-width: 36rem;
 }
 
+.player-explorer__list-panel--table {
+    max-width: 56rem;
+}
+
+.player-table-wrap {
+    max-height: min(70vh, 40rem);
+    overflow: auto;
+}
+
+.player-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--pb-text-sm);
+}
+
+.player-table th,
+.player-table td {
+    padding: 0.7rem 0.85rem;
+    text-align: left;
+    border-bottom: 1px solid var(--pb-color-border);
+    vertical-align: middle;
+}
+
+.player-table th {
+    position: sticky;
+    top: 0;
+    background: var(--pb-color-surface);
+    font-size: 0.65rem;
+    font-weight: var(--pb-weight-medium);
+    letter-spacing: var(--pb-tracking-wide);
+    text-transform: uppercase;
+    color: var(--pb-color-text-muted);
+    z-index: 1;
+}
+
+.player-table__sort {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    letter-spacing: inherit;
+    text-transform: inherit;
+    cursor: pointer;
+}
+
+.player-table__sort:hover {
+    color: var(--pb-color-text);
+}
+
+.player-table__row {
+    cursor: pointer;
+    transition: background var(--pb-transition-fast);
+}
+
+.player-table__row:hover {
+    background: var(--pb-color-surface-hover);
+}
+
+.player-table__identity {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--pb-space-3);
+    min-width: 0;
+}
+
+.player-table__name {
+    font-weight: var(--pb-weight-medium);
+    color: var(--pb-color-text);
+}
+
+.player-table__points {
+    font-variant-numeric: tabular-nums;
+    font-weight: var(--pb-weight-semibold);
+    color: var(--pb-color-accent);
+}
+
+.projection-reason-list {
+    margin: 0;
+    padding-left: 1.1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    color: var(--pb-color-text-secondary);
+    font-size: var(--pb-text-sm);
+}
+
+.projection-reason-list li::marker {
+    color: var(--pb-color-accent);
+}
+
 .player-search {
     display: flex;
     flex-direction: column;
@@ -222,6 +316,68 @@
     list-style: none;
     color: var(--pb-color-text-secondary);
     font-size: var(--pb-text-sm);
+}
+
+.player-injury-entry {
+    padding: 0.45rem 0;
+    border-bottom: 1px solid color-mix(in srgb, var(--pb-color-border) 70%, transparent);
+}
+
+.player-injury-entry--high {
+    color: var(--pb-color-text-primary);
+    opacity: 1;
+}
+
+.player-injury-entry--moderate {
+    color: var(--pb-color-text-primary);
+    opacity: 0.92;
+}
+
+.player-injury-entry--low {
+    color: var(--pb-color-text-secondary);
+    opacity: 0.72;
+}
+
+.player-injury-entry--minimal {
+    color: var(--pb-color-text-secondary);
+    opacity: 0.55;
+}
+
+.player-injury-entry--unconfirmed {
+    border-left: 3px solid color-mix(in srgb, var(--pb-color-warning, #c9852a) 80%, transparent);
+    padding-left: 0.65rem;
+    background: color-mix(in srgb, var(--pb-color-warning, #c9852a) 8%, transparent);
+}
+
+.player-injury-badge {
+    display: inline-block;
+    margin-right: 0.35rem;
+    padding: 0.1rem 0.35rem;
+    border-radius: 0.25rem;
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+}
+
+.player-injury-badge--verified {
+    color: var(--pb-color-text-primary);
+    background: color-mix(in srgb, var(--pb-color-success, #2f7d4b) 18%, transparent);
+}
+
+.player-injury-badge--unconfirmed {
+    color: var(--pb-color-text-primary);
+    background: color-mix(in srgb, var(--pb-color-warning, #c9852a) 22%, transparent);
+}
+
+.player-injury-badge--historical {
+    color: var(--pb-color-text-secondary);
+    background: color-mix(in srgb, var(--pb-color-border) 55%, transparent);
+}
+
+.player-injury-verified {
+    border-left: 3px solid color-mix(in srgb, var(--pb-color-success, #2f7d4b) 70%, transparent);
+    padding-left: 0.65rem;
 }
 
 @media (max-width: 960px) {

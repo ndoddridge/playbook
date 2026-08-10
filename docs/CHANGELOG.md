@@ -2,6 +2,407 @@
 
 All notable project changes are recorded here.
 
+## [Unreleased] — Compact slate navigator + canonical NFL order
+
+### Fixed / Changed
+
+- Default slate uses **NFL calendar phase/week first**, then provider availability — future Regular Season Odds events no longer confuse an active Preseason
+- Canonical season structure everywhere: Preseason W1–W3 → Regular W1–W18 → Wild Card / Divisional / Conference Championship / Super Bowl
+- Compact navigator (`‹ PRESEASON · WEEK 1 ›`) with expandable **Browse weeks** picker organized by phase
+- Prev/Next follows canonical order; weeks without markets are selectable but empty (no invented props)
+
+## [Unreleased] — Quick Picks slate navigator + event-driven NFL calendar
+
+### Fixed / Added
+
+- **Root cause of “Preseason · Week 5”:** regular-season Odds markets were labeled with the preseason phase-start date. Live provider now loads `americanfootball_nfl_preseason` + `americanfootball_nfl`, and weeks are clustered from real kickoffs (Eastern Tuesday weeks)
+- Preseason capped at **3 weeks**; regular 1–18; postseason rounds Wild Card → Super Bowl
+- Default slate = **next incomplete available slate** (never invents weeks; never mixes slates)
+- Shared `NflSlate` model for UI, retrieval, filtering, and intelligence scoping
+- Slate navigator (Previous / Next + week chips) and compact team/player/matchup/market filters
+- Cards show player, matchup, slate date, market, and side clearly
+
+## [Unreleased] — NFL week/game context for Quick Picks (Engine v0.3)
+
+### Added / Changed
+
+- Every Quick Pick is tagged with NFL **season**, **phase** (preseason / regular / postseason), **week**, game id, kickoff, and teams
+- `INflCalendarService` resolves live NFL state (Sleeper) and maps kickoffs → week; auto-transitions when regular season begins
+- Quick Picks evaluate a **single selected week slate** — props from other weeks are never mixed
+- Preseason: regular-season production is a **prior only** (lower confidence); current injury/news/usage intel still applies
+- Engine **v0.3** strengthens usage/opportunity edge impact; structured `SignalContributions` retained for weight tuning
+- UI: slate badge + per-card context line (`Preseason · Week 1 · NE @ SEA · Aug 14`); board exposes `AvailableWeeks` / `TrySelectWeek` for a future selector
+- Improved Odds API → player name matching so intelligence can attach to live props
+
+## [Unreleased] — Intelligence-driven Quick Picks (Engine v0.2)
+
+### Added / Changed
+
+- Quick Picks Engine **v0.2** combines projection-vs-line with player intelligence, health, current/historical injury, unconfirmed buzz, usage/opportunity, and capped recent facts
+- Tunable weights via `QuickPicks:Scoring` (`QuickPicksScoringOptions`) — structured `PredictionSignalContribution` output for later weight tuning without UI rewrites
+- `QuickPickEvaluationContext` feeds engine from existing injury/intelligence services (no parallel intelligence system)
+- Missing signals reduce confidence; unconfirmed buzz is labeled and never treated as fact; current injuries outweigh age-decayed historical ones
+- Ranked by `OpportunityScore`; Quick Picks remain independent of fantasy league selection
+- Prediction cards show up to 3 supporting signal lines (unconfirmed styled distinctly)
+
+## [Unreleased] — Odds API key configuration diagnostics
+
+### Fixed / Clarified
+
+- Diagnosed Mock fallback: Live provider activates, but `PropLines__OddsApi__ApiKey` was empty in the process environment
+- Accept alias env vars `ODDS_API_KEY` / `THE_ODDS_API_KEY` when nested key is empty
+- Developer Monitor: **Api Key Configured** (Yes/No, never exposes the key)
+- User secrets support on Web project; clearer Quick Picks fallback note + `docs/PROP_LINES.md` config trace
+
+## [Unreleased] — Live prop lines for Quick Picks
+
+### Added / Changed
+
+- The Odds API is the primary `PropLines` provider (`Provider: Live`) with automatic Mock fallback
+- Env/config: `PropLines__OddsApi__ApiKey` (required for live); missing key / failure / empty markets → Mock
+- Developer Monitor: Provider Status, Provider Response Time, Last Error
+- Quick Picks UI badge distinguishes LIVE vs MOCK / MOCK FALLBACK data
+- Mobile spacing: Quick Picks content clears the top bar; shell uses auto top-bar row height on narrow viewports
+- Hardened live HTTP error handling + preferred bookmaker ordering
+
+## [Unreleased] — Quick Picks (Prediction Engine v0.1)
+
+### Added
+
+- Quick Picks domain (`Prediction`, `PropLine`, `FootballEvent`) independent of fantasy league/roster
+- `IPropLineProvider` with `MockPropLineProvider` + `LivePropLineProvider` (The Odds API)
+- `IQuickPicksEngine` / `QuickPicksEngine` — deterministic projection-vs-line edge with confidence/volatility/health weighting
+- `IQuickPicksService` orchestration + Developer Monitor sync fields
+- Quick Picks board UI (Top / Watch / Upcoming) with human-readable reasoning and expandable calculation notes
+- Line freshness labels: Live / Mock / Stale / Unavailable
+- Configuration + docs: `PropLines` / `docs/PROP_LINES.md`
+
+### Architecture
+
+Football data → Intelligence → PropStatProjector → Prediction Engine → Quick Picks  
+Fantasy path remains separate and must not influence Quick Picks.
+
+## [Unreleased] — League/Team as Personalized Source of Truth
+
+### Added
+
+- `PersonalizedAnalysisContext` stamps + invalidates personalized outputs when league or owned team changes
+- Recommendations are rebuilt for the active league/roster (no stale prior-league cards)
+- `IProjectionService.Invalidate()` clears projection cache on `ILeagueState.Changed`
+- Dashboard / Player Explorer / My Teams clear then refresh personalized surfaces with loading/empty states
+- Decision cards show “For {team} · {league}” context labels
+
+### Changed
+
+- Player Overlay projection tab reloads when league context changes for the same player
+- Mock demo recommendations vary by league/team seed; live rosters drive Start/Hold/Bench from `ProjectRoster`
+
+## [Unreleased] — Sleeper User Team Selection
+
+### Added
+
+- Required team-selection step after connecting a Sleeper league (setup incomplete until the user picks their roster)
+- `League.SelectedRosterId` + `ILeagueUserTeamStore` persistence (restore on reconnect)
+- `SelectUserTeam` / `CurrentUserTeam` on league service + state; change-my-team flow in the league switcher
+- UI: my-team label in switcher/dashboard, My Teams highlights the user's roster first
+
+## [Unreleased] — Sleeper League Integration
+
+### Added
+
+- Connect a real Sleeper league by league ID (no OAuth) via `ISleeperLeagueClient` / `CompositeLeagueService`
+- Live league settings: name, season, week, team count, league type, scoring from Sleeper `scoring_settings.rec`
+- Live rosters/teams with Playbook player-id mapping and starter association
+- Mock demo leagues remain available as fallback; UI badges distinguish Live vs Mock
+- My Teams roster view + league switcher connect form with loading/error/empty states
+- `ILeagueSyncStatus` Developer Monitor fields for live league connect diagnostics
+- Player context associates roster ownership when the selected league has the player
+
+### Changed
+
+- Projection Reasoning copy is slightly more natural while keeping the same underlying signals/data
+- League context (including live scoring) continues to flow into Player / Intelligence / Projection consumers via `ILeagueState`
+
+## [Unreleased] — Projection Engine v0.1
+
+### Added
+
+- Projection Engine v0.1 with versioned, explainable weekly outcomes
+- Extended `PlayerProjection` (LeagueId, Week, ScoringFormat, InputsUsed, ProjectionVersion)
+- Separate Recency / Usage / Opportunity / Trend / Health / Risk adjustments with point deltas
+- Optional `IMatchupContextProvider` + `IGameEnvironmentProvider` (unavailable by default — no fabrication)
+- APIs: `ProjectPlayer`, `ComparePlayers`, `ProjectRoster`
+- Floor/median/ceiling derived from volatility/uncertainty (not fixed ±X)
+- Developer Monitor: engine name, version, average volatility, last run, errors
+
+### Architecture
+
+```
+Statistics + Intelligence (+ optional matchup/environment) + League scoring
+→ Projection Engine v0.1 → Floor / Median / Ceiling / Confidence / Volatility
+```
+
+## [Unreleased] — Player Statistics Data Engine
+
+### Added
+
+- Canonical counting stats + game-log models (`PlayerGameStats`, `FootballLevel`, quality metadata)
+- `LeagueFantasyScoring` — PPR / Half PPR / Standard from league scoring over one football sample
+- `NflversePlayerStatsProvider` — incremental per-season CSV cache, GSIS identity join, season + weekly rows
+- Statistics sync pipeline: historical import, current-season updates, college merge, career NFL totals, intelligence invalidation
+- `IPlayerStatisticalContextService` — recent/historical/career/usage/efficiency/consistency/volatility/trend for Intelligence
+- Developer Monitor statistics diagnostics (providers, NFL players/seasons, game logs, identity, sync errors)
+- Career tab: league-calculated fantasy points, fumbles, recent game logs, statistical signals
+- Projection tab: statistical baseline origin (real current / real historical / curated / fallback)
+
+### Changed
+
+- Live stats path composes Sleeper (current) + nflverse (historical game logs) + ESPN college
+- Missing statistics remain null; zeros mean recorded zero
+
+## [Unreleased] — Real Historical NFL Injuries (nflverse) + Identity Crosswalk
+
+### Added
+
+- `PlaybookPlayerIdentity` + `IPlayerIdentityDirectory` (Sleeper / ESPN / GSIS)
+- `NflverseHistoricalInjuryProvider` loading real multi-season NFL injury reports (no API key)
+- `Injuries:HistoricalProvider` / `HistoricalSeasonCount` configuration
+- Source confidence: Verified / Reported / Unconfirmed / Unknown
+- Developer Monitor: identity matches, unresolved players, GSIS count, provider response time
+- `docs/INJURY_DATA_SOURCES.md` provider audit
+
+### Changed
+
+- Live path no longer reports NFL history as unsupported when nflverse is configured
+- College injuries remain explicitly unsupported until a reliable source is wired
+
+## [Unreleased] — Career Injury Profile + Unconfirmed Signals
+
+### Added
+
+- Extended `PlayerInjuryRecord` (Level, Team, InjuryType, GamesMissed, Severity, Verified)
+- `InjuryHistoryEntry` + transparent `InjuryRelevanceCalculator` (recency/severity/repeats)
+- `UnconfirmedInjurySignal` extracted from news (never promoted to verified records)
+- `ICollegeInjuryProvider` abstraction (`Null` for Live, `Mock` seeds when Mock)
+- Injuries tab: Injury Status, Unconfirmed Reports, Recent / NFL Career / College history with muted older emphasis
+- Intelligence facts distinguish Current Injury, Historical Risk, Unconfirmed Injury Concern
+- Developer Monitor: NFL/College historical counts, unconfirmed signals, provider coverage
+
+### Limitations
+
+- Live ESPN + Sleeper remain current-report only (no NFL career or college history)
+- College/NFL history available only via Mock historical/college providers until a live source is wired
+
+## [Unreleased] — Injury Profile Architecture (Current vs Historical)
+
+### Added
+
+- `PlayerInjuryProfile` with explicit `CurrentInjuryDataStatus` and `HistoricalDataStatus`
+- `IHistoricalInjuryProvider` abstraction (`Null` for Live; `Mock` seeds when `Injuries:Provider=Mock`)
+- `InjuryProviderCapabilities` documenting Live ESPN/Sleeper as current-report only
+- Injuries tab: honest historical availability copy; Data Source + Last Updated
+- Developer Monitor: Current/Historical records, players with current/historical data, historical availability, provider, last sync/error
+- Intelligence: scored injury facts only for current designations; unknown history does not invent a healthy signal
+
+### Changed
+
+- Live path no longer pretends cache snapshots are career injury history
+- Removed misleading “No injury history available” empty state for provider-limited history
+
+### Limitations
+
+- Live ESPN + Sleeper do **not** supply career historical injury records
+- Practice designations are sparse on Sleeper outside active report weeks
+- Player mapping for Live is name + team (not stable ESPN athlete ids)
+
+## [Unreleased] — Injury Data + Modal Top Bar Fix
+
+### Added
+
+- Dedicated `IPlayerInjuryProvider` / `IPlayerInjuryService` with Mock + Live (ESPN injuries + Sleeper practice/status enrichment)
+- Normalized `PlayerInjuryRecord`
+- Injuries tab: current status/injury/practice/game status, source/last updated
+- Intelligence consumes structured injury facts (`InjuryReport` source) via existing rule ids
+- Projection Engine applies conservative availability multipliers for Out / IR / Doubtful / Questionable / Limited
+- Developer Monitor injury sync metrics; background refresh includes injuries (isolated failure)
+
+### Fixed
+
+- Player Detail modal on mobile now starts below `--pb-topbar-height` so content is not hidden under the top bar
+
+### Limitations
+
+- ESPN feed is a current snapshot only (see Injury Profile Architecture above)
+- Practice designations are sparse on Sleeper outside active report weeks
+
+## [Unreleased] — College Statistics + Player Modal Polish
+
+### Added
+
+- Dedicated `ICollegeStatsProvider` with `MockCollegeStatsProvider` + `LiveCollegeStatsProvider` (ESPN college-football athlete stats)
+- College JSON cache + Developer Monitor: College Provider / Players / Seasons / Last Sync / Error
+- College tab renders real season box scores (school, seasons, passing/rushing/receiving) when available
+- Career season selector promotes College for players with fewer than 3 NFL seasons
+
+### Fixed
+
+- Player detail modal responsive layout (viewport-fit sheet, tab strip scroll, season select width, no horizontal page overflow)
+- Removed misleading “college detail not supplied” empty copy when college data can be loaded
+
+### Limitations
+
+- ESPN college tables often omit games played and targets; those fields stay null (never fabricated)
+- College sync covers young skill players with resolvable ESPN roster ids (capped per sync)
+
+## [Unreleased] — Historical Player Statistics Layer
+
+### Added
+
+- `PlayerSeasonStats` normalized model (passing / rushing / receiving / fantasy; Completed / Current / College periods)
+- `IPlayerStatsProvider` with `MockPlayerStatsProvider` + `LivePlayerStatsProvider` (Sleeper season stats)
+- `IPlayerStatsService` / `PlayerStatsService` with JSON file cache, refresh, and mock fallback
+- Player Overlay Career/Stats season switcher (NFL completed, current season, college)
+- Developer Monitor: Stats Provider, Players With Stats, Seasons Loaded, Current/Historical records, sync runtime/error
+- Projection production path prefers stats-service seasons before curated/attribute fallbacks
+
+### Architecture notes
+
+- NFL stats reuse Sleeper; college stats use a dedicated ESPN-backed provider
+- Local cache under app `data/` directory; TTL configurable via `PlayerStats:CacheTtlMinutes` / `CollegeStats:CacheTtlMinutes`
+
+## [Unreleased] — Player-Specific Projection Fix
+
+### Fixed
+
+- Projection baselines are now player-specific production (curated season box scores), not flat position constants
+- Elite QBs/RBs/WRs/TEs (Mahomes, Allen, Daniels, Barkley, Bijan, Chase, Kelce, …) produce differentiated projections and reasoning
+- Intelligence adjusts volume/downside/ceiling on top of production; league scoring recalculates fantasy points from components
+
+### Added
+
+- `PlayerProductionSnapshot` + `IPlayerProductionProvider` (curated catalog → profile stats → attribute fallback)
+- `FantasyScoring` helper (Standard / Half-PPR / PPR from box-score components)
+- Differentiation validation tests (same-position variance, opportunity, health, production, scoring, floor/median/ceiling)
+- Developer Monitor: Unique Projection Values, Average Projection (plus existing Players Projected / Runtime / Confidence)
+
+### Limitations
+
+- Live Sleeper provider still does not supply season stats; unknown players use attribute fallback until a live stats provider is wired behind `IPlayerProductionProvider`
+
+## [Unreleased] — Projection Engine V1
+
+### Added
+
+- `PlayerProjection` — expected fantasy points, floor, median, ceiling, confidence, volatility, reasoning, supporting intelligence
+- `IProjectionEngine` / `ProjectionEngine` — deterministic weighted rules over `PlayerIntelligenceProfile` + player + league context
+- `IProjectionService` / `ProjectionService` — cached projections with league-aware refresh
+- Configurable rules via `Projection:Rules`
+- Player Overlay **Projection** tab
+- Player Explorer sortable **Projected Points** column
+- Developer Monitor projection telemetry
+- Background refresh re-runs projections after intelligence
+
+### Architecture notes
+
+- Projection estimates outcomes only — never start/sit, waiver, draft, or trade advice
+- Future Decision / Quick Picks / Draft Assistant / Waiver Assistant / Trade Analyzer must consume `PlayerProjection`
+- Rules are centralized and explainable; same production + intelligence + league ⇒ same projection
+
+## [Unreleased] — Intelligence Aggregation (Player Profiles)
+
+### Added
+
+- `PlayerIntelligenceProfile` — canonical per-player intelligence (health, opportunity, usage, risk, momentum, trend, supporting facts)
+- `IIntelligenceAggregator` / `IntelligenceAggregator` — groups facts, dedupes, applies weighted scoring
+- Configurable scoring rules via `Intelligence:Scoring` (centralized deltas for limited practice, full practice, starter language, signings, etc.)
+- Dashboard **Top Player Intelligence Changes** (⬆/⬇ player + headline + confidence)
+- Player Overlay Intelligence tab shows full profile scores + category-grouped supporting facts
+- Developer Monitor: Profiles Generated, Facts Aggregated, Average Facts Per Player, Aggregation Runtime
+
+### Architecture notes
+
+- Future Projection / Prediction / Decision engines must consume `PlayerIntelligenceProfile`, not raw `IntelligenceFact`s
+- Aggregation is deterministic given the same fact set and scoring config
+
+## [Unreleased] — Intelligence Engine V1
+
+### Added
+
+- Rule-based `IntelligenceAnalyzer` turning `NewsArticle` + player catalog into deterministic `IntelligenceFact`s
+- Live `IntelligenceService` replacing mock-as-default for the app pipeline
+- Categories expanded: Depth Chart, Practice, Transaction, Suspension, Contract, Game Environment, Team Chemistry, General
+- `RelatedNewsArticleIds` on facts for explainability / source links
+- Dashboard **Top Intelligence** (replaces Latest Football News)
+- Player Overlay Intelligence tab: summary, recent facts, confidence/importance, supporting articles + links
+- Developer Monitor: Articles Processed, Facts Generated, Analyzer Runtime, Last Analysis Time
+- Background refresh now re-runs intelligence after news updates
+
+### Architecture notes
+
+- Deterministic: same news + players ⇒ same fact ids/outputs
+- Explainable: every fact cites rule id, matched phrase, and source article
+- No ML/LLMs — heuristics only; future ML can replace the analyzer behind `IIntelligenceAnalyzer`
+
+## [Unreleased] — Live News Provider
+
+### Added
+
+- Normalized `NewsArticle` domain model (title, summary, published, source, url, related players/teams, category, priority)
+- `INewsProvider` application facade with `MockNewsProvider` + `LiveNewsProvider` (ESPN NFL news API)
+- Configuration switch `News:Provider` = `Mock` | `Live` with automatic mock fallback
+- Dashboard **Latest Football News** card (headline, published time, source, priority, summary)
+- Player Overlay **Recent News** section (name-mapped related articles when the API lacks Playbook ids)
+- `INewsSyncStatus` Developer Monitor fields: Current News Provider, Articles Loaded, Last News Sync, response time
+- `DataRefreshBackgroundService` periodically refreshes player data and news (logged separately)
+
+### Architecture notes
+
+- UI consumes only `INewsProvider` — never Mock/Live concretions
+- Live source: ESPN public site API; auth slot reserved in `News:Espn:ApiKey`
+- Athlete names from ESPN are mapped onto Playbook `Player` ids via catalog name matching
+- Not the Intelligence Engine — news is normalized input Intelligence will consume later
+
+## [Unreleased] — Live Player Data Provider
+
+### Added
+
+- `IPlayerDataProvider` abstraction with `MockPlayerDataProvider` and `LivePlayerDataProvider` (Sleeper NFL API)
+- Configuration switch `PlayerData:Provider` = `Mock` | `Live` (no code changes to flip sources)
+- `PlayerService` loads from the configured provider and **automatically falls back to mock** on live failure
+- `IPlayerDataSyncStatus` telemetry: configured/active provider, last sync, player count, response time, last error
+- Developer Monitor fields for provider status
+- Auth isolation via `PlayerData:Sleeper:ApiKey` (unused for public Sleeper reads; ready for future keys)
+
+### Architecture notes
+
+- UI still consumes only `IPlayerService` — Player Explorer is unchanged
+- Sleeper selected as the first live provider: free public API with players, teams, positions, and status
+- Future News / Odds / Weather / Schedules / Injuries providers should follow the same provider + config + fallback pattern
+
+## [Unreleased] — Developer Monitoring Dashboard
+
+### Added
+
+- Automatic dashboard refresh every 30 seconds (recommendations, intelligence, status timestamps)
+- **Development Status** card: Build Status, Background Service Status, Last Update Time, Mock Data Status, Current League, Application Version, Current Time
+- Heartbeat indicator (`🟢 Running`) that visibly ticks on each refresh
+- **Engine Status** section with mock states for Player, League, Recommendation, Intelligence, and Data engines (`Ready` / `In Development` / `Offline`)
+- **Developer Mode** badge in the top bar
+- Shared `AppInfo` version (`0.1.0-dev`) shown in the sidebar footer as `Playbook v0.1.0-dev`
+- Mobile-friendly stacking for monitor and dashboard cards
+
+### Architecture notes
+
+- Monitoring values are developer UX only — mock/static status strings, not wired to real build or background services yet
+- Refresh timer lives on the Dashboard page; heartbeat flash is CSS-driven so phone checks show the app is alive
+- `AppInfo` is the single version string for footer and Development Status
+
+### Future extension points
+
+- Replace mock engine/build/background statuses with health checks from real engines and hosted services
+- Persist last-refresh telemetry and expose a shared `IHealthStatus` application port
+- Optionally surface heartbeat in the top bar for all pages, not only Dashboard
+
 ## [Unreleased] — Intelligence Engine Foundation
 
 ### Added

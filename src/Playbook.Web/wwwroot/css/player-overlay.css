@@ -6,30 +6,39 @@
     z-index: 80;
     display: grid;
     place-items: center;
-    padding: var(--pb-space-4);
+    padding: max(var(--pb-space-4), env(safe-area-inset-top, 0px))
+        max(var(--pb-space-4), env(safe-area-inset-right, 0px))
+        max(var(--pb-space-4), env(safe-area-inset-bottom, 0px))
+        max(var(--pb-space-4), env(safe-area-inset-left, 0px));
+    overflow: hidden;
     animation: pb-fade-up var(--pb-transition-normal) both;
 }
 
 .player-overlay__backdrop {
     position: absolute;
     inset: 0;
+    z-index: 0;
     background: var(--pb-color-overlay);
     backdrop-filter: blur(4px);
 }
 
 .player-overlay__panel {
     position: relative;
-    z-index: 1;
+    z-index: 2;
     width: min(40rem, 100%);
-    max-height: min(90vh, 52rem);
+    max-width: 100%;
+    height: min(90dvh, 52rem);
+    max-height: min(90dvh, 52rem);
     display: flex;
     flex-direction: column;
+    min-height: 0;
     border: 1px solid var(--pb-color-border-strong);
     border-radius: var(--pb-radius-xl);
     background: var(--pb-color-surface);
     box-shadow: var(--pb-shadow-lg);
     overflow: hidden;
     animation: player-overlay-in var(--pb-transition-slow) both;
+    pointer-events: auto;
 }
 
 @keyframes player-overlay-in {
@@ -49,6 +58,8 @@
     gap: var(--pb-space-4);
     padding: var(--pb-space-5);
     border-bottom: 1px solid var(--pb-color-border);
+    flex-shrink: 0;
+    min-width: 0;
 }
 
 .player-overlay__identity {
@@ -56,12 +67,19 @@
     align-items: center;
     gap: var(--pb-space-4);
     min-width: 0;
+    flex: 1 1 auto;
+}
+
+.player-overlay__identity > div:last-child {
+    min-width: 0;
 }
 
 .player-overlay__name {
     margin: 0;
     font-size: var(--pb-text-xl);
     font-weight: var(--pb-weight-semibold);
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 .player-overlay__meta,
@@ -69,6 +87,7 @@
     margin: var(--pb-space-1) 0 0;
     font-size: var(--pb-text-sm);
     color: var(--pb-color-text-secondary);
+    overflow-wrap: anywhere;
 }
 
 .player-overlay__league {
@@ -92,21 +111,37 @@
 }
 
 .player-overlay__tabs {
+    position: relative;
+    z-index: 3;
     display: flex;
+    flex-wrap: nowrap;
     gap: var(--pb-space-1);
     padding: var(--pb-space-3) var(--pb-space-5) 0;
     border-bottom: 1px solid var(--pb-color-border);
     overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    flex-shrink: 0;
+    min-width: 0;
+    background: var(--pb-color-surface);
 }
 
 .player-overlay__tab {
+    position: relative;
+    z-index: 1;
+    flex: 0 0 auto;
     padding: 0.65rem 0.85rem;
     border-radius: var(--pb-radius-md) var(--pb-radius-md) 0 0;
     color: var(--pb-color-text-secondary);
     font-size: var(--pb-text-sm);
     font-weight: var(--pb-weight-medium);
     white-space: nowrap;
+    border: 0;
     border-bottom: 2px solid transparent;
+    background: transparent;
+    cursor: pointer;
     transition: color var(--pb-transition-fast), border-color var(--pb-transition-fast);
 }
 
@@ -120,8 +155,51 @@
 }
 
 .player-overlay__body {
+    flex: 1 1 auto;
+    min-height: 0;
+    min-width: 0;
     padding: var(--pb-space-5);
-    overflow: auto;
+    padding-bottom: calc(var(--pb-space-5) + env(safe-area-inset-bottom, 0px));
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+}
+
+.player-overlay__season {
+    display: flex;
+    flex-direction: column;
+    gap: var(--pb-space-2);
+    margin-bottom: 1rem;
+    min-width: 0;
+    max-width: 100%;
+}
+
+.player-overlay__season-label {
+    font-size: 0.7rem;
+    font-weight: var(--pb-weight-medium);
+    letter-spacing: var(--pb-tracking-wide);
+    text-transform: uppercase;
+    color: var(--pb-color-text-muted);
+}
+
+.player-overlay__season-select {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    padding: 0.7rem 0.85rem;
+    border: 1px solid var(--pb-color-border);
+    border-radius: var(--pb-radius-md);
+    background: var(--pb-color-bg-elevated);
+    color: var(--pb-color-text);
+    font: inherit;
+    font-size: var(--pb-text-sm);
+}
+
+.player-overlay__stat-block {
+    margin-top: 1.25rem;
+    min-width: 0;
 }
 
 .player-link {
@@ -144,13 +222,61 @@
 
 @media (max-width: 640px) {
     .player-overlay {
+        /* Sit below the fixed/grid top bar — uses shared shell variable, not arbitrary padding. */
+        top: var(--pb-topbar-height);
+        right: 0;
+        bottom: 0;
+        left: 0;
         padding: 0;
         place-items: end stretch;
     }
 
     .player-overlay__panel {
         width: 100%;
-        max-height: 92vh;
+        max-width: 100%;
+        height: calc(100dvh - var(--pb-topbar-height));
+        max-height: calc(100dvh - var(--pb-topbar-height));
         border-radius: var(--pb-radius-xl) var(--pb-radius-xl) 0 0;
+        border-left: 0;
+        border-right: 0;
+        border-bottom: 0;
+    }
+
+    .player-overlay__header {
+        padding: var(--pb-space-4);
+        gap: var(--pb-space-3);
+    }
+
+    .player-overlay__name {
+        font-size: var(--pb-text-lg);
+    }
+
+    .player-overlay__tabs {
+        padding: var(--pb-space-2) var(--pb-space-4) 0;
+        gap: 0;
+    }
+
+    .player-overlay__tab {
+        padding: 0.55rem 0.7rem;
+        font-size: 0.8rem;
+    }
+
+    .player-overlay__body {
+        padding: var(--pb-space-4);
+        padding-bottom: calc(var(--pb-space-4) + env(safe-area-inset-bottom, 0px));
+    }
+}
+
+@supports not (height: 100dvh) {
+    .player-overlay__panel {
+        height: min(90vh, 52rem);
+        max-height: min(90vh, 52rem);
+    }
+
+    @media (max-width: 640px) {
+        .player-overlay__panel {
+            height: calc(100vh - var(--pb-topbar-height));
+            max-height: calc(100vh - var(--pb-topbar-height));
+        }
     }
 }

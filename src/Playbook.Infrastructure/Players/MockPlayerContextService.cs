@@ -6,7 +6,8 @@ using Playbook.Core.Players;
 namespace Playbook.Infrastructure.Players;
 
 /// <summary>
-/// Mock league-aware player context. Replace with projection/value engines later.
+/// League-aware player context. Fantasy values stay mock until Decision engines land;
+/// scoring and roster ownership follow the selected league (including live Sleeper).
 /// </summary>
 public sealed class MockPlayerContextService : IPlayerContextService
 {
@@ -29,6 +30,7 @@ public sealed class MockPlayerContextService : IPlayerContextService
 
         var league = _leagueState.CurrentLeague;
         var scoring = league?.ScoringType ?? ScoringType.Ppr;
+        var fantasyTeam = _leagueState.FindTeamForPlayer(playerId);
         var seed = HashCode.Combine(playerId, scoring, league?.Id);
 
         var weeklyBase = profile.SeasonStats?.FantasyPoints is decimal points && profile.SeasonStats.GamesPlayed > 0
@@ -49,13 +51,20 @@ public sealed class MockPlayerContextService : IPlayerContextService
         var confidence = 55 + Math.Abs(seed % 40);
 
         var leagueLabel = league?.Name ?? "No League Selected";
-        var summary = $"{profile.Player.FullName} projects as a {PlayerPresentation.PositionLabel(profile.Player.Position)}{posRank} in {leagueLabel} ({FormatScoring(scoring)}).";
+        var sourceLabel = league?.DataSource == LeagueDataSource.Sleeper ? "live Sleeper" : "demo";
+        var rosterLabel = fantasyTeam is null
+            ? "not on a tracked roster"
+            : $"on {fantasyTeam.TeamName ?? fantasyTeam.DisplayName}";
+        var summary =
+            $"{profile.Player.FullName} projects as a {PlayerPresentation.PositionLabel(profile.Player.Position)}{posRank} " +
+            $"in {leagueLabel} ({FormatScoring(scoring)}, {sourceLabel}; {rosterLabel}).";
 
         return new PlayerContext
         {
             Player = profile.Player,
             Profile = profile,
             League = league,
+            FantasyTeam = fantasyTeam,
             ScoringType = scoring,
             WeeklyProjection = weekly,
             RestOfSeasonRank = rosRank,

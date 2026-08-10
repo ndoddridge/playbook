@@ -210,7 +210,7 @@
     gap: var(--pb-space-5);
 }
 
-.dashboard-grid .pb-card:last-child {
+.dashboard-grid .pb-card:last-child:nth-child(odd) {
     grid-column: 1 / -1;
 }
 
@@ -222,9 +222,12 @@
 
     .app-shell {
         grid-template-columns: 1fr;
+        /* auto row height prevents a wrapping top bar from overlapping main content */
+        grid-template-rows: auto 1fr;
         grid-template-areas:
             "topbar"
             "main";
+        padding-top: env(safe-area-inset-top, 0px);
     }
 
     .app-sidebar {
@@ -261,6 +264,7 @@
     }
 
     .app-topbar {
+        min-height: var(--pb-topbar-height);
         padding: 0 var(--pb-space-4);
     }
 

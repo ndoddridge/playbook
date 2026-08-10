@@ -12,6 +12,9 @@ public sealed class PlayerContext
 
     public League? League { get; init; }
 
+    /// <summary>Fantasy roster that currently owns this player in the selected league, when known.</summary>
+    public FantasyTeam? FantasyTeam { get; init; }
+
     public required ScoringType ScoringType { get; init; }
 
     public required decimal WeeklyProjection { get; init; }

@@ -1,6 +1,6 @@
-using Playbook.Application;
 using Playbook.Application.Leagues;
-using Playbook.Infrastructure;
+using Playbook.Application.Players.Data;
+using Playbook.Core.Leagues;
 using Playbook.Infrastructure.Leagues;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -8,21 +8,10 @@ namespace Playbook.Tests;
 
 public class LeagueStateTests
 {
-    private static ServiceProvider CreateProvider()
-    {
-        var services = new ServiceCollection();
-        services.AddInfrastructure().AddApplication();
-        return services.BuildServiceProvider(new ServiceProviderOptions
-        {
-            ValidateOnBuild = true,
-            ValidateScopes = true
-        });
-    }
-
     [Fact]
     public void Default_Current_League_Is_Friends_League()
     {
-        using var provider = CreateProvider();
+        using var provider = TestServiceFactory.CreateProvider(PlayerDataProviderKind.Mock);
         var state = provider.GetRequiredService<ILeagueState>();
 
         Assert.Equal("Friends League", state.GetCurrentLeague()?.Name);
@@ -32,7 +21,7 @@ public class LeagueStateTests
     [Fact]
     public void SelectLeague_Updates_Current_And_Raises_Changed()
     {
-        using var provider = CreateProvider();
+        using var provider = TestServiceFactory.CreateProvider(PlayerDataProviderKind.Mock);
         var state = provider.GetRequiredService<ILeagueState>();
         var dynasty = state.GetAllLeagues().Single(l => l.Name == "Dynasty League");
         var changed = 0;
@@ -53,5 +42,33 @@ public class LeagueStateTests
         service.SelectLeague(work.Id);
 
         Assert.Equal("Work League", service.GetCurrentLeague()?.Name);
+        Assert.Equal(LeagueDataSource.Mock, work.DataSource);
+    }
+
+    [Fact]
+    public void Mock_Leagues_Expose_Demo_Teams_Without_Player_Ownership()
+    {
+        using var provider = TestServiceFactory.CreateProvider(PlayerDataProviderKind.Mock);
+        var state = provider.GetRequiredService<ILeagueState>();
+        var teams = state.GetCurrentTeams();
+
+        Assert.NotEmpty(teams);
+        Assert.All(teams, t => Assert.Empty(t.PlayerIds));
+        Assert.NotNull(state.CurrentUserTeam);
+        Assert.Equal(1, state.CurrentUserTeam!.RosterId);
+    }
+
+    [Fact]
+    public void Mock_SelectUserTeam_Updates_Current_User_Team()
+    {
+        using var provider = TestServiceFactory.CreateProvider(PlayerDataProviderKind.Mock);
+        var state = provider.GetRequiredService<ILeagueState>();
+        var changed = 0;
+        state.Changed += () => changed++;
+
+        Assert.True(state.SelectUserTeam(state.CurrentLeague!.Id, 2));
+
+        Assert.Equal(2, state.CurrentUserTeam?.RosterId);
+        Assert.Equal(1, changed);
     }
 }

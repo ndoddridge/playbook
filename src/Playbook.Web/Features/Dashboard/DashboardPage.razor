@@ -1,14 +1,41 @@
 @page "/"
+@using Playbook.Application.Intelligence
 @using Playbook.Application.Intelligence.Interfaces
 @using Playbook.Application.Leagues
+@using Playbook.Application.News
+@using Playbook.Application.Players
+@using Playbook.Application.Players.Data
+@using Playbook.Application.Predictions
+@using Playbook.Application.Predictions.Interfaces
+@using Playbook.Application.Projections
+@using Playbook.Application.Projections.Interfaces
 @using Playbook.Application.Recommendations
+@using Playbook.Application.Injuries
+@using Playbook.Application.Injuries.Interfaces
+@using Playbook.Application.Stats
+@using Playbook.Application.Stats.Interfaces
 @using Playbook.Core.Intelligence.Models
 @using Playbook.Core.Recommendations
 @using Playbook.Web.Features.Intelligence.Models
 @using Playbook.Web.Features.League.Models
 @inject ILeagueState LeagueState
+@inject ILeagueSyncStatus LeagueSyncStatus
 @inject IRecommendationService RecommendationService
 @inject IIntelligenceService IntelligenceService
+@inject IIntelligenceSyncStatus IntelligenceSyncStatus
+@inject IProjectionService ProjectionService
+@inject IProjectionSyncStatus ProjectionSyncStatus
+@inject IQuickPicksService QuickPicksService
+@inject IQuickPicksSyncStatus QuickPicksSyncStatus
+@inject IPlayerService PlayerService
+@inject IPlayerDataSyncStatus PlayerDataSyncStatus
+@inject IPlayerStatsService PlayerStatsService
+@inject IPlayerStatsSyncStatus PlayerStatsSyncStatus
+@inject ICollegeStatsSyncStatus CollegeStatsSyncStatus
+@inject IPlayerInjuryService PlayerInjuryService
+@inject IInjurySyncStatus InjurySyncStatus
+@inject INewsProvider NewsProvider
+@inject INewsSyncStatus NewsSyncStatus
 @implements IDisposable
 
 <PageTitle>Dashboard — Playbook</PageTitle>
@@ -19,7 +46,14 @@
         <p class="pb-page__subtitle">
             @if (LeagueState.CurrentLeague is { } league)
             {
-                <text>Personalized to @league.Name · @league.Season season</text>
+                <text>
+                    Personalized to @league.Name
+                    @if (LeagueState.CurrentUserTeam is { } team)
+                    {
+                        <text> · @LeagueDisplay.TeamLabel(team)</text>
+                    }
+                    <text> · @league.Season season</text>
+                </text>
             }
             else
             {
@@ -32,7 +66,12 @@
             <div class="league-context">
                 <div class="league-context__item">
                     <span class="league-context__label">Current League</span>
-                    <span class="league-context__value">@current.Name</span>
+                    <span class="league-context__value">
+                        @current.Name
+                        <span class="league-source-badge @(LeagueDisplay.IsLive(current) ? "league-source-badge--live" : "league-source-badge--mock")">
+                            @LeagueDisplay.DataSource(current.DataSource)
+                        </span>
+                    </span>
                 </div>
                 <div class="league-context__item">
                     <span class="league-context__label">Platform</span>
@@ -44,53 +83,476 @@
                 </div>
                 <div class="league-context__item">
                     <span class="league-context__label">Scoring</span>
-                    <span class="league-context__value">@LeagueDisplay.Scoring(current.ScoringType)</span>
+                    <span class="league-context__value">@LeagueDisplay.ScoringDetailed(current)</span>
+                </div>
+                <div class="league-context__item">
+                    <span class="league-context__label">Teams</span>
+                    <span class="league-context__value">@current.NumberOfTeams</span>
                 </div>
                 <div class="league-context__item">
                     <span class="league-context__label">Week</span>
                     <span class="league-context__value">@current.CurrentWeek</span>
                 </div>
+                <div class="league-context__item">
+                    <span class="league-context__label">My Team</span>
+                    <span class="league-context__value">
+                        @if (LeagueState.CurrentUserTeam is { } myTeam)
+                        {
+                            @LeagueDisplay.TeamLabel(myTeam)
+                        }
+                        else if (!current.IsSetupComplete)
+                        {
+                            <text>Select your team</text>
+                        }
+                        else
+                        {
+                            <text>—</text>
+                        }
+                    </span>
+                </div>
             </div>
         }
     </header>
 
-    <section class="dashboard-decisions" aria-labelledby="top-decisions-heading">
-        <h2 id="top-decisions-heading" class="pb-card__title">Top Decisions</h2>
-        <div class="decision-stack">
-            @foreach (var recommendation in recommendations)
+    <section class="dashboard-monitor" aria-labelledby="dev-monitor-heading">
+        <div class="dashboard-monitor__header">
+            <h2 id="dev-monitor-heading" class="pb-card__title" style="margin-bottom: 0;">Developer Monitor</h2>
+            <div class="dashboard-heartbeat @(heartbeatTick ? "dashboard-heartbeat--tick" : null)"
+                 aria-live="polite"
+                 title="Updates every 30 seconds">
+                <span class="dashboard-heartbeat__dot" aria-hidden="true">🟢</span>
+                <span class="dashboard-heartbeat__label">Running</span>
+                <span class="dashboard-heartbeat__tick">#@refreshCount · @lastUpdateDisplay</span>
+            </div>
+        </div>
+
+        <article class="pb-card dev-status-card">
+            <h2 class="pb-card__title">Development Status</h2>
+            <div class="pb-card__body">
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Build Status</span>
+                    <span class="pb-meta-value pb-meta-value--live">@buildStatus</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Background Service Status</span>
+                    <span class="pb-meta-value">@backgroundServiceStatus</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Last Update Time</span>
+                    <span class="pb-meta-value">@lastUpdateDisplay</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Mock Data Status</span>
+                    <span class="pb-meta-value">@mockDataStatus</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Current League</span>
+                    <span class="pb-meta-value">@currentLeagueName</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">League Data Source</span>
+                    <span class="pb-meta-value">@currentLeagueSource</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Live Leagues Loaded</span>
+                    <span class="pb-meta-value">@leagueLiveCount</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">League Teams Loaded</span>
+                    <span class="pb-meta-value">@leagueTeamsLoaded</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Last League Connect</span>
+                    <span class="pb-meta-value">@leagueLastConnect</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">League Connect Error</span>
+                    <span class="pb-meta-value">@leagueLastError</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Application Version</span>
+                    <span class="pb-meta-value">@AppInfo.Version</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Current Time</span>
+                    <span class="pb-meta-value">@currentTimeDisplay</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Current Provider</span>
+                    <span class="pb-meta-value pb-meta-value--live">@providerActive</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Configured Provider</span>
+                    <span class="pb-meta-value">@providerConfigured</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Last Successful Sync</span>
+                    <span class="pb-meta-value">@providerLastSync</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Number of Players Loaded</span>
+                    <span class="pb-meta-value">@providerPlayerCount</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Provider Response Time</span>
+                    <span class="pb-meta-value">@providerResponseTime</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Last Error</span>
+                    <span class="pb-meta-value">@providerLastError</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Current News Provider</span>
+                    <span class="pb-meta-value pb-meta-value--live">@newsProviderActive</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Articles Loaded</span>
+                    <span class="pb-meta-value">@newsArticleCount</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Last News Sync</span>
+                    <span class="pb-meta-value">@newsLastSync</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">News Provider Response Time</span>
+                    <span class="pb-meta-value">@newsResponseTime</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Articles Processed</span>
+                    <span class="pb-meta-value">@intelArticlesProcessed</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Intelligence Facts Generated</span>
+                    <span class="pb-meta-value">@intelFactsGenerated</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Analyzer Runtime</span>
+                    <span class="pb-meta-value">@intelRuntime</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Last Analysis Time</span>
+                    <span class="pb-meta-value">@intelLastAnalysis</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Profiles Generated</span>
+                    <span class="pb-meta-value">@intelProfilesGenerated</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Facts Aggregated</span>
+                    <span class="pb-meta-value">@intelFactsAggregated</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Average Facts Per Player</span>
+                    <span class="pb-meta-value">@intelAvgFacts</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Aggregation Runtime</span>
+                    <span class="pb-meta-value">@intelAggRuntime</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Projection Engine</span>
+                    <span class="pb-meta-value pb-meta-value--live">@projectionEngine</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Version</span>
+                    <span class="pb-meta-value">@projectionVersion</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Players Projected</span>
+                    <span class="pb-meta-value">@projectionPlayers</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Unique Projection Values</span>
+                    <span class="pb-meta-value">@projectionUnique</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Average Projection</span>
+                    <span class="pb-meta-value">@projectionAverage</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Average Confidence</span>
+                    <span class="pb-meta-value">@projectionAvgConfidence</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Average Volatility</span>
+                    <span class="pb-meta-value">@projectionAvgVolatility</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Last Projection Run</span>
+                    <span class="pb-meta-value">@projectionLastRun</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Projection Runtime</span>
+                    <span class="pb-meta-value">@projectionRuntime</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Projection Errors</span>
+                    <span class="pb-meta-value">@projectionErrors</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Prop Provider</span>
+                    <span class="pb-meta-value pb-meta-value--live">@qpProvider</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Provider Status</span>
+                    <span class="pb-meta-value">@qpProviderStatus</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Api Key Configured</span>
+                    <span class="pb-meta-value">@qpApiKeyConfigured</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Markets Loaded</span>
+                    <span class="pb-meta-value">@qpMarkets</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Props Loaded</span>
+                    <span class="pb-meta-value">@qpProps</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Games Loaded</span>
+                    <span class="pb-meta-value">@qpGames</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Predictions Generated</span>
+                    <span class="pb-meta-value">@qpPredictions</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Last Prop Sync</span>
+                    <span class="pb-meta-value">@qpLastPropSync</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Provider Response Time</span>
+                    <span class="pb-meta-value">@qpProviderResponseTime</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Last Prediction Run</span>
+                    <span class="pb-meta-value">@qpLastPredictionRun</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Average Prediction Confidence</span>
+                    <span class="pb-meta-value">@qpAvgConfidence</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Last Error</span>
+                    <span class="pb-meta-value">@qpLastError</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Statistics Providers</span>
+                    <span class="pb-meta-value pb-meta-value--live">@statsProviders</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Stats Provider</span>
+                    <span class="pb-meta-value pb-meta-value--live">@statsProvider</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">NFL Players Loaded</span>
+                    <span class="pb-meta-value">@statsNflPlayers</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Players With Stats</span>
+                    <span class="pb-meta-value">@statsPlayers</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">NFL Seasons Loaded</span>
+                    <span class="pb-meta-value">@statsNflSeasons</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Seasons Loaded</span>
+                    <span class="pb-meta-value">@statsSeasons</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Game Logs Loaded</span>
+                    <span class="pb-meta-value">@statsGameLogs</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">College Records Loaded</span>
+                    <span class="pb-meta-value">@statsCollegeRecords</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Current Season Records</span>
+                    <span class="pb-meta-value">@statsCurrent</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Historical Records</span>
+                    <span class="pb-meta-value">@statsHistorical</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Identity Matches</span>
+                    <span class="pb-meta-value">@statsIdentityMatches</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Unresolved Players</span>
+                    <span class="pb-meta-value">@statsUnresolved</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Last Statistics Sync</span>
+                    <span class="pb-meta-value">@statsLastSync</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Last Successful Update</span>
+                    <span class="pb-meta-value">@statsLastSuccess</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Stats Sync Runtime</span>
+                    <span class="pb-meta-value">@statsRuntime</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Provider Errors</span>
+                    <span class="pb-meta-value">@statsProviderErrors</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Last Stats Error</span>
+                    <span class="pb-meta-value">@statsLastError</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">College Provider</span>
+                    <span class="pb-meta-value pb-meta-value--live">@collegeProvider</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">College Players Loaded</span>
+                    <span class="pb-meta-value">@collegePlayers</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">College Seasons Loaded</span>
+                    <span class="pb-meta-value">@collegeSeasons</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Last College Sync</span>
+                    <span class="pb-meta-value">@collegeLastSync</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">College Sync Error</span>
+                    <span class="pb-meta-value">@collegeLastError</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Injury Providers</span>
+                    <span class="pb-meta-value pb-meta-value--live">@injuryProviders</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Provider Coverage</span>
+                    <span class="pb-meta-value">@injuryCoverage</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Current Injury Records</span>
+                    <span class="pb-meta-value">@injuryCurrent</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Historical NFL Records</span>
+                    <span class="pb-meta-value">@injuryNflHistorical</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">College Records</span>
+                    <span class="pb-meta-value">@injuryCollegeHistorical</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Unconfirmed Signals</span>
+                    <span class="pb-meta-value">@injuryUnconfirmed</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Player Identity Matches</span>
+                    <span class="pb-meta-value">@injuryIdentityMatches</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Unresolved Players</span>
+                    <span class="pb-meta-value">@injuryUnresolved</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">GSIS Identities</span>
+                    <span class="pb-meta-value">@injuryGsisIdentities</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Last Injury Sync</span>
+                    <span class="pb-meta-value">@injuryLastSync</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Provider Response Time</span>
+                    <span class="pb-meta-value">@injuryProviderRuntime</span>
+                </div>
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Last Error</span>
+                    <span class="pb-meta-value">@injuryLastError</span>
+                </div>
+            </div>
+        </article>
+
+        <article class="pb-card engine-status">
+            <h2 class="pb-card__title">Engine Status</h2>
+            <div class="engine-status__grid">
+                @foreach (var engine in engines)
+                {
+                    <div class="engine-status__item">
+                        <span class="engine-status__name">@engine.Name</span>
+                        <span class="@EngineStateClass(engine.State)">@engine.State</span>
+                    </div>
+                }
+            </div>
+        </article>
+    </section>
+
+    <section class="dashboard-news" aria-labelledby="top-intelligence-heading">
+        <h2 id="top-intelligence-heading" class="pb-card__title">Top Player Intelligence Changes</h2>
+        <div class="news-stack">
+            @foreach (var profile in topProfiles)
             {
-                <DecisionCard Recommendation="recommendation" />
+                <article class="news-item">
+                    <div class="news-item__header">
+                        <h3 class="news-item__title">
+                            @IntelligencePresentation.ChangeArrow(profile.ChangeSignal)
+                            @ResolvePlayerName(profile.PlayerId)
+                        </h3>
+                        <span class="pb-badge pb-badge--accent">@profile.OverallConfidence%</span>
+                    </div>
+                    <p class="news-item__summary">@profile.Headline</p>
+                    <div class="news-item__meta">
+                        <span>Health @profile.HealthScore</span>
+                        <span>Opportunity @profile.OpportunityScore</span>
+                        <span>Usage @profile.UsageScore</span>
+                        <span>@IntelligencePresentation.TrendLabel(profile.TrendDirection)</span>
+                        <span>@IntelligencePresentation.RelativeTime(profile.LastUpdated)</span>
+                    </div>
+                </article>
+            }
+
+            @if (topProfiles.Count == 0)
+            {
+                <p class="player-section__muted">No player intelligence profiles generated yet.</p>
             }
         </div>
     </section>
 
-    <div class="dashboard-grid">
-        <article class="pb-card dashboard-intel">
-            <h2 class="pb-card__title">Football Intelligence</h2>
-            <div class="pb-card__body">
-                @foreach (var fact in topFacts)
+    <section class="dashboard-decisions" aria-labelledby="top-decisions-heading">
+        <h2 id="top-decisions-heading" class="pb-card__title">Top Decisions</h2>
+        @if (isRefreshingPersonalized)
+        {
+            <p class="pb-empty">Refreshing recommendations for the selected league and team…</p>
+        }
+        else if (recommendations.Count == 0)
+        {
+            <p class="pb-empty">No personalized decisions for this league/team yet.</p>
+        }
+        else
+        {
+            <p class="dashboard-decisions__context">
+                @if (LeagueState.CurrentUserTeam is { } decisionTeam && LeagueState.CurrentLeague is { } decisionLeague)
                 {
-                    <article class="intel-fact">
-                        <div class="intel-fact__header">
-                            <h3 class="intel-fact__title">@fact.Title</h3>
-                            <div class="intel-fact__meta">
-                                <span class="@IntelligencePresentation.ImportanceClass(fact.Importance)">
-                                    @IntelligencePresentation.Importance(fact.Importance)
-                                </span>
-                                <span>@fact.Confidence%</span>
-                                <span>@IntelligencePresentation.RelativeTime(fact.Created)</span>
-                            </div>
-                        </div>
-                        <p class="intel-fact__description">@fact.Description</p>
-                        <div class="intel-fact__meta">
-                            <span>@IntelligencePresentation.Category(fact.Category)</span>
-                            <span>@IntelligencePresentation.Source(fact.Source)</span>
-                        </div>
-                    </article>
+                    <text>Generated for @LeagueDisplay.TeamLabel(decisionTeam) in @decisionLeague.Name</text>
+                }
+                else if (LeagueState.CurrentLeague is { } onlyLeague)
+                {
+                    <text>Generated for @onlyLeague.Name</text>
+                }
+            </p>
+            <div class="decision-stack">
+                @foreach (var recommendation in recommendations)
+                {
+                    <DecisionCard Recommendation="recommendation" />
                 }
             </div>
-        </article>
+        }
+    </section>
 
+    <div class="dashboard-grid dashboard-grid--stack">
         <article class="pb-card">
             <h2 class="pb-card__title">Trending Players</h2>
             <div class="pb-card__body">
@@ -103,36 +565,359 @@
                 }
             </div>
         </article>
-
-        <article class="pb-card">
-            <h2 class="pb-card__title">System Status</h2>
-            <div class="pb-card__body">
-                @foreach (var item in SystemStatus)
-                {
-                    <div class="pb-meta-row">
-                        <span class="pb-meta-label">@item.Component</span>
-                        <span class="pb-badge">@item.Status</span>
-                    </div>
-                }
-            </div>
-        </article>
     </div>
 </section>
 
 @code {
     private IReadOnlyList<Recommendation> recommendations = [];
-    private IReadOnlyList<IntelligenceFact> topFacts = [];
+    private IReadOnlyList<PlayerIntelligenceProfile> topProfiles = [];
+    private bool isRefreshingPersonalized;
+
+    private string buildStatus = "Succeeded";
+    private string backgroundServiceStatus = "Running";
+    private string mockDataStatus = "Active";
+    private string currentLeagueName = "—";
+    private string currentLeagueSource = "—";
+    private string leagueLiveCount = "—";
+    private string leagueTeamsLoaded = "—";
+    private string leagueLastConnect = "—";
+    private string leagueLastError = "None";
+    private string lastUpdateDisplay = "—";
+    private string currentTimeDisplay = "—";
+    private int refreshCount;
+    private bool heartbeatTick;
+
+    private PeriodicTimer? refreshTimer;
+    private CancellationTokenSource? cts;
+
+    private static readonly EngineStatusItem[] engines =
+    [
+        new("Player Engine", "Ready"),
+        new("League Engine", "Ready"),
+        new("Intelligence Engine", "Ready"),
+        new("Projection Engine", "Ready"),
+        new("Quick Picks Engine", "Ready"),
+        new("Recommendation Engine", "In Development"),
+        new("Data Engine", "In Development")
+    ];
+
+    private string providerConfigured = "—";
+    private string providerActive = "—";
+    private string providerLastSync = "—";
+    private string providerPlayerCount = "—";
+    private string providerResponseTime = "—";
+    private string providerLastError = "None";
+    private string newsProviderActive = "—";
+    private string newsArticleCount = "—";
+    private string newsLastSync = "—";
+    private string newsResponseTime = "—";
+    private string intelArticlesProcessed = "—";
+    private string intelFactsGenerated = "—";
+    private string intelRuntime = "—";
+    private string intelLastAnalysis = "—";
+    private string intelProfilesGenerated = "—";
+    private string intelFactsAggregated = "—";
+    private string intelAvgFacts = "—";
+    private string intelAggRuntime = "—";
+    private string projectionEngine = "—";
+    private string projectionVersion = "—";
+    private string projectionPlayers = "—";
+    private string projectionUnique = "—";
+    private string projectionAverage = "—";
+    private string projectionRuntime = "—";
+    private string projectionAvgConfidence = "—";
+    private string projectionAvgVolatility = "—";
+    private string projectionLastRun = "—";
+    private string projectionErrors = "None";
+    private string qpProvider = "—";
+    private string qpProviderStatus = "—";
+    private string qpApiKeyConfigured = "—";
+    private string qpGames = "—";
+    private string qpMarkets = "—";
+    private string qpProps = "—";
+    private string qpPredictions = "—";
+    private string qpLastPropSync = "—";
+    private string qpProviderResponseTime = "—";
+    private string qpLastPredictionRun = "—";
+    private string qpAvgConfidence = "—";
+    private string qpLastError = "None";
+    private string statsProviders = "—";
+    private string statsProvider = "—";
+    private string statsPlayers = "—";
+    private string statsNflPlayers = "—";
+    private string statsSeasons = "—";
+    private string statsNflSeasons = "—";
+    private string statsGameLogs = "—";
+    private string statsCollegeRecords = "—";
+    private string statsCurrent = "—";
+    private string statsHistorical = "—";
+    private string statsIdentityMatches = "—";
+    private string statsUnresolved = "—";
+    private string statsLastSync = "—";
+    private string statsLastSuccess = "—";
+    private string statsRuntime = "—";
+    private string statsProviderErrors = "None";
+    private string statsLastError = "None";
+    private string collegeProvider = "—";
+    private string collegePlayers = "—";
+    private string collegeSeasons = "—";
+    private string collegeLastSync = "—";
+    private string collegeLastError = "None";
+    private string injuryProviders = "—";
+    private string injuryCoverage = "—";
+    private string injuryCurrent = "—";
+    private string injuryNflHistorical = "—";
+    private string injuryCollegeHistorical = "—";
+    private string injuryUnconfirmed = "—";
+    private string injuryIdentityMatches = "—";
+    private string injuryUnresolved = "—";
+    private string injuryGsisIdentities = "—";
+    private string injuryLastSync = "—";
+    private string injuryProviderRuntime = "—";
+    private string injuryLastError = "None";
 
     protected override void OnInitialized()
     {
         LeagueState.Changed += OnLeagueChanged;
-        recommendations = RecommendationService.GetTopRecommendations();
-        topFacts = IntelligenceService.GetTopFacts(6);
+        RefreshDashboard();
+        cts = new CancellationTokenSource();
+        _ = RunAutoRefreshAsync(cts.Token);
     }
 
-    private void OnLeagueChanged() => InvokeAsync(StateHasChanged);
+    private async Task RunAutoRefreshAsync(CancellationToken cancellationToken)
+    {
+        refreshTimer = new PeriodicTimer(TimeSpan.FromSeconds(30));
 
-    public void Dispose() => LeagueState.Changed -= OnLeagueChanged;
+        try
+        {
+            while (await refreshTimer.WaitForNextTickAsync(cancellationToken))
+            {
+                RefreshDashboard();
+                await InvokeAsync(StateHasChanged);
+
+                heartbeatTick = true;
+                await InvokeAsync(StateHasChanged);
+                await Task.Delay(450, cancellationToken);
+                heartbeatTick = false;
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Dashboard disposed.
+        }
+    }
+
+    private void RefreshDashboard()
+    {
+        var now = DateTime.Now;
+        refreshCount++;
+        lastUpdateDisplay = now.ToString("h:mm:ss tt");
+        currentTimeDisplay = now.ToString("h:mm:ss tt");
+        currentLeagueName = LeagueState.CurrentLeague?.Name ?? "None selected";
+        currentLeagueSource = LeagueState.CurrentLeague is { } league
+            ? LeagueDisplay.DataSource(league.DataSource)
+            : "—";
+        leagueLiveCount = LeagueSyncStatus.LiveLeaguesLoaded.ToString();
+        leagueTeamsLoaded = LeagueSyncStatus.TeamsLoaded.ToString();
+        leagueLastConnect = LeagueSyncStatus.LastConnectTime is { } connectTime
+            ? $"{LeagueSyncStatus.LastConnectedLeagueName ?? "League"} · {connectTime.ToLocalTime():h:mm:ss tt}"
+            : "—";
+        leagueLastError = string.IsNullOrWhiteSpace(LeagueSyncStatus.LastError)
+            ? "None"
+            : LeagueSyncStatus.LastError;
+        buildStatus = "Succeeded";
+        backgroundServiceStatus = "Running";
+
+        _ = PlayerService.GetAllPlayers();
+        providerConfigured = PlayerDataSyncStatus.ConfiguredProvider;
+        providerActive = PlayerDataSyncStatus.UsedFallback
+            ? $"{PlayerDataSyncStatus.ActiveProvider} (fallback)"
+            : PlayerDataSyncStatus.ActiveProvider;
+        providerLastSync = PlayerDataSyncStatus.LastSuccessfulSync?.ToLocalTime().ToString("h:mm:ss tt") ?? "—";
+        providerPlayerCount = PlayerDataSyncStatus.PlayersLoaded.ToString();
+        providerResponseTime = PlayerDataSyncStatus.ProviderResponseTime is { } elapsed
+            ? $"{elapsed.TotalMilliseconds:0} ms"
+            : "—";
+        providerLastError = string.IsNullOrWhiteSpace(PlayerDataSyncStatus.LastError)
+            ? "None"
+            : PlayerDataSyncStatus.LastError;
+        mockDataStatus = PlayerDataSyncStatus.ActiveProvider.Equals("Mock", StringComparison.OrdinalIgnoreCase)
+            ? (PlayerDataSyncStatus.UsedFallback ? "Fallback Active" : "Active")
+            : "Standby";
+
+        _ = NewsProvider.GetLatest(1);
+        newsProviderActive = NewsSyncStatus.UsedFallback
+            ? $"{NewsSyncStatus.ActiveProvider} (fallback)"
+            : NewsSyncStatus.ActiveProvider;
+        newsArticleCount = NewsSyncStatus.ArticlesLoaded.ToString();
+        newsLastSync = NewsSyncStatus.LastSuccessfulSync?.ToLocalTime().ToString("h:mm:ss tt") ?? "—";
+        newsResponseTime = NewsSyncStatus.ProviderResponseTime is { } newsElapsed
+            ? $"{newsElapsed.TotalMilliseconds:0} ms"
+            : "—";
+
+        topProfiles = IntelligenceService.GetTopProfiles(8);
+        intelArticlesProcessed = IntelligenceSyncStatus.ArticlesProcessed.ToString();
+        intelFactsGenerated = IntelligenceSyncStatus.FactsGenerated.ToString();
+        intelRuntime = IntelligenceSyncStatus.AnalyzerRuntime is { } runtime
+            ? $"{runtime.TotalMilliseconds:0} ms"
+            : "—";
+        intelLastAnalysis = IntelligenceSyncStatus.LastAnalysisTime?.ToLocalTime().ToString("h:mm:ss tt") ?? "—";
+        intelProfilesGenerated = IntelligenceSyncStatus.ProfilesGenerated.ToString();
+        intelFactsAggregated = IntelligenceSyncStatus.FactsAggregated.ToString();
+        intelAvgFacts = IntelligenceSyncStatus.AverageFactsPerPlayer.ToString("0.00");
+        intelAggRuntime = IntelligenceSyncStatus.AggregationRuntime is { } aggRuntime
+            ? $"{aggRuntime.TotalMilliseconds:0} ms"
+            : "—";
+
+        _ = ProjectionService.GetAllProjections();
+        projectionEngine = ProjectionSyncStatus.ProjectionEngine;
+        projectionVersion = ProjectionSyncStatus.Version;
+        projectionPlayers = ProjectionSyncStatus.PlayersProjected.ToString();
+        projectionUnique = ProjectionSyncStatus.UniqueProjectionValues.ToString();
+        projectionAverage = ProjectionSyncStatus.PlayersProjected > 0
+            ? ProjectionSyncStatus.AverageProjection.ToString("0.0")
+            : "—";
+        projectionRuntime = ProjectionSyncStatus.ProjectionRuntime is { } projRuntime
+            ? $"{projRuntime.TotalMilliseconds:0} ms"
+            : "—";
+        projectionAvgConfidence = ProjectionSyncStatus.PlayersProjected > 0
+            ? ProjectionSyncStatus.AverageProjectionConfidence.ToString("0.0")
+            : "—";
+        projectionAvgVolatility = ProjectionSyncStatus.PlayersProjected > 0
+            ? ProjectionSyncStatus.AverageVolatility.ToString("0.0")
+            : "—";
+        projectionLastRun = ProjectionSyncStatus.LastProjectionRun?.ToLocalTime().ToString("h:mm:ss tt") ?? "—";
+        projectionErrors = string.IsNullOrWhiteSpace(ProjectionSyncStatus.ProjectionErrors)
+            ? "None"
+            : ProjectionSyncStatus.ProjectionErrors;
+
+        _ = QuickPicksService.GetAllPredictions();
+        qpProvider = QuickPicksSyncStatus.UsedFallback
+            ? $"{QuickPicksSyncStatus.PropProvider} (fallback from {QuickPicksSyncStatus.ConfiguredProvider})"
+            : QuickPicksSyncStatus.PropProvider;
+        qpProviderStatus = QuickPicksSyncStatus.ProviderStatus;
+        qpApiKeyConfigured = QuickPicksSyncStatus.ApiKeyConfigured ? "Yes" : "No";
+        qpGames = QuickPicksSyncStatus.GamesLoaded.ToString();
+        qpMarkets = QuickPicksSyncStatus.MarketsLoaded.ToString();
+        qpProps = QuickPicksSyncStatus.PropsLoaded.ToString();
+        qpPredictions = QuickPicksSyncStatus.PredictionsGenerated.ToString();
+        qpLastPropSync = QuickPicksSyncStatus.LastPropSync?.ToLocalTime().ToString("h:mm:ss tt") ?? "—";
+        qpProviderResponseTime = QuickPicksSyncStatus.ProviderResponseTime is { } qpElapsed
+            ? $"{qpElapsed.TotalMilliseconds:0} ms"
+            : "—";
+        qpLastPredictionRun = QuickPicksSyncStatus.LastPredictionRun?.ToLocalTime().ToString("h:mm:ss tt") ?? "—";
+        qpAvgConfidence = QuickPicksSyncStatus.PredictionsGenerated > 0
+            ? QuickPicksSyncStatus.AveragePredictionConfidence.ToString("0.0")
+            : "—";
+        qpLastError = string.IsNullOrWhiteSpace(QuickPicksSyncStatus.LastError)
+            ? "None"
+            : QuickPicksSyncStatus.LastError;
+
+        _ = PlayerStatsService.GetAllStats();
+        statsProviders = PlayerStatsSyncStatus.StatisticsProviders;
+        statsProvider = PlayerStatsSyncStatus.UsedFallback
+            ? $"{PlayerStatsSyncStatus.ActiveProvider} (fallback)"
+            : PlayerStatsSyncStatus.UsedCache
+                ? $"{PlayerStatsSyncStatus.ActiveProvider} (cache)"
+                : PlayerStatsSyncStatus.ActiveProvider;
+        statsPlayers = PlayerStatsSyncStatus.PlayersWithStats.ToString();
+        statsNflPlayers = PlayerStatsSyncStatus.NflPlayersLoaded.ToString();
+        statsSeasons = PlayerStatsSyncStatus.SeasonsLoaded.ToString();
+        statsNflSeasons = PlayerStatsSyncStatus.NflSeasonsLoaded.ToString();
+        statsGameLogs = PlayerStatsSyncStatus.GameLogsLoaded.ToString();
+        statsCollegeRecords = PlayerStatsSyncStatus.CollegeRecordsLoaded.ToString();
+        statsCurrent = PlayerStatsSyncStatus.CurrentSeasonRecords.ToString();
+        statsHistorical = PlayerStatsSyncStatus.HistoricalRecords.ToString();
+        statsIdentityMatches = PlayerStatsSyncStatus.IdentityMatches.ToString();
+        statsUnresolved = PlayerStatsSyncStatus.UnresolvedPlayers.ToString();
+        statsLastSync = PlayerStatsSyncStatus.LastStatsSync?.ToLocalTime().ToString("h:mm:ss tt") ?? "—";
+        statsLastSuccess = PlayerStatsSyncStatus.LastSuccessfulUpdate?.ToLocalTime().ToString("h:mm:ss tt") ?? "—";
+        statsRuntime = PlayerStatsSyncStatus.StatsSyncRuntime is { } statsElapsed
+            ? $"{statsElapsed.TotalMilliseconds:0} ms"
+            : "—";
+        statsProviderErrors = string.IsNullOrWhiteSpace(PlayerStatsSyncStatus.ProviderErrors)
+            ? "None"
+            : PlayerStatsSyncStatus.ProviderErrors;
+        statsLastError = string.IsNullOrWhiteSpace(PlayerStatsSyncStatus.LastStatsError)
+            ? "None"
+            : PlayerStatsSyncStatus.LastStatsError;
+
+        collegeProvider = CollegeStatsSyncStatus.UsedFallback
+            ? $"{CollegeStatsSyncStatus.ActiveProvider} (fallback)"
+            : CollegeStatsSyncStatus.UsedCache
+                ? $"{CollegeStatsSyncStatus.ActiveProvider} (cache)"
+                : CollegeStatsSyncStatus.ActiveProvider;
+        collegePlayers = CollegeStatsSyncStatus.CollegePlayersLoaded.ToString();
+        collegeSeasons = CollegeStatsSyncStatus.CollegeSeasonsLoaded.ToString();
+        collegeLastSync = CollegeStatsSyncStatus.LastCollegeSync?.ToLocalTime().ToString("h:mm:ss tt") ?? "—";
+        collegeLastError = string.IsNullOrWhiteSpace(CollegeStatsSyncStatus.CollegeSyncError)
+            ? "None"
+            : CollegeStatsSyncStatus.CollegeSyncError;
+
+        _ = PlayerInjuryService.GetAllInjuries();
+        injuryProviders = string.IsNullOrWhiteSpace(InjurySyncStatus.InjuryProviders)
+            ? (InjurySyncStatus.UsedFallback
+                ? $"{InjurySyncStatus.ActiveProvider} (fallback)"
+                : InjurySyncStatus.UsedCache
+                    ? $"{InjurySyncStatus.ActiveProvider} (cache)"
+                    : InjurySyncStatus.ActiveProvider)
+            : InjurySyncStatus.InjuryProviders;
+        injuryCoverage = string.IsNullOrWhiteSpace(InjurySyncStatus.ProviderCoverage)
+            ? "—"
+            : InjurySyncStatus.ProviderCoverage;
+        injuryCurrent = InjurySyncStatus.CurrentInjuryRecords.ToString();
+        injuryNflHistorical = InjurySyncStatus.NflHistoricalRecords.ToString();
+        injuryCollegeHistorical = InjurySyncStatus.CollegeHistoricalRecords.ToString();
+        injuryUnconfirmed = InjurySyncStatus.UnconfirmedInjurySignals.ToString();
+        injuryIdentityMatches = InjurySyncStatus.PlayerIdentityMatches.ToString();
+        injuryUnresolved = InjurySyncStatus.UnresolvedPlayers.ToString();
+        injuryGsisIdentities = InjurySyncStatus.IdentitiesWithGsisId.ToString();
+        injuryLastSync = InjurySyncStatus.LastInjurySync?.ToLocalTime().ToString("h:mm:ss tt") ?? "—";
+        injuryProviderRuntime = InjurySyncStatus.ProviderResponseTime is { } providerElapsed
+            ? $"{providerElapsed.TotalMilliseconds:0} ms"
+            : "—";
+        injuryLastError = string.IsNullOrWhiteSpace(InjurySyncStatus.LastInjuryError)
+            ? "None"
+            : InjurySyncStatus.LastInjuryError;
+
+        recommendations = RecommendationService.GetTopRecommendations();
+    }
+
+    private string ResolvePlayerName(Guid playerId) =>
+        PlayerService.GetPlayer(playerId)?.FullName ?? "Linked player";
+
+    private void OnLeagueChanged()
+    {
+        _ = InvokeAsync(() =>
+        {
+            // Clear personalized surfaces immediately so previous league/team cards never linger.
+            isRefreshingPersonalized = true;
+            recommendations = [];
+            currentLeagueName = LeagueState.CurrentLeague?.Name ?? "None selected";
+            StateHasChanged();
+
+            ProjectionService.Invalidate();
+            RefreshDashboard();
+            isRefreshingPersonalized = false;
+            StateHasChanged();
+        });
+    }
+
+    private static string EngineStateClass(string state) => state switch
+    {
+        "Ready" => "engine-status__state engine-status__state--ready",
+        "In Development" => "engine-status__state engine-status__state--development",
+        _ => "engine-status__state engine-status__state--offline"
+    };
+
+    public void Dispose()
+    {
+        LeagueState.Changed -= OnLeagueChanged;
+        cts?.Cancel();
+        cts?.Dispose();
+        refreshTimer?.Dispose();
+    }
 
     private static readonly TrendingItem[] Trending =
     [
@@ -141,15 +926,6 @@
         new("Bucky Irving", "↑ Snap share")
     ];
 
-    private static readonly StatusItem[] SystemStatus =
-    [
-        new("Data Engine", "Stubbed"),
-        new("Intelligence Engine", "Mock Ready"),
-        new("News Engine", "Stubbed"),
-        new("Decision Engine", "Offline"),
-        new("League State", "Ready")
-    ];
-
     private sealed record TrendingItem(string Name, string Trend);
-    private sealed record StatusItem(string Component, string Status);
+    private sealed record EngineStatusItem(string Name, string State);
 }

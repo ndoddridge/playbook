@@ -1,6 +1,212 @@
 @page "/my-teams"
+@using Playbook.Application.Leagues
+@using Playbook.Application.Players
+@using Playbook.Application.Projections.Interfaces
+@using Playbook.Core.Leagues
+@using Playbook.Core.Players
+@using Playbook.Core.Projections.Models
+@using Playbook.Web.Features.League.Models
+@using Playbook.Web.Features.Projections.Models
+@inject ILeagueState LeagueState
+@inject IPlayerService PlayerService
+@inject IProjectionService ProjectionService
+@implements IDisposable
 
 <PageTitle>My Teams — Playbook</PageTitle>
 
-<ComingSoonPage Title="My Teams"
-                Subtitle="League rosters and recommendation context will live here." />
+<section class="pb-page">
+    <header class="pb-page__header">
+        <h1 class="pb-page__title">My Teams</h1>
+        <p class="pb-page__subtitle">
+            @if (current is { } league)
+            {
+                <text>
+                    Rosters for @league.Name
+                    <span class="league-source-badge @(LeagueDisplay.IsLive(league) ? "league-source-badge--live" : "league-source-badge--mock")">
+                        @LeagueDisplay.DataSource(league.DataSource)
+                    </span>
+                    @if (userTeam is { } mine)
+                    {
+                        <text> · My team: @LeagueDisplay.TeamLabel(mine)</text>
+                    }
+                </text>
+            }
+            else
+            {
+                <text>Select or connect a league to view fantasy rosters.</text>
+            }
+        </p>
+    </header>
+
+    @if (current is null)
+    {
+        <article class="pb-card">
+            <div class="pb-card__body">
+                <p class="pb-empty">No league selected. Use the league switcher to pick a mock league or connect a Sleeper league by ID.</p>
+            </div>
+        </article>
+    }
+    else if (!current.IsSetupComplete)
+    {
+        <article class="pb-card">
+            <div class="pb-card__body">
+                <p class="pb-empty">This league still needs your team. Open the league switcher and select your roster to finish setup.</p>
+            </div>
+        </article>
+    }
+    else if (teams.Count == 0)
+    {
+        <article class="pb-card">
+            <div class="pb-card__body">
+                <p class="pb-empty">No teams loaded for this league yet.</p>
+            </div>
+        </article>
+    }
+    else
+    {
+        <div class="my-teams-meta">
+            <span>@LeagueDisplay.Platform(current.Platform)</span>
+            <span>·</span>
+            <span>@LeagueDisplay.LeagueType(current.LeagueType)</span>
+            <span>·</span>
+            <span>@LeagueDisplay.ScoringDetailed(current)</span>
+            <span>·</span>
+            <span>@current.NumberOfTeams teams</span>
+            <span>·</span>
+            <span>@current.Season · Week @current.CurrentWeek</span>
+            @if (userTeam is { } selected)
+            {
+                <span>·</span>
+                <span>My team: @LeagueDisplay.TeamLabel(selected)</span>
+            }
+            @if (!string.IsNullOrWhiteSpace(current.ExternalId))
+            {
+                <span>·</span>
+                <span>ID @current.ExternalId</span>
+            }
+        </div>
+
+        @if (!LeagueDisplay.IsLive(current))
+        {
+            <p class="my-teams-note">
+                This is mock demo league context. Connect a Sleeper league ID from the league switcher to load real rosters and scoring.
+            </p>
+        }
+
+        @if (isRefreshing)
+        {
+            <p class="pb-empty">Refreshing roster analysis for the selected team…</p>
+        }
+        else if (userTeam is { } mine && rosterProjections.Count > 0)
+        {
+            <article class="pb-card my-team-analysis">
+                <h2 class="pb-card__title">Roster outlook · @LeagueDisplay.TeamLabel(mine)</h2>
+                <div class="pb-card__body">
+                    <p class="my-teams-note" style="margin-bottom:0.75rem;">
+                        Projections for your selected team in @current.Name (@LeagueDisplay.ScoringDetailed(current)).
+                    </p>
+                    <ul class="my-team-card__players">
+                        @foreach (var proj in rosterProjections.Take(8))
+                        {
+                            var player = PlayerService.GetPlayer(proj.PlayerId);
+                            <li>
+                                @(player?.FullName ?? "Unknown player")
+                                <span class="my-team-card__starter">@ProjectionPresentation.Points(proj.ProjectedFantasyPoints) pts</span>
+                            </li>
+                        }
+                    </ul>
+                </div>
+            </article>
+        }
+
+        <div class="my-teams-grid">
+            @foreach (var team in OrderedTeams)
+            {
+                var isMine = LeagueDisplay.IsUserTeam(current, team);
+                <article class="pb-card my-team-card @(isMine ? "my-team-card--mine" : null)">
+                    <h2 class="pb-card__title">
+                        @(team.TeamName ?? team.DisplayName)
+                        @if (isMine)
+                        {
+                            <span class="league-source-badge league-source-badge--live">My team</span>
+                        }
+                    </h2>
+                    <div class="pb-card__body">
+                        <p class="my-team-card__owner">@team.DisplayName · Roster #@team.RosterId</p>
+                        @if (team.PlayerIds.Count == 0)
+                        {
+                            <p class="pb-empty">No players on this roster@(LeagueDisplay.IsLive(current) ? "." : " (demo leagues do not seed player ownership).")</p>
+                        }
+                        else
+                        {
+                            <ul class="my-team-card__players">
+                                @foreach (var playerId in team.PlayerIds.Take(18))
+                                {
+                                    var player = PlayerService.GetPlayer(playerId);
+                                    var isStarter = team.StarterIds.Contains(playerId);
+                                    <li>
+                                        @(player?.FullName ?? "Unknown player")
+                                        @if (player is not null)
+                                        {
+                                            <span class="my-team-card__pos">@PlayerPresentation.PositionLabel(player.Position)</span>
+                                        }
+                                        @if (isStarter)
+                                        {
+                                            <span class="my-team-card__starter">Starter</span>
+                                        }
+                                    </li>
+                                }
+                            </ul>
+                            @if (team.PlayerIds.Count > 18)
+                            {
+                                <p class="player-section__muted">+@(team.PlayerIds.Count - 18) more players</p>
+                            }
+                        }
+                    </div>
+                </article>
+            }
+        </div>
+    }
+</section>
+
+@code {
+    private League? current;
+    private FantasyTeam? userTeam;
+    private IReadOnlyList<FantasyTeam> teams = [];
+    private IReadOnlyList<PlayerProjection> rosterProjections = [];
+    private bool isRefreshing;
+
+    private IEnumerable<FantasyTeam> OrderedTeams =>
+        teams.OrderByDescending(t => LeagueDisplay.IsUserTeam(current, t))
+             .ThenBy(t => t.RosterId);
+
+    protected override void OnInitialized()
+    {
+        LeagueState.Changed += OnLeagueChanged;
+        Refresh();
+    }
+
+    private void Refresh()
+    {
+        current = LeagueState.CurrentLeague;
+        userTeam = LeagueState.GetCurrentUserTeam();
+        teams = LeagueState.GetCurrentTeams();
+        rosterProjections = userTeam is { PlayerIds.Count: > 0 }
+            ? ProjectionService.ProjectRoster(userTeam.PlayerIds)
+            : [];
+    }
+
+    private void OnLeagueChanged() => InvokeAsync(() =>
+    {
+        isRefreshing = true;
+        rosterProjections = [];
+        StateHasChanged();
+
+        ProjectionService.Invalidate();
+        Refresh();
+        isRefreshing = false;
+        StateHasChanged();
+    });
+
+    public void Dispose() => LeagueState.Changed -= OnLeagueChanged;
+}

@@ -52,6 +52,49 @@ public sealed class MockIntelligenceService : IIntelligenceService
             .ThenByDescending(f => f.Confidence)
             .ToList();
 
+    public void Refresh()
+    {
+        // Static mock catalog — nothing to refresh.
+    }
+
+    public PlayerIntelligenceProfile? GetPlayerProfile(Guid playerId)
+    {
+        var legacy = GetPlayerIntelligence(playerId);
+        if (legacy is null)
+        {
+            return null;
+        }
+
+        return new PlayerIntelligenceProfile
+        {
+            PlayerId = legacy.PlayerId,
+            OverallConfidence = legacy.OverallConfidence,
+            OverallRisk = 50,
+            OpportunityScore = 50,
+            TrendDirection = legacy.TrendDirection,
+            HealthScore = 50,
+            UsageScore = 50,
+            NewsMomentum = Math.Min(100, legacy.Facts.Count * 10),
+            LastUpdated = legacy.LastUpdated,
+            SupportingFacts = legacy.Facts,
+            Headline = legacy.TrendSummary,
+            ChangeSignal = IntelligenceChangeSignal.Neutral
+        };
+    }
+
+    public IReadOnlyList<PlayerIntelligenceProfile> GetTopProfiles(int count = 8) =>
+        _facts
+            .Where(f => f.RelatedPlayerId is not null)
+            .Select(f => f.RelatedPlayerId!.Value)
+            .Distinct()
+            .Select(GetPlayerProfile)
+            .Where(p => p is not null)
+            .Cast<PlayerIntelligenceProfile>()
+            .Take(Math.Max(0, count))
+            .ToList();
+
+    public IReadOnlyList<PlayerIntelligenceProfile> GetAllProfiles() => GetTopProfiles(int.MaxValue);
+
     public PlayerIntelligence? GetPlayerIntelligence(Guid playerId)
     {
         var facts = GetFactsForPlayer(playerId);

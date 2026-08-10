@@ -1,4 +1,5 @@
 using Playbook.Core.Intelligence.Models;
+using Playbook.Core.Players;
 
 namespace Playbook.Web.Features.Intelligence.Models;
 
@@ -19,6 +20,14 @@ public static class IntelligencePresentation
         IntelligenceCategory.Opportunity => "Opportunity",
         IntelligenceCategory.Efficiency => "Efficiency",
         IntelligenceCategory.Situation => "Situation",
+        IntelligenceCategory.DepthChart => "Depth Chart",
+        IntelligenceCategory.Practice => "Practice",
+        IntelligenceCategory.Transaction => "Transactions",
+        IntelligenceCategory.Suspension => "Suspension",
+        IntelligenceCategory.Contract => "Contract",
+        IntelligenceCategory.GameEnvironment => "Game Environment",
+        IntelligenceCategory.TeamChemistry => "Team Chemistry",
+        IntelligenceCategory.General => "General",
         _ => category.ToString()
     };
 
@@ -52,6 +61,29 @@ public static class IntelligencePresentation
         IntelligenceSource.Film => "Film",
         IntelligenceSource.News => "News",
         _ => source.ToString()
+    };
+
+    public static string Reason(IntelligenceFact fact) =>
+        fact.SupportingEvidence.FirstOrDefault(e => e.StartsWith("Reason:", StringComparison.OrdinalIgnoreCase))
+            ?.Replace("Reason: ", "", StringComparison.OrdinalIgnoreCase)
+        ?? fact.Description;
+
+    public static string ChangeArrow(IntelligenceChangeSignal signal) => signal switch
+    {
+        IntelligenceChangeSignal.OpportunityIncreasing => "⬆",
+        IntelligenceChangeSignal.UsageIncreasing => "⬆",
+        IntelligenceChangeSignal.HealthImproving => "⬆",
+        IntelligenceChangeSignal.HealthConcern => "⬇",
+        IntelligenceChangeSignal.OpportunityDecreasing => "⬇",
+        IntelligenceChangeSignal.ElevatedRisk => "⬇",
+        _ => "•"
+    };
+
+    public static string TrendLabel(TrendDirection trend) => trend switch
+    {
+        TrendDirection.Up => "Up",
+        TrendDirection.Down => "Down",
+        _ => "Flat"
     };
 
     public static string RelativeTime(DateTimeOffset created)

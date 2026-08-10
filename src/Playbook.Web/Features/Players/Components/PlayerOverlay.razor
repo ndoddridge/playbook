@@ -1,11 +1,30 @@
 @using Playbook.Application.Intelligence.Interfaces
+@using Playbook.Application.News
 @using Playbook.Application.Players
+@using Playbook.Application.Projections
+@using Playbook.Application.Projections.Interfaces
+@using Playbook.Application.Injuries
+@using Playbook.Application.Injuries.Interfaces
+@using Playbook.Application.Stats
+@using Playbook.Application.Stats.Interfaces
+@using Playbook.Core.Injuries.Models
 @using Playbook.Core.Intelligence.Models
 @using Playbook.Core.Leagues
+@using Playbook.Core.News
 @using Playbook.Core.Players
+@using Playbook.Core.Projections.Models
+@using Playbook.Core.Stats.Models
 @using Playbook.Web.Features.Intelligence.Models
+@using Playbook.Web.Features.News.Models
+@using Playbook.Web.Features.Projections.Models
 @inject IPlayerOverlayState Overlay
 @inject IIntelligenceService IntelligenceService
+@inject IProjectionService ProjectionService
+@inject IPlayerProductionProvider ProductionProvider
+@inject IPlayerStatsService PlayerStatsService
+@inject IPlayerStatisticalContextService StatisticalContextService
+@inject IPlayerInjuryService PlayerInjuryService
+@inject INewsProvider NewsProvider
 @implements IDisposable
 
 @if (Overlay.IsOpen && Overlay.Context is { } context)
@@ -15,7 +34,7 @@
     <div class="player-overlay" role="dialog" aria-modal="true" aria-label="@player.FullName">
         <div class="player-overlay__backdrop" @onclick="Close"></div>
 
-        <div class="player-overlay__panel">
+        <div class="player-overlay__panel" @onclick:stopPropagation="true">
             <header class="player-overlay__header">
                 <div class="player-overlay__identity">
                     <div class="player-avatar player-avatar--lg" aria-hidden="true">
@@ -34,6 +53,20 @@
                         <p class="player-overlay__league">
                             @(context.League?.Name ?? "No League Selected")
                             · @FormatScoring(context.ScoringType)
+                            @if (context.League is { } ctxLeague)
+                            {
+                                <span class="league-source-badge @(ctxLeague.DataSource == LeagueDataSource.Sleeper ? "league-source-badge--live" : "league-source-badge--mock")">
+                                    @(ctxLeague.DataSource == LeagueDataSource.Sleeper ? "Live" : "Mock")
+                                </span>
+                            }
+                            @if (context.FantasyTeam is { } fantasyTeam)
+                            {
+                                <text> · @(fantasyTeam.TeamName ?? fantasyTeam.DisplayName)</text>
+                                @if (context.League?.SelectedRosterId == fantasyTeam.RosterId)
+                                {
+                                    <span class="league-source-badge league-source-badge--live">My team</span>
+                                }
+                            }
                         </p>
                     </div>
                 </div>
@@ -83,6 +116,42 @@
                                 @PlayerPresentation.TrendLabel(trend.Direction) — @trend.Label
                             </p>
                         }
+
+                        <h3 class="player-section__title" style="margin-top:1.5rem;">Recent News</h3>
+                        @if (playerNews.Count > 0)
+                        {
+                            <div class="player-news-list">
+                                @foreach (var article in playerNews)
+                                {
+                                    <article class="news-item">
+                                        <div class="news-item__header">
+                                            <h4 class="news-item__title">
+                                                @if (!string.IsNullOrWhiteSpace(article.Url))
+                                                {
+                                                    <a href="@article.Url" target="_blank" rel="noopener noreferrer">@article.Title</a>
+                                                }
+                                                else
+                                                {
+                                                    @article.Title
+                                                }
+                                            </h4>
+                                            <span class="@NewsPresentation.PriorityClass(article.Priority)">
+                                                @NewsPresentation.Priority(article.Priority)
+                                            </span>
+                                        </div>
+                                        <p class="news-item__summary">@article.Summary</p>
+                                        <div class="news-item__meta">
+                                            <span>@NewsPresentation.RelativeTime(article.Published)</span>
+                                            <span>@article.Source</span>
+                                        </div>
+                                    </article>
+                                }
+                            </div>
+                        }
+                        else
+                        {
+                            <p class="player-section__muted">No related news for this player right now.</p>
+                        }
                     </section>
                 }
                 else if (activeTab == "Fantasy")
@@ -114,47 +183,148 @@
                         <p class="player-section__text" style="margin-top:1rem;">@context.RecommendationSummary</p>
                     </section>
                 }
-                else if (activeTab == "Intelligence")
+                else if (activeTab == "Projection")
                 {
                     <section class="player-section">
-                        <h3 class="player-section__title">Intelligence</h3>
-                        @if (playerIntelligence is null)
+                        <h3 class="player-section__title">Player Projection</h3>
+                        @if (playerProjection is null)
                         {
-                            <p class="player-section__muted">No football intelligence available for this player yet.</p>
+                            <p class="player-section__muted">No projection available for this player yet.</p>
                         }
                         else
                         {
                             <div class="player-profile__grid" style="margin-bottom:1rem;">
                                 <div class="player-stat">
+                                    <span class="player-stat__label">Projected Points</span>
+                                    <span class="player-stat__value">@ProjectionPresentation.Points(playerProjection.ProjectedFantasyPoints)</span>
+                                </div>
+                                <div class="player-stat">
+                                    <span class="player-stat__label">Floor</span>
+                                    <span class="player-stat__value">@ProjectionPresentation.Points(playerProjection.Floor)</span>
+                                </div>
+                                <div class="player-stat">
+                                    <span class="player-stat__label">Median</span>
+                                    <span class="player-stat__value">@ProjectionPresentation.Points(playerProjection.Median)</span>
+                                </div>
+                                <div class="player-stat">
+                                    <span class="player-stat__label">Ceiling</span>
+                                    <span class="player-stat__value">@ProjectionPresentation.Points(playerProjection.Ceiling)</span>
+                                </div>
+                                <div class="player-stat">
+                                    <span class="player-stat__label">Confidence</span>
+                                    <span class="player-stat__value">@ProjectionPresentation.Percent(playerProjection.Confidence)</span>
+                                </div>
+                                <div class="player-stat">
+                                    <span class="player-stat__label">Volatility</span>
+                                    <span class="player-stat__value">@playerProjection.Volatility</span>
+                                </div>
+                            </div>
+
+                            <p class="player-section__muted" style="margin-bottom:1rem;">
+                                Updated @ProjectionPresentation.RelativeTime(playerProjection.LastUpdated)
+                            </p>
+
+                            <div class="player-profile__grid" style="margin-bottom:1rem;">
+                                <div class="player-stat">
+                                    <span class="player-stat__label">Statistical Baseline</span>
+                                    <span class="player-stat__value">@projectionBaselineLabel</span>
+                                </div>
+                                <div class="player-stat">
+                                    <span class="player-stat__label">Engine</span>
+                                    <span class="player-stat__value">v@(playerProjection.ProjectionVersion)</span>
+                                </div>
+                                <div class="player-stat">
+                                    <span class="player-stat__label">Scoring</span>
+                                    <span class="player-stat__value">@FormatScoring(playerProjection.ScoringFormat)</span>
+                                </div>
+                                <div class="player-stat">
+                                    <span class="player-stat__label">Week</span>
+                                    <span class="player-stat__value">@playerProjection.Week</span>
+                                </div>
+                            </div>
+                            @if (!string.IsNullOrWhiteSpace(projectionBaselineDetail))
+                            {
+                                <p class="player-section__muted" style="margin-bottom:1rem;">@projectionBaselineDetail</p>
+                            }
+                            @if (playerProjection.InputsUsed.UnavailableInputs.Count > 0)
+                            {
+                                <p class="player-section__muted" style="margin-bottom:1rem;">
+                                    Unavailable inputs: @string.Join(", ", playerProjection.InputsUsed.UnavailableInputs)
+                                </p>
+                            }
+
+                            <h3 class="player-section__title">Reasoning</h3>
+                            <ul class="projection-reason-list">
+                                @foreach (var reason in playerProjection.ProjectionReasoning)
+                                {
+                                    <li>@reason</li>
+                                }
+                            </ul>
+
+                            <h3 class="player-section__title" style="margin-top:1.25rem;">Supporting Intelligence</h3>
+                            <ul class="projection-reason-list">
+                                @foreach (var item in playerProjection.SupportingIntelligence)
+                                {
+                                    <li>@item</li>
+                                }
+                            </ul>
+                        }
+                    </section>
+                }
+                else if (activeTab == "Intelligence")
+                {
+                    <section class="player-section">
+                        <h3 class="player-section__title">Player Intelligence Profile</h3>
+                        @if (playerProfile is null)
+                        {
+                            <p class="player-section__muted">No aggregated intelligence profile for this player yet.</p>
+                        }
+                        else
+                        {
+                            <div class="player-profile__grid" style="margin-bottom:1rem;">
+                                <div class="player-stat">
+                                    <span class="player-stat__label">Overall Intelligence</span>
+                                    <span class="player-stat__value">@playerProfile.Headline</span>
+                                </div>
+                                <div class="player-stat">
+                                    <span class="player-stat__label">Health</span>
+                                    <span class="player-stat__value">@playerProfile.HealthScore</span>
+                                </div>
+                                <div class="player-stat">
+                                    <span class="player-stat__label">Opportunity</span>
+                                    <span class="player-stat__value">@playerProfile.OpportunityScore</span>
+                                </div>
+                                <div class="player-stat">
+                                    <span class="player-stat__label">Usage</span>
+                                    <span class="player-stat__value">@playerProfile.UsageScore</span>
+                                </div>
+                                <div class="player-stat">
+                                    <span class="player-stat__label">Trend</span>
+                                    <span class="player-stat__value">@IntelligencePresentation.TrendLabel(playerProfile.TrendDirection)</span>
+                                </div>
+                                <div class="player-stat">
                                     <span class="player-stat__label">Overall Confidence</span>
-                                    <span class="player-stat__value">@playerIntelligence.OverallConfidence%</span>
-                                </div>
-                                <div class="player-stat">
-                                    <span class="player-stat__label">Facts</span>
-                                    <span class="player-stat__value">@playerIntelligence.Facts.Count</span>
-                                </div>
-                                <div class="player-stat">
-                                    <span class="player-stat__label">Updated</span>
-                                    <span class="player-stat__value">@IntelligencePresentation.RelativeTime(playerIntelligence.LastUpdated)</span>
+                                    <span class="player-stat__value">@playerProfile.OverallConfidence%</span>
                                 </div>
                             </div>
 
                             <div class="intel-summary">
                                 <div class="intel-summary__item">
-                                    <span class="intel-summary__label">Trend</span>
-                                    <p class="intel-summary__text">@playerIntelligence.TrendSummary</p>
-                                </div>
-                                <div class="intel-summary__item">
                                     <span class="intel-summary__label">Risk</span>
-                                    <p class="intel-summary__text">@playerIntelligence.RiskSummary</p>
+                                    <p class="intel-summary__text">@playerProfile.OverallRisk / 100</p>
                                 </div>
                                 <div class="intel-summary__item">
-                                    <span class="intel-summary__label">Opportunity</span>
-                                    <p class="intel-summary__text">@playerIntelligence.OpportunitySummary</p>
+                                    <span class="intel-summary__label">News Momentum</span>
+                                    <p class="intel-summary__text">@playerProfile.NewsMomentum / 100</p>
+                                </div>
+                                <div class="intel-summary__item">
+                                    <span class="intel-summary__label">Supporting Facts</span>
+                                    <p class="intel-summary__text">@playerProfile.SupportingFacts.Count evidence items</p>
                                 </div>
                             </div>
 
-                            @foreach (var group in playerIntelligence.Facts.GroupBy(f => f.Category).OrderBy(g => g.Key))
+                            <h3 class="player-section__title" style="margin-top:1.25rem;">Supporting Intelligence</h3>
+                            @foreach (var group in playerProfile.SupportingFacts.GroupBy(f => f.Category).OrderBy(g => g.Key))
                             {
                                 <div class="intel-group">
                                     <h4 class="intel-group__title">@IntelligencePresentation.Category(group.Key)</h4>
@@ -168,18 +338,35 @@
                                                     <span class="@IntelligencePresentation.ImportanceClass(fact.Importance)">
                                                         @IntelligencePresentation.Importance(fact.Importance)
                                                     </span>
-                                                    <span>@IntelligencePresentation.RelativeTime(fact.Created)</span>
                                                 </div>
                                             </div>
                                             <p class="intel-fact__description">@fact.Description</p>
-                                            @if (fact.SupportingEvidence.Count > 0)
+                                            @{
+                                                var supportArticles = NewsProvider.GetByIds(fact.RelatedNewsArticleIds);
+                                            }
+                                            @if (supportArticles.Count > 0)
                                             {
-                                                <ul class="intel-fact__evidence">
-                                                    @foreach (var evidence in fact.SupportingEvidence)
+                                                <div class="player-news-list">
+                                                    @foreach (var article in supportArticles)
                                                     {
-                                                        <li>@evidence</li>
+                                                        <article class="news-item">
+                                                            <h4 class="news-item__title">
+                                                                @if (!string.IsNullOrWhiteSpace(article.Url))
+                                                                {
+                                                                    <a href="@article.Url" target="_blank" rel="noopener noreferrer">@article.Title</a>
+                                                                }
+                                                                else
+                                                                {
+                                                                    @article.Title
+                                                                }
+                                                            </h4>
+                                                            <div class="news-item__meta">
+                                                                <span>@article.Source</span>
+                                                                <span>@NewsPresentation.RelativeTime(article.Published)</span>
+                                                            </div>
+                                                        </article>
                                                     }
-                                                </ul>
+                                                </div>
                                             }
                                         </article>
                                     }
@@ -191,27 +378,65 @@
                 else if (activeTab == "Career")
                 {
                     <section class="player-section">
-                        <h3 class="player-section__title">Career</h3>
-                        @if (context.Profile?.CareerStats is { } career)
+                        <h3 class="player-section__title">Career / Stats</h3>
+                        @if (careerSeasonStats.Count == 0)
                         {
-                            <div class="player-profile__grid">
-                                <div class="player-stat">
-                                    <span class="player-stat__label">Seasons</span>
-                                    <span class="player-stat__value">@career.Seasons</span>
-                                </div>
-                                <div class="player-stat">
-                                    <span class="player-stat__label">Games</span>
-                                    <span class="player-stat__value">@career.GamesPlayed</span>
-                                </div>
-                                <div class="player-stat">
-                                    <span class="player-stat__label">Fantasy Pts</span>
-                                    <span class="player-stat__value">@career.FantasyPoints.ToString("0.0")</span>
-                                </div>
-                            </div>
+                            <p class="player-section__muted">No normalized season statistics available for this player yet.</p>
                         }
                         else
                         {
-                            <p class="player-section__muted">Career details coming soon.</p>
+                            <label class="player-overlay__season">
+                                <span class="player-overlay__season-label">Season</span>
+                                <select class="player-overlay__season-select" value="@selectedStatsKey" @onchange="OnStatsSeasonChanged">
+                                    @foreach (var row in careerSeasonStats)
+                                    {
+                                        <option value="@PlayerCareerSeasonPresentation.StatsKey(row)">
+                                            @PlayerCareerSeasonPresentation.FormatSeasonOption(row)
+                                        </option>
+                                    }
+                                </select>
+                            </label>
+
+                            @if (selectedSeasonStats is { } season)
+                            {
+                                @RenderSeasonDetail(season)
+                            }
+
+                            @if (statisticalContext is not null)
+                            {
+                                <p class="player-section__muted" style="margin-top:1rem;">
+                                    Intelligence signals: trend @statisticalContext.Trend
+                                    · game logs @statisticalContext.GameLogsAvailable
+                                    · NFL seasons @statisticalContext.NflSeasonsAvailable
+                                    @if (statisticalContext.HasCollegeStatistics)
+                                    {
+                                        <text> · college available (kept separate)</text>
+                                    }
+                                </p>
+                            }
+
+                            @if (recentGameLogs.Count > 0)
+                            {
+                                <h3 class="player-section__title" style="margin-top:1.25rem;">Recent Game Logs</h3>
+                                <p class="player-section__muted" style="margin-bottom:0.75rem;">
+                                    Granular weekly NFL production retained for trends (not discarded after season totals).
+                                </p>
+                                <ul class="projection-reason-list">
+                                    @foreach (var game in recentGameLogs.Take(6))
+                                    {
+                                        <li>
+                                            @game.Season W@game.Week
+                                            @if (!string.IsNullOrWhiteSpace(game.OpponentTeam))
+                                            {
+                                                <text> vs @game.OpponentTeam</text>
+                                            }
+                                            · Rush @(game.RushAttempts?.ToString() ?? "—")/@(game.RushYards?.ToString() ?? "—")/@(game.RushTouchdowns?.ToString() ?? "—")
+                                            · Rec @(game.Receptions?.ToString() ?? "—")/@(game.ReceivingYards?.ToString() ?? "—")/@(game.ReceivingTouchdowns?.ToString() ?? "—")
+                                            · Pass @(game.PassCompletions?.ToString() ?? "—")/@(game.PassAttempts?.ToString() ?? "—")/@(game.PassYards?.ToString() ?? "—")
+                                        </li>
+                                    }
+                                </ul>
+                            }
                         }
                     </section>
                 }
@@ -219,39 +444,219 @@
                 {
                     <section class="player-section">
                         <h3 class="player-section__title">College</h3>
-                        @if (context.Profile?.CollegeStats is { } college)
+                        @{
+                            var school = collegeSeasonStats.FirstOrDefault()?.CollegeSchool
+                                ?? player.College
+                                ?? context.Profile?.CollegeStats?.School;
+                        }
+                        @if (!string.IsNullOrWhiteSpace(school))
                         {
-                            <p class="player-section__text">@(college.School ?? "—")</p>
-                            @if (!string.IsNullOrWhiteSpace(college.NotableNote))
-                            {
-                                <p class="player-section__muted">@college.NotableNote</p>
-                            }
+                            <p class="player-section__text">@school</p>
+                        }
+
+                        @if (collegeSeasonStats.Count == 0)
+                        {
+                            <p class="player-section__muted">No college statistics available for this player.</p>
                         }
                         else
                         {
-                            <p class="player-section__muted">College details coming soon.</p>
+                            <div class="player-profile__grid" style="margin:1rem 0;">
+                                <div class="player-stat">
+                                    <span class="player-stat__label">Seasons</span>
+                                    <span class="player-stat__value">@collegeSeasonStats.Count</span>
+                                </div>
+                                <div class="player-stat">
+                                    <span class="player-stat__label">Games</span>
+                                    <span class="player-stat__value">@(SumNullable(collegeSeasonStats.Select(s => s.Games))?.ToString() ?? "—")</span>
+                                </div>
+                            </div>
+
+                            <label class="player-overlay__season">
+                                <span class="player-overlay__season-label">College Season</span>
+                                <select class="player-overlay__season-select" value="@selectedCollegeKey" @onchange="OnCollegeSeasonChanged">
+                                    @foreach (var row in collegeSeasonStats)
+                                    {
+                                        <option value="@PlayerCareerSeasonPresentation.StatsKey(row)">
+                                            @PlayerCareerSeasonPresentation.FormatSeasonOption(row)
+                                        </option>
+                                    }
+                                </select>
+                            </label>
+
+                            @if (selectedCollegeStats is { } collegeSeason)
+                            {
+                                @RenderSeasonDetail(collegeSeason)
+                            }
                         }
                     </section>
                 }
                 else
                 {
                     <section class="player-section">
-                        <h3 class="player-section__title">Injuries</h3>
-                        @if (context.Profile?.InjuryHistory is { Count: > 0 } injuries)
+                        <h3 class="player-section__title">Injury Status</h3>
+                        @if (injuryProfile is null)
                         {
-                            <ul class="player-injury-list">
-                                @foreach (var injury in injuries)
-                                {
-                                    <li>
-                                        <strong>@injury.ReportedOn.ToString("MMM d, yyyy")</strong>
-                                        — @injury.Description (@injury.Status)
-                                    </li>
-                                }
-                            </ul>
+                            <p class="player-section__muted">Injury data has not been synced yet.</p>
                         }
                         else
                         {
-                            <p class="player-section__muted">No injury records on file.</p>
+                            <div class="player-profile__grid" style="margin-bottom:1rem;">
+                                <div class="player-stat">
+                                    <span class="player-stat__label">Current Status</span>
+                                    <span class="player-stat__value">@(injuryProfile.CurrentStatus ?? InjuryAvailabilityPresentation.CurrentStatusLabel(injuryProfile.CurrentDataStatus))</span>
+                                </div>
+                                <div class="player-stat">
+                                    <span class="player-stat__label">Current Injury</span>
+                                    <span class="player-stat__value">@(injuryProfile.CurrentInjury?.BodyPart ?? "—")</span>
+                                </div>
+                                <div class="player-stat">
+                                    <span class="player-stat__label">Practice Status</span>
+                                    <span class="player-stat__value">@(injuryProfile.PracticeStatus ?? "—")</span>
+                                </div>
+                                <div class="player-stat">
+                                    <span class="player-stat__label">Game Status</span>
+                                    <span class="player-stat__value">@(injuryProfile.GameStatus ?? "—")</span>
+                                </div>
+                                <div class="player-stat">
+                                    <span class="player-stat__label">Last Updated</span>
+                                    <span class="player-stat__value">@(injuryProfile.LastUpdated?.ToLocalTime().ToString("MMM d, h:mm tt") ?? "—")</span>
+                                </div>
+                                <div class="player-stat">
+                                    <span class="player-stat__label">Verification</span>
+                                    <span class="player-stat__value">@(injuryProfile.CurrentInjury?.VerificationLabel ?? "No confirmed injury")</span>
+                                </div>
+                            </div>
+
+                            @if (!string.IsNullOrWhiteSpace(injuryProfile.RiskSummary))
+                            {
+                                <p class="player-section__text" style="margin-bottom:1rem;">@injuryProfile.RiskSummary</p>
+                            }
+
+                            @if (injuryProfile.CurrentDataStatus == CurrentInjuryDataStatus.Available &&
+                                 injuryProfile.CurrentInjury is { } current)
+                            {
+                                <p class="player-section__text player-injury-verified" style="margin-bottom:1rem;">
+                                    <span class="player-injury-badge player-injury-badge--verified">Verified</span>
+                                    <strong>@current.Status</strong>
+                                    @if (!string.IsNullOrWhiteSpace(current.BodyPart))
+                                    {
+                                        <text> — @current.BodyPart</text>
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(current.Description))
+                                    {
+                                        <text>. @current.Description</text>
+                                    }
+                                </p>
+                            }
+                            else if (injuryProfile.CurrentDataStatus == CurrentInjuryDataStatus.NoCurrentInjury)
+                            {
+                                <p class="player-section__muted" style="margin-bottom:1rem;">
+                                    No confirmed injury.
+                                </p>
+                            }
+                            else if (injuryProfile.CurrentDataStatus == CurrentInjuryDataStatus.Unavailable)
+                            {
+                                <p class="player-section__muted" style="margin-bottom:1rem;">
+                                    Current injury data is unavailable.
+                                </p>
+                            }
+
+                            <h3 class="player-section__title">Unconfirmed Reports</h3>
+                            @if (injuryProfile.UnconfirmedSignals.Count == 0)
+                            {
+                                <p class="player-section__muted" style="margin-bottom:1rem;">
+                                    No unconfirmed injury reports for this player.
+                                </p>
+                            }
+                            else
+                            {
+                                <ul class="player-injury-list player-injury-list--unconfirmed" style="margin-bottom:1rem;">
+                                    @foreach (var signal in injuryProfile.UnconfirmedSignals)
+                                    {
+                                        <li class="player-injury-entry player-injury-entry--unconfirmed">
+                                            <div>
+                                                <span class="player-injury-badge player-injury-badge--unconfirmed">Unconfirmed</span>
+                                                <strong>@signal.Headline</strong>
+                                            </div>
+                                            @if (!string.IsNullOrWhiteSpace(signal.Detail))
+                                            {
+                                                <div>@signal.Detail</div>
+                                            }
+                                            <div class="player-section__muted">
+                                                Source: @signal.Source
+                                                · Confidence: @signal.ConfidenceLabel
+                                                @if (signal.SourceCount > 1)
+                                                {
+                                                    <text> · @signal.SourceCount sources</text>
+                                                }
+                                                · Updated @signal.LastUpdated.ToLocalTime().ToString("MMM d, h:mm tt")
+                                            </div>
+                                        </li>
+                                    }
+                                </ul>
+                            }
+
+                            <h3 class="player-section__title">Recent Injury History</h3>
+                            @if (injuryProfile.RecentHistory.Count > 0)
+                            {
+                                <ul class="player-injury-list" style="margin-bottom:1rem;">
+                                    @foreach (var entry in injuryProfile.RecentHistory)
+                                    {
+                                        @RenderHistoryEntry(entry)
+                                    }
+                                </ul>
+                            }
+                            else
+                            {
+                                <p class="player-section__muted" style="margin-bottom:1rem;">
+                                    @(injuryProfile.HistoricalAvailabilityMessage
+                                        ?? "No recent injury history with elevated relevance.")
+                                </p>
+                            }
+
+                            <h3 class="player-section__title">NFL Career History</h3>
+                            @if (injuryProfile.NflCareerHistory.Count > 0)
+                            {
+                                <ul class="player-injury-list" style="margin-bottom:1rem;">
+                                    @foreach (var entry in injuryProfile.NflCareerHistory)
+                                    {
+                                        @RenderHistoryEntry(entry)
+                                    }
+                                </ul>
+                            }
+                            else
+                            {
+                                <p class="player-section__muted" style="margin-bottom:1rem;">
+                                    @(injuryProfile.HistoricalAvailabilityMessage
+                                        ?? InjuryAvailabilityPresentation.HistoricalMessage(injuryProfile.NflHistoricalDataStatus))
+                                </p>
+                            }
+
+                            <h3 class="player-section__title">College History</h3>
+                            @if (injuryProfile.CollegeHistory.Count > 0)
+                            {
+                                <ul class="player-injury-list" style="margin-bottom:1rem;">
+                                    @foreach (var entry in injuryProfile.CollegeHistory)
+                                    {
+                                        @RenderHistoryEntry(entry)
+                                    }
+                                </ul>
+                            }
+                            else
+                            {
+                                <p class="player-section__muted" style="margin-bottom:1rem;">
+                                    @(injuryProfile.CollegeAvailabilityMessage
+                                        ?? InjuryAvailabilityPresentation.CollegeMessage(injuryProfile.CollegeHistoricalDataStatus))
+                                </p>
+                            }
+
+                            <p class="player-section__muted" style="margin-top:0.5rem;">
+                                Data source: @(injuryProfile.SupportingSources.Count > 0 ? string.Join(", ", injuryProfile.SupportingSources) : "—")
+                                @if (!string.IsNullOrWhiteSpace(injuryProfile.ProviderCoverage))
+                                {
+                                    <text> · @injuryProfile.ProviderCoverage</text>
+                                }
+                            </p>
                         }
                     </section>
                 }
@@ -261,12 +666,32 @@
 }
 
 @code {
-    private static readonly string[] Tabs =
-        ["Overview", "Fantasy", "Intelligence", "Career", "College", "Injuries"];
+    private static readonly string[] Tabs = PlayerOverlayLayoutRules.Tabs;
 
     private string activeTab = "Overview";
-    private PlayerIntelligence? playerIntelligence;
+    private PlayerIntelligenceProfile? playerProfile;
+    private PlayerProjection? playerProjection;
+    private string projectionBaselineLabel = "—";
+    private string projectionBaselineDetail = string.Empty;
+    private IReadOnlyList<NewsArticle> playerNews = [];
+    private IReadOnlyList<PlayerSeasonStats> allPlayerSeasonStats = [];
+    private IReadOnlyList<PlayerSeasonStats> careerSeasonStats = [];
+    private IReadOnlyList<PlayerSeasonStats> collegeSeasonStats = [];
+    private IReadOnlyList<PlayerGameStats> recentGameLogs = [];
+    private PlayerStatisticalContext? statisticalContext;
+    private PlayerInjuryProfile? injuryProfile;
+    private PlayerSeasonStats? selectedSeasonStats;
+    private PlayerSeasonStats? selectedCollegeStats;
+    private string selectedStatsKey = string.Empty;
+    private string selectedCollegeKey = string.Empty;
     private Guid? loadedPlayerId;
+    private Guid? loadedProjectionPlayerId;
+    private Guid? loadedProjectionLeagueId;
+    private Guid? loadedNewsPlayerId;
+    private Guid? loadedStatsPlayerId;
+    private Guid? loadedInjuriesPlayerId;
+    private Guid? openPlayerId;
+    private Guid? openLeagueId;
 
     protected override void OnInitialized()
     {
@@ -275,11 +700,59 @@
 
     private void OnOverlayChanged() => InvokeAsync(() =>
     {
+        var openedPlayerId = Overlay.IsOpen ? Overlay.Context?.Player.Id : null;
+        var openedLeagueId = Overlay.IsOpen ? Overlay.Context?.League?.Id : null;
+
         if (Overlay.IsOpen)
         {
-            activeTab = "Overview";
-            playerIntelligence = null;
-            loadedPlayerId = null;
+            // Reset section state when opening/switching players.
+            // On league/team context change for the same player, drop league-scoped caches only.
+            if (openedPlayerId != openPlayerId)
+            {
+                openPlayerId = openedPlayerId;
+                openLeagueId = openedLeagueId;
+                activeTab = "Overview";
+                playerProfile = null;
+                playerProjection = null;
+                projectionBaselineLabel = "—";
+                projectionBaselineDetail = string.Empty;
+                playerNews = [];
+                allPlayerSeasonStats = [];
+                careerSeasonStats = [];
+                collegeSeasonStats = [];
+                recentGameLogs = [];
+                statisticalContext = null;
+                injuryProfile = null;
+                selectedSeasonStats = null;
+                selectedCollegeStats = null;
+                selectedStatsKey = string.Empty;
+                selectedCollegeKey = string.Empty;
+                loadedPlayerId = null;
+                loadedProjectionPlayerId = null;
+                loadedProjectionLeagueId = null;
+                loadedNewsPlayerId = null;
+                loadedStatsPlayerId = null;
+                loadedInjuriesPlayerId = null;
+                EnsurePlayerNews();
+            }
+            else if (openedLeagueId != openLeagueId)
+            {
+                openLeagueId = openedLeagueId;
+                playerProjection = null;
+                projectionBaselineLabel = "—";
+                projectionBaselineDetail = string.Empty;
+                loadedProjectionPlayerId = null;
+                loadedProjectionLeagueId = null;
+                if (activeTab == "Projection")
+                {
+                    EnsurePlayerProjection();
+                }
+            }
+        }
+        else
+        {
+            openPlayerId = null;
+            openLeagueId = null;
         }
 
         StateHasChanged();
@@ -290,25 +763,281 @@
         activeTab = tab;
         if (tab == "Intelligence")
         {
-            EnsurePlayerIntelligence();
+            EnsurePlayerProfile();
+        }
+
+        if (tab == "Projection")
+        {
+            EnsurePlayerProjection();
+        }
+
+        if (tab is "Career" or "College")
+        {
+            EnsurePlayerStats();
+        }
+
+        if (tab == "Injuries")
+        {
+            EnsurePlayerInjuries();
+        }
+
+        if (tab == "Overview")
+        {
+            EnsurePlayerNews();
         }
     }
 
-    private void EnsurePlayerIntelligence()
+    private void EnsurePlayerProfile()
     {
         if (Overlay.Context is not { } context)
         {
             return;
         }
 
-        if (loadedPlayerId == context.Player.Id && playerIntelligence is not null)
+        if (loadedPlayerId == context.Player.Id && playerProfile is not null)
         {
             return;
         }
 
-        playerIntelligence = IntelligenceService.GetPlayerIntelligence(context.Player.Id);
+        playerProfile = IntelligenceService.GetPlayerProfile(context.Player.Id);
         loadedPlayerId = context.Player.Id;
     }
+
+    private void EnsurePlayerProjection()
+    {
+        if (Overlay.Context is not { } context)
+        {
+            return;
+        }
+
+        var leagueId = context.League?.Id;
+        if (loadedProjectionPlayerId == context.Player.Id &&
+            loadedProjectionLeagueId == leagueId &&
+            playerProjection is not null &&
+            playerProjection.LeagueId == leagueId)
+        {
+            return;
+        }
+
+        playerProjection = ProjectionService.GetProjection(context.Player.Id);
+        var production = ProductionProvider.GetProduction(context.Player);
+        projectionBaselineLabel = ProductionBaselineLabels.Describe(production);
+        projectionBaselineDetail = production.SourceDescription;
+        loadedProjectionPlayerId = context.Player.Id;
+        loadedProjectionLeagueId = leagueId;
+    }
+
+    private void EnsurePlayerNews()
+    {
+        if (Overlay.Context is not { } context)
+        {
+            return;
+        }
+
+        if (loadedNewsPlayerId == context.Player.Id)
+        {
+            return;
+        }
+
+        playerNews = NewsProvider.GetForPlayer(context.Player.Id, 6);
+        loadedNewsPlayerId = context.Player.Id;
+    }
+
+    private void EnsurePlayerStats()
+    {
+        if (Overlay.Context is not { } context)
+        {
+            return;
+        }
+
+        if (loadedStatsPlayerId == context.Player.Id)
+        {
+            return;
+        }
+
+        allPlayerSeasonStats = PlayerStatsService.GetStatsForPlayer(context.Player.Id);
+        careerSeasonStats = PlayerCareerSeasonPresentation.ForCareerSelector(
+            allPlayerSeasonStats,
+            context.Player.YearsPro);
+        collegeSeasonStats = PlayerCareerSeasonPresentation.ForCollegeTab(allPlayerSeasonStats);
+        recentGameLogs = PlayerStatsService.GetRecentGameLogs(context.Player.Id, 8);
+        statisticalContext = StatisticalContextService.GetContext(context.Player.Id);
+
+        selectedSeasonStats = careerSeasonStats.FirstOrDefault();
+        selectedStatsKey = selectedSeasonStats is null
+            ? string.Empty
+            : PlayerCareerSeasonPresentation.StatsKey(selectedSeasonStats);
+
+        selectedCollegeStats = collegeSeasonStats.FirstOrDefault();
+        selectedCollegeKey = selectedCollegeStats is null
+            ? string.Empty
+            : PlayerCareerSeasonPresentation.StatsKey(selectedCollegeStats);
+
+        loadedStatsPlayerId = context.Player.Id;
+    }
+
+    private void OnStatsSeasonChanged(ChangeEventArgs args)
+    {
+        selectedStatsKey = args.Value?.ToString() ?? string.Empty;
+        selectedSeasonStats = careerSeasonStats
+            .FirstOrDefault(r => PlayerCareerSeasonPresentation.StatsKey(r) == selectedStatsKey);
+    }
+
+    private void OnCollegeSeasonChanged(ChangeEventArgs args)
+    {
+        selectedCollegeKey = args.Value?.ToString() ?? string.Empty;
+        selectedCollegeStats = collegeSeasonStats
+            .FirstOrDefault(r => PlayerCareerSeasonPresentation.StatsKey(r) == selectedCollegeKey);
+    }
+
+    private void EnsurePlayerInjuries()
+    {
+        if (Overlay.Context is not { } context)
+        {
+            return;
+        }
+
+        if (loadedInjuriesPlayerId == context.Player.Id)
+        {
+            return;
+        }
+
+        injuryProfile = PlayerInjuryService.GetPlayerInjuryProfile(context.Player.Id);
+        loadedInjuriesPlayerId = context.Player.Id;
+    }
+
+    private static int? SumNullable(IEnumerable<int?> values)
+    {
+        var list = values.Where(v => v is not null).Select(v => v!.Value).ToList();
+        return list.Count == 0 ? null : list.Sum();
+    }
+
+    private RenderFragment RenderHistoryEntry(InjuryHistoryEntry entry) => __builder =>
+    {
+        var injury = entry.Record;
+        <li class="player-injury-entry @entry.EmphasisCssClass">
+            <div>
+                <span class="player-injury-badge player-injury-badge--historical">@(injury.Level == InjuryCompetitionLevel.College ? "College" : "NFL")</span>
+                <span class="player-injury-badge player-injury-badge--verified">@injury.VerificationLabel</span>
+                <strong>@injury.Date.ToLocalTime().ToString("MMM d, yyyy")</strong>
+                — @injury.Status
+                @if (!string.IsNullOrWhiteSpace(injury.BodyPart))
+                {
+                    <text> (@injury.BodyPart)</text>
+                }
+            </div>
+            @if (!string.IsNullOrWhiteSpace(injury.Description))
+            {
+                <div>@injury.Description</div>
+            }
+            <div class="player-section__muted">
+                Relevance @entry.RelevanceScore/100
+                @if (!string.IsNullOrWhiteSpace(entry.RelevanceReason))
+                {
+                    <text> · @entry.RelevanceReason</text>
+                }
+                @if (injury.GamesMissed is int missed)
+                {
+                    <text> · Games missed @missed</text>
+                }
+                @if (!string.IsNullOrWhiteSpace(injury.Source))
+                {
+                    <text> · @injury.Source</text>
+                }
+            </div>
+        </li>
+    };
+
+    private RenderFragment RenderSeasonDetail(PlayerSeasonStats season) => __builder =>
+    {
+        var counting = season.ToCountingStats();
+        var ppr = LeagueFantasyScoring.Calculate(counting, ScoringType.Ppr);
+        var half = LeagueFantasyScoring.Calculate(counting, ScoringType.HalfPpr);
+        var std = LeagueFantasyScoring.Calculate(counting, ScoringType.Standard);
+        var leagueScoring = Overlay.Context?.League?.ScoringType ?? ScoringType.Ppr;
+        var leaguePts = LeagueFantasyScoring.Calculate(counting, leagueScoring);
+
+        <p class="player-section__muted" style="margin-bottom:1rem;">
+            @PlayerCareerSeasonPresentation.FormatPeriodLabel(season.Period)
+            · @season.Level
+            @if (!string.IsNullOrWhiteSpace(season.CollegeSchool))
+            {
+                <text> · @season.CollegeSchool</text>
+            }
+            @if (!string.IsNullOrWhiteSpace(season.SourceProvider))
+            {
+                <text> · Source @season.SourceProvider</text>
+            }
+            @if (season.MissingFields.Count > 0)
+            {
+                <text> · Missing @season.MissingFields.Count field(s)</text>
+            }
+        </p>
+        <div class="player-profile__grid">
+            <div class="player-stat">
+                <span class="player-stat__label">Season</span>
+                <span class="player-stat__value">@season.Season</span>
+            </div>
+            <div class="player-stat">
+                <span class="player-stat__label">Games</span>
+                <span class="player-stat__value">@(season.Games?.ToString() ?? "—")</span>
+            </div>
+            <div class="player-stat">
+                <span class="player-stat__label">Starts</span>
+                <span class="player-stat__value">@(season.Starts?.ToString() ?? "—")</span>
+            </div>
+            <div class="player-stat">
+                <span class="player-stat__label">League (@FormatScoring(leagueScoring))</span>
+                <span class="player-stat__value">@leaguePts.ToString("0.0")</span>
+            </div>
+            <div class="player-stat">
+                <span class="player-stat__label">Fantasy (PPR)</span>
+                <span class="player-stat__value">@ppr.ToString("0.0")</span>
+            </div>
+            <div class="player-stat">
+                <span class="player-stat__label">Fantasy (Half)</span>
+                <span class="player-stat__value">@half.ToString("0.0")</span>
+            </div>
+            <div class="player-stat">
+                <span class="player-stat__label">Fantasy (Std)</span>
+                <span class="player-stat__value">@std.ToString("0.0")</span>
+            </div>
+            <div class="player-stat">
+                <span class="player-stat__label">Fumbles</span>
+                <span class="player-stat__value">@(season.Fumbles?.ToString() ?? "—")</span>
+            </div>
+        </div>
+
+        <div class="player-overlay__stat-block">
+            <h3 class="player-section__title">Passing</h3>
+            <div class="player-profile__grid">
+                <div class="player-stat"><span class="player-stat__label">Att</span><span class="player-stat__value">@(season.PassAttempts?.ToString() ?? "—")</span></div>
+                <div class="player-stat"><span class="player-stat__label">Cmp</span><span class="player-stat__value">@(season.PassCompletions?.ToString() ?? "—")</span></div>
+                <div class="player-stat"><span class="player-stat__label">Yards</span><span class="player-stat__value">@(season.PassYards?.ToString() ?? "—")</span></div>
+                <div class="player-stat"><span class="player-stat__label">TD</span><span class="player-stat__value">@(season.PassTouchdowns?.ToString() ?? "—")</span></div>
+                <div class="player-stat"><span class="player-stat__label">INT</span><span class="player-stat__value">@(season.PassInterceptions?.ToString() ?? "—")</span></div>
+            </div>
+        </div>
+
+        <div class="player-overlay__stat-block">
+            <h3 class="player-section__title">Rushing</h3>
+            <div class="player-profile__grid">
+                <div class="player-stat"><span class="player-stat__label">Att</span><span class="player-stat__value">@(season.RushAttempts?.ToString() ?? "—")</span></div>
+                <div class="player-stat"><span class="player-stat__label">Yards</span><span class="player-stat__value">@(season.RushYards?.ToString() ?? "—")</span></div>
+                <div class="player-stat"><span class="player-stat__label">TD</span><span class="player-stat__value">@(season.RushTouchdowns?.ToString() ?? "—")</span></div>
+            </div>
+        </div>
+
+        <div class="player-overlay__stat-block">
+            <h3 class="player-section__title">Receiving</h3>
+            <div class="player-profile__grid">
+                <div class="player-stat"><span class="player-stat__label">Targets</span><span class="player-stat__value">@(season.Targets?.ToString() ?? "—")</span></div>
+                <div class="player-stat"><span class="player-stat__label">Receptions</span><span class="player-stat__value">@(season.Receptions?.ToString() ?? "—")</span></div>
+                <div class="player-stat"><span class="player-stat__label">Yards</span><span class="player-stat__value">@(season.ReceivingYards?.ToString() ?? "—")</span></div>
+                <div class="player-stat"><span class="player-stat__label">TD</span><span class="player-stat__value">@(season.ReceivingTouchdowns?.ToString() ?? "—")</span></div>
+            </div>
+        </div>
+    };
 
     private void Close() => Overlay.Close();
 

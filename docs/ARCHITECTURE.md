@@ -86,7 +86,7 @@ UI (Blazor)
 | --- | --- |
 | **Data Engine** | Ingest and normalize NFL, injury, weather, tracking, and market inputs |
 | **Intelligence Engine** | Convert football information into structured `IntelligenceFact` / `PlayerIntelligence` — no fantasy scoring |
-| **Projection Engine** | Produce expected points, floor, ceiling, and confidence from intelligence + league context |
+| **Projection Engine** | Produce expected points, floor, median, ceiling, confidence, and volatility from intelligence + league context (no fantasy decisions) |
 | **Prediction Engine** | Estimate outcomes (win probability, game script, volume distributions) |
 | **Decision Engine** | Turn projections/predictions into actionable choices (start/sit, waiver, trade, draft) |
 | **Recommendation Service** | Aggregate, rank, and expose `Recommendation` objects to the UI |
@@ -124,30 +124,56 @@ Swap `MockIntelligenceService` for a Data-Engine-backed implementation without c
 
 ## League State
 
-The selected fantasy league is global application context. Every future recommendation engine should read from this state so outputs stay league-aware (scoring, roster rules, matchups).
+The selected fantasy league is global application context. Projection, Intelligence consumers, and player context read from this state so outputs stay league-aware (scoring, roster ownership, week).
 
 ### Contracts
 
-- `Playbook.Core.Leagues.League` — domain model with platform, type, scoring, week, season, and activity flags
-- `ILeagueService` — catalog + selection API (`GetAllLeagues`, `GetCurrentLeague`, `SelectLeague`)
-- `ILeagueState` — process-lifetime selected league plus a `Changed` notification for UI (and later engines)
+- `Playbook.Core.Leagues.League` — domain model with platform, type, scoring, week, season, `DataSource` (Mock / Sleeper), optional `ExternalId` / `ReceptionPoints`, `SelectedRosterId`
+- `FantasyTeam` — roster/team inside a league with Playbook player ids (`RosterId` is the durable team key)
+- `ILeagueService` — catalog + selection + `ConnectSleeperLeagueAsync` + `SelectUserTeam` / `GetUserTeam`
+- `ILeagueState` — process-lifetime selected league, `CurrentUserTeam`, teams, `Changed`, Sleeper connect
+- `ILeagueUserTeamStore` — persists `externalLeagueId → rosterId` across restarts
+- `ISleeperLeagueClient` — fetches league settings, users, and rosters by Sleeper league id
+- `ILeagueSyncStatus` — connect/loading diagnostics for the Developer Monitor
 
-### Mock Service
+### Providers
 
-`MockLeagueService` (Infrastructure) seeds three in-memory leagues: Friends League, Dynasty League, and Work League. No database or external APIs are involved.
+- `MockLeagueService` — demo catalog (Friends / Dynasty / Work) kept as fallback; defaults `SelectedRosterId = 1`
+- `SleeperLeagueClient` — public Sleeper API (`/league/{id}`, `/rosters`, `/users`, `/state/nfl`)
+- `CompositeLeagueService` — merges mock + connected live leagues; scoring mapped from Sleeper `rec` (not hard-coded)
+- `LeagueUserTeamStore` — JSON file under `data/league-user-teams.json`
+
+### Connect + team setup
+
+1. User enters Sleeper league ID → league/rosters load  
+2. If a saved roster exists for that external id, restore and complete setup  
+3. Otherwise `NeedsTeamSelection` — previous current league stays active until the user picks a team  
+4. `SelectUserTeam` persists the choice and sets the league current  
+
+UI (`LeagueSwitcher`, Dashboard, My Teams, Player Overlay) shows **My team** and distinguishes the user's roster. Connect remains league-ID only (no Sleeper OAuth).
+
+### Personalized analysis source of truth
+
+`ILeagueState.Changed` is the invalidation signal for league/team-scoped surfaces:
+
+- `ProjectionService.Invalidate()` clears scoring-sensitive projection caches
+- `MockRecommendationService` rebuilds stamped recommendations (`LeagueId` + `SelectedRosterId`)
+- Dashboard / Player Explorer / My Teams clear stale cards, show a short loading state, then reload
+- Player Overlay drops league-scoped projection cache when the same player is open across a league switch
+- Player-level Intelligence profiles remain global (football signal, not fantasy-league-specific)
 
 ### Dependency Injection
 
 Registered as singletons so selection survives navigation for the lifetime of the running app:
 
-- `ILeagueService` → `MockLeagueService`
+- `ILeagueService` → `CompositeLeagueService`
 - `ILeagueState` → `LeagueStateService`
+- `ILeagueUserTeamStore` → `LeagueUserTeamStore`
+- `ISleeperLeagueClient` → `SleeperLeagueClient`
 
-UI components (`LeagueSwitcher`, Dashboard) inject `ILeagueState` and subscribe to `Changed`. Avoid static state.
+### Future
 
-### Future replacement with real APIs
-
-Swap `MockLeagueService` for an API/EF-backed implementation of `ILeagueService` without changing UI or engine consumers. Persist the last-selected league id (cookie/local storage/user profile) when accounts exist.
+Optional username→league discovery and account-backed preferences can come later without changing engine consumers.
 
 ## Recommendation Model
 
@@ -183,14 +209,314 @@ The Player Engine is the football domain model — not an ingestion pipeline. Ev
 - Supplemental structures: `SeasonStats`, `CareerStats`, `CollegeStats`, `InjuryRecord`, `PlayerTrend`
 - `PlayerProfile` — aggregated view engines should request instead of assembling pieces
 - `IPlayerService` — `GetAllPlayers`, `GetPlayer`, `GetPlayerProfile`, `SearchPlayers`
+- `IPlayerDataProvider` — raw catalog source (`Mock` or `Live`); UI never calls this directly
+- `IPlayerDataSyncStatus` — developer telemetry for the active provider
 
-### Mock Service
+### Provider architecture (first live integration)
 
-`MockPlayerService` seeds ~20 players across QB/RB/WR/TE/K/DST with mock profiles. UI never constructs players.
+```
+appsettings PlayerData:Provider = Mock | Live
+        │
+        ▼
+   PlayerService  ──uses──►  IPlayerDataProvider (primary)
+        │                         │
+        │                         ├── MockPlayerDataProvider
+        │                         └── LivePlayerDataProvider (Sleeper)
+        │
+        └── on live failure ──► MockPlayerDataProvider (automatic fallback)
+```
 
-### Future Data Engine integration
+- **Selected live API:** [Sleeper](https://docs.sleeper.com/) `GET /players/nfl` (filtered by fantasy position). Free public reads; `PlayerData:Sleeper:ApiKey` is reserved for future auth.
+- Flip sources with configuration only — no UI or `IPlayerService` consumer changes.
+- `PlayerService` records configured vs active provider, last sync, player count, response time, and last error for the Developer Monitor.
 
-The Data Engine will populate and refresh player records (stats, injuries, depth charts). Swap `MockPlayerService` for a Data-Engine-backed `IPlayerService` without changing Player Explorer or downstream recommendation engines that depend on `PlayerProfile`.
+### Mock enrichment
+
+When the active catalog is mock (configured or fallback), `PlayerService` still attaches rich mock profiles. Live catalogs map identity/status fields only until projection/stats providers exist.
+
+### Future Data Engine / provider additions
+
+Add new providers the same way: define an application interface (e.g. `INewsDataProvider`), implement Mock + Live in Infrastructure, bind a config section, register both, and have the consuming service fall back to mock on failure. Candidates:
+
+| Provider | Purpose |
+| --- | --- |
+| **News** | Headlines and injury blurbs feeding Intelligence |
+| **Odds** | Market lines for projection/decision confidence |
+| **Weather** | Game-environment signals |
+| **Schedules** | Matchups and bye weeks |
+| **Injuries** | ✅ Implemented — `IPlayerInjuryProvider` / `IPlayerInjuryService` (ESPN + Sleeper) |
+
+The Data Engine will eventually orchestrate these providers and refresh `Player` / `PlayerProfile` without changing Player Explorer or overlay UI.
+
+## News Provider
+
+The News Provider retrieves and normalizes football news. It is **not** the Intelligence Engine — it only supplies structured `NewsArticle` objects.
+
+### Contracts
+
+- `NewsArticle` — Id, Title, Summary, Published, Source, Url, RelatedPlayerIds, RelatedTeamIds, Category, Priority
+- `INewsProvider` — UI-facing API (`GetLatest`, `GetForPlayer`, `RefreshAsync`)
+- `INewsSource` — Mock/Live adapters
+- `INewsSyncStatus` — developer telemetry
+
+### Provider flow
+
+```
+appsettings News:Provider = Mock | Live
+        │
+        ▼
+   INewsProvider (NewsProvider facade)
+        │
+        ├── MockNewsProvider
+        └── LiveNewsProvider (ESPN)
+        │
+        └── on live failure ──► MockNewsProvider
+```
+
+### Normalization
+
+Live ESPN articles are mapped into `NewsArticle`. Athlete names from ESPN categories are resolved to Playbook player Guids by matching against the loaded player catalog when the API does not provide Playbook ids.
+
+### Future Intelligence integration
+
+The Intelligence Engine consumes `INewsProvider` (normalized `NewsArticle` values) plus the player catalog. Do not parse ESPN (or any wire format) inside Intelligence.
+
+## Intelligence Engine (V1)
+
+Playbook's first reasoning layer. It transforms raw news into actionable **football** intelligence — not fantasy recommendations.
+
+### Pipeline
+
+```
+NewsArticle (INewsProvider) + Player catalog
+        │
+        ▼
+ IntelligenceAnalyzer (deterministic rules)
+        │
+        ▼
+ IntelligenceFact (+ RelatedNewsArticleIds)
+        │
+        ▼
+ IIntelligenceService → Dashboard / Player Overlay
+```
+
+### Analyzer / rule engine
+
+`IntelligenceAnalyzer` applies ordered, explainable keyword heuristics (injury, usage, transactions, suspensions, practice, coaching, weather, etc.). Each match emits an `IntelligenceFact` with:
+
+- Category, importance, confidence
+- Supporting evidence: rule id, matched phrase, reason
+- Related news article id(s) and optional player/team links
+
+Given the same articles and players, outputs are identical (deterministic Guids).
+
+### Explainability
+
+UI surfaces reasons and source article links. Downstream engines should treat facts as evidence packages, not opaque scores.
+
+### Future ML integration
+
+Replace or augment `IIntelligenceAnalyzer` with an ML model that still emits `IntelligenceFact` with article references and human-readable evidence. Keep `IIntelligenceService` and UI unchanged.
+
+### Aggregation pipeline
+
+```
+IntelligenceFact[]
+        │
+        ▼
+ IntelligenceAggregator
+   (group by player → dedupe → weighted scores)
+        │
+        ▼
+ PlayerIntelligenceProfile  ← canonical engine input
+```
+
+Weighted scoring starts at a configurable baseline (default 50) and applies rule deltas from `Intelligence:Scoring` (e.g. limited practice −25 health, full practice +15 health, starter language +20 opportunity). Importance and confidence scale each delta.
+
+### Future engine inputs
+
+Projection, Prediction, and Decision engines should take `PlayerIntelligenceProfile` as their football-intelligence input. Raw facts remain available for explainability UI only.
+
+### Background refresh
+
+`DataRefreshBackgroundService` refreshes players → stats → news → injuries → intelligence → projections. Each step is independently logged; a failure in one provider does not stop the others.
+
+## Player Injury Layer
+
+Structured injury designations for the Injuries tab, Intelligence health signals, and conservative Projection availability clamps.
+
+### Provider reality (inspected)
+
+| Capability | Live path | Mock |
+| --- | --- | --- |
+| Current injuries | ESPN + Sleeper | Mock current |
+| NFL historical / career injuries | **nflverse CSVs (GSIS join)** | `MockHistoricalInjuryProvider` |
+| College injuries | **Not supported** (`NullCollegeInjuryProvider`) | `MockCollegeInjuryProvider` |
+| Practice participation | Current: sparse Sleeper; Historical: nflverse | Seeded |
+| Game status | Current designation / historical report_status | Seeded |
+| Player identity | Sleeper + ESPN + GSIS crosswalk | Fixed catalog GUIDs |
+| Unconfirmed / reported news | News extractor (separate from verified) | News extractor |
+
+Pipeline: Providers → normalization → identity resolution → profile/relevance → Intelligence (no provider knowledge in the engine).
+
+### Provider pattern
+
+- `IPlayerInjuryProvider` — current designations (`MockPlayerInjuryProvider` | `LivePlayerInjuryProvider`)
+- `IHistoricalInjuryProvider` — optional history (`NullHistoricalInjuryProvider` for Live | `MockHistoricalInjuryProvider` for Mock)
+- `IPlayerInjuryService` — facade returning `PlayerInjuryProfile` with explicit `CurrentInjuryDataStatus` + `HistoricalDataStatus`
+- Live sources: ESPN `site/v2/sports/football/nfl/injuries` (primary) + Sleeper injury/practice fields (enrichment / gap-fill)
+- `PlayerInjuryRecord` — PlayerId, Date, Status, BodyPart, Description, PracticeStatus, GameStatus, Source, SourceUrl, Season, LastUpdated, IsCurrent
+- History is never fabricated from current-report snapshots. `NotSupportedByProvider` / `Unavailable` / `NoRecordsFound` are distinct from “never injured.”
+
+### Engine integration
+
+- Intelligence: `InjuryFactBuilder` emits scored facts only for **current** designations (`injury-out`, `injury-ir`, `injury-questionable`, `injury-limited`, `injury-positive`). Missing history does not emit a healthy (or unhealthy) fact.
+- Projection: `InjuryIntelligenceMapping.ProjectionHealthMultiplier` applies conservative × factors (e.g. Out 0.15, IR 0.10, Questionable 0.85) on top of intelligence health/risk adjustments
+
+## Player Statistics Layer
+
+```
+REAL DATA PROVIDERS → NORMALIZATION → CANONICAL PLAYER ID
+→ PLAYER STATISTICS STORE → INTELLIGENCE / PROJECTION / DECISION
+```
+
+### Provider pattern
+
+- `IPlayerStatsProvider` — `MockPlayerStatsProvider` | `LivePlayerStatsProvider` (Sleeper current/gap-fill)
+- `IHistoricalPlayerStatsProvider` — `NflversePlayerStatsProvider` | Mock | Null (weekly NFL game logs + season aggregates)
+- `ICollegeStatsProvider` — ESPN CFB / Mock (never mixed into NFL career samples)
+- `IPlayerStatsService` — sync pipeline (historical import, incremental current updates, college merge, career totals, intelligence invalidation)
+- `IPlayerStatisticalContextService` — recent/historical/career/usage/efficiency/consistency/volatility/trend for Intelligence
+- `LeagueFantasyScoring` — PPR / Half-PPR / Standard from canonical counting stats + league scoring type
+- Caches: season JSON + game-log JSON + per-season nflverse `.csv.gz` on disk
+
+### Data model
+
+`PlayerSeasonStats` / `PlayerGameStats` / `CanonicalCountingStats` with `FootballLevel` (NFL | College | Career). Null means missing; zero means recorded zero. Optional fantasy convenience fields may be stored, but league points are calculated from football stats + `ScoringType`.
+
+### Projection Engine v0.1
+
+Estimates **numerical expected outcomes** only. Version-stamped for Replay Lab / backtesting. Does not encode start/sit, waiver, draft, or trade decisions.
+
+APIs: `ProjectPlayer` / `ComparePlayers` / `ProjectRoster` / `GetProjection`.
+
+### Projection inputs
+
+| Input | Role |
+| --- | --- |
+| Stats store + `PlayerStatisticalContext` | Weighted recent / historical / career / college baselines |
+| `PlayerProductionSnapshot` | Season production components |
+| `PlayerIntelligenceProfile` | Health / opportunity / usage / risk / momentum / trend |
+| Injury records | Availability multipliers |
+| `IMatchupContextProvider` | Optional — unavailable in v0.1 (no fabrication) |
+| `IGameEnvironmentProvider` | Optional — unavailable in v0.1 (no fabrication) |
+| League scoring | Same football baseline → PPR / Half / Standard |
+
+### Projection pipeline
+
+```
+Statistics → Intelligence → Projection Engine v0.1
+        │
+        +── optional Matchup / GameEnvironment (may be unavailable)
+        +── League scoring context
+        ▼
+ PlayerProjection
+   (points / floor / median / ceiling / confidence / volatility
+    + LeagueId / Week / ScoringFormat / InputsUsed / ProjectionVersion)
+        │
+        ▼
+ IProjectionService → Overlay / Explorer / Monitor
+        │
+        ▼
+ Decision / Fantasy Recommendations (league-aware)
+```
+
+Floor/ceiling bands scale with volatility and uncertainty — not fixed ± offsets.
+
+### Quick Picks / Prediction Engine v0.3
+
+Independent football prediction surface (player/game props). **Not fantasy** — does not read active league, owned team, roster, or scoring settings.
+
+```
+Real Football Data
+        ↓
+The Odds API (preseason sport + regular sport) or Mock
+        ↓
+INflCalendarService → NflSlate[] from kickoff clusters
+        ↓
+Select next incomplete slate (or navigator selection)
+        ↓
+Intelligence + Injury + PropStatProjector (phase-aware)
+        ↓
+QuickPicksEngine v0.3 → board / filters / cards
+```
+
+`NflSlate` / `NflWeekRef` is the shared slate identity (season, phase, week/round). Preseason is exactly weeks 1–3; postseason rounds are Wild Card / Divisional / Conference / Super Bowl. Default view is the next incomplete slate with real markets — never an invented week, never mixed slates.
+
+Preseason: regular-season production is a prior only (confidence tempered). Current injury, unconfirmed buzz (labeled), usage/opportunity, and news remain active signals.
+
+Engine inputs (`QuickPickEvaluationContext`): projection, player intelligence, injury profile, statistical usage, recent facts, season phase, live/mock line.
+Weights: `QuickPicks:Scoring`. Structured `PredictionSignalContribution` rows support later tuning without UI rewrites.
+
+Provider: The Odds API (`IPropLineProvider` / `LivePropLineProvider`) is primary.
+`MockPropLineProvider` remains the automatic fallback when the API key is missing, the request fails, or markets are empty.
+Config: `PropLines` / `PropLines__OddsApi__ApiKey` (see `docs/PROP_LINES.md`).
+
+### Position-specific baselines
+
+Weekly fantasy points are computed from season production ÷ games:
+
+| Position | Components |
+| --- | --- |
+| QB | Passing volume/efficiency (yds, TD, INT) + rushing contribution |
+| RB | Carries / rush yds / rush TD + targets / receptions / receiving yds / TD |
+| WR | Targets / receptions / receiving yds / TD (+ rare rush) |
+| TE | Targets / receptions / receiving yds / TD |
+| K / DST | Specialist weekly prior |
+
+Fantasy math (`FantasyScoring`): pass yds/25, pass TD×4, INT×−2, rush/rec yds/10, rush/rec TD×6, receptions × 0 / 0.5 / 1.0 by scoring type.
+
+### Intelligence adjustments
+
+Centralized in `Projection:Rules`:
+
+| Signal | Effect |
+| --- | --- |
+| High Opportunity | Increases expected volume (× factor) |
+| Low Opportunity | Decreases expected volume |
+| Health concern | Reduces projection; widens downside (floor) |
+| Strong usage / trend up | Raises median and ceiling |
+| Negative usage / trend down | Decreases projection |
+| Elevated Risk | Trims projection |
+| High intel confidence | Reduces volatility |
+| Low intel confidence | Increases volatility |
+
+### Fallback behavior
+
+`IPlayerProductionProvider` resolution order:
+
+1. **CuratedSeason** — player-specific catalog keyed by normalized name (works for mock + live ids)
+2. **ProfileSeason** — `SeasonStats` from `PlayerProfile` when populated by a future live stats path
+3. **AttributeFallback** — position shell scaled by YearsPro, Age, and Status (explicitly labeled in reasoning)
+
+Live Sleeper currently supplies identity only (no box scores). Unknown live players therefore use attribute fallback until a stats provider implements `IPlayerProductionProvider`.
+
+### Validation tests
+
+`ProjectionEngineTests` covers: same-position differentiation, opportunity↑ ⇒ projection↑, health concern downside, stronger production ⇒ higher baseline, PPR ≠ Half-PPR for receivers, Floor &lt; Median &lt; Ceiling, confidence 0–100, league scoring refresh.
+
+### Contracts
+
+- `PlayerProjection`, `ProjectionLeagueContext`, `PlayerProductionSnapshot` — `Playbook.Core.Projections.Models`
+- `IProjectionEngine`, `IProjectionService`, `IPlayerProductionProvider` — `Playbook.Application.Projections.Interfaces`
+- `ProjectionEngine`, `ProjectionService`, `PlayerProductionProvider` — `Playbook.Infrastructure.Projections.Services`
+- UI feature folder — `Playbook.Web.Features.Projections`
+
+### UI surfaces
+
+- Player Overlay **Projection** tab (player-specific reasoning)
+- Player Explorer sortable **Projected Points**
+- Developer Monitor: Players Projected, Unique Projection Values, Average Projection, Average Confidence, Projection Runtime
 
 ## Player Overlay
 
