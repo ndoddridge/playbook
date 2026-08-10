@@ -229,6 +229,18 @@ public static class HistoricalReplayCommands
     }
 
     /// <summary>
+    /// Data Sufficiency Trust Gate Experiment V1: Baseline vs Enhanced(DataSufficiencyTrust).
+    /// Selects Limited penalty on development, freezes, ONE 2024 holdout.
+    /// </summary>
+    public static Task<KnowledgeImpactExperimentReport> RunDataSufficiencyTrustExperimentAsync(
+        IServiceProvider services,
+        CancellationToken cancellationToken = default)
+    {
+        var runner = services.GetRequiredService<Knowledge.KnowledgeImpactExperimentRunner>();
+        return runner.RunOfficialDataSufficiencyTrustExperimentAsync(cancellationToken);
+    }
+
+    /// <summary>
     /// Quick Picks Historical Evaluation V1: Baseline then Enhanced (observational),
     /// development seasons first, then ONE 2024 holdout.
     /// </summary>

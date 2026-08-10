@@ -2,6 +2,7 @@ using Playbook.Application.Knowledge;
 using Playbook.Core.Decisions;
 using Playbook.Core.Knowledge;
 using Playbook.Core.Predictions;
+using Playbook.Core.Replay;
 
 namespace Playbook.Infrastructure.Knowledge;
 
@@ -13,6 +14,7 @@ namespace Playbook.Infrastructure.Knowledge;
 /// - RecentForm: bounded OpportunityScore delta from RecentProductionScore thresholds.
 /// - RecentFormThinMargin: same RecentForm deltas, only when ComparativeMargin is thin.
 /// - RoleHealth: keep Health signals; bounded OpportunityScore delta from RoleNote heuristics.
+/// - DataSufficiencyTrust: KnowledgeConfidence penalty when Limited/Insufficient (no Opportunity restore).
 ///
 /// Baseline: strip Usage/Opportunity/RecentProduction/Role/Health knowledge inputs
 /// so AssessValues sees projection + default missing penalties only.
@@ -35,7 +37,11 @@ public sealed class KnowledgeImpactApplicator : IKnowledgeImpactApplicator
             KnowledgeMode.Passthrough => source,
             KnowledgeMode.Baseline => ToBaseline(source),
             KnowledgeMode.Enhanced => ToEnhanced(
-                source, _state.ActiveGroups, comparativeMargin, _state.ThinMarginMaxPoints),
+                source,
+                _state.ActiveGroups,
+                comparativeMargin,
+                _state.ThinMarginMaxPoints,
+                _state.DataSufficiencyLimitedPenalty),
             _ => source
         };
 
@@ -128,7 +134,21 @@ public sealed class KnowledgeImpactApplicator : IKnowledgeImpactApplicator
             }
         }
 
-        if (delta == 0m)
+        var confidence = source.Confidence;
+        if (_state.ActiveGroups.HasFlag(KnowledgeImpactGroup.DataSufficiencyTrust))
+        {
+            var sufficiency = ExtractDataSufficiency(knowledgeContext.Knowledge.Facts);
+            var penalty = PenaltyFor(sufficiency, _state.DataSufficiencyLimitedPenalty);
+            if (penalty > 0)
+            {
+                var before = confidence;
+                confidence = Math.Clamp(confidence - penalty, 12, 95);
+                notes.Add(
+                    $"DataSufficiencyTrust: {sufficiency} Confidence {before}→{confidence} (−{penalty})");
+            }
+        }
+
+        if (delta == 0m && confidence == source.Confidence)
         {
             return source;
         }
@@ -136,7 +156,10 @@ public sealed class KnowledgeImpactApplicator : IKnowledgeImpactApplicator
         var adjusted = Math.Clamp(source.OpportunityScore + delta, 0m, 100m);
         var calc = source.CalculationNotes.ToList();
         calc.AddRange(notes);
-        calc.Add($"KnowledgeImpact { _state.ActiveGroups }: OpportunityScore {source.OpportunityScore:0.00} → {adjusted:0.00}");
+        if (delta != 0m)
+        {
+            calc.Add($"KnowledgeImpact { _state.ActiveGroups }: OpportunityScore {source.OpportunityScore:0.00} → {adjusted:0.00}");
+        }
 
         return new Prediction
         {
@@ -150,7 +173,7 @@ public sealed class KnowledgeImpactApplicator : IKnowledgeImpactApplicator
             PlaybookProjection = source.PlaybookProjection,
             Probability = source.Probability,
             Edge = source.Edge,
-            Confidence = source.Confidence,
+            Confidence = confidence,
             Direction = source.Direction,
             Reasoning = source.Reasoning,
             SupportingIntelligence = source.SupportingIntelligence,
@@ -212,14 +235,29 @@ public sealed class KnowledgeImpactApplicator : IKnowledgeImpactApplicator
             source,
             groups,
             comparativeMargin: null,
-            thinMarginMax: FrozenRecentFormThinMarginExperimentV1.ThinMarginMaxPoints);
+            thinMarginMax: FrozenRecentFormThinMarginExperimentV1.ThinMarginMaxPoints,
+            limitedPenalty: FrozenDataSufficiencyTrustExperimentV1.SelectedLimitedPenalty);
 
     /// <summary>Enhanced transform with optional comparative margin for thin-margin gating.</summary>
     public static PlayerKnowledge ToEnhanced(
         PlayerKnowledge source,
         KnowledgeImpactGroup groups,
         double? comparativeMargin,
-        double thinMarginMax)
+        double thinMarginMax) =>
+        ToEnhanced(
+            source,
+            groups,
+            comparativeMargin,
+            thinMarginMax,
+            FrozenDataSufficiencyTrustExperimentV1.SelectedLimitedPenalty);
+
+    /// <summary>Enhanced transform with margin + data-sufficiency trust parameters.</summary>
+    public static PlayerKnowledge ToEnhanced(
+        PlayerKnowledge source,
+        KnowledgeImpactGroup groups,
+        double? comparativeMargin,
+        double thinMarginMax,
+        int limitedPenalty)
     {
         var working = ToBaseline(source);
         var opportunity = working.OpportunityScore;
@@ -351,9 +389,30 @@ public sealed class KnowledgeImpactApplicator : IKnowledgeImpactApplicator
 
         _ = groups.HasFlag(KnowledgeImpactGroup.Matchup);
 
-        var sourceId = thinMarginActive
-            ? FrozenRecentFormThinMarginExperimentV1.ExperimentId
-            : FrozenKnowledgeImpactExperimentV1.ExperimentId;
+        if (groups.HasFlag(KnowledgeImpactGroup.DataSufficiencyTrust))
+        {
+            // Trust-only: do not restore Usage / RecentForm / RoleHealth Opportunity scores.
+            var sufficiency = ExtractDataSufficiency(source.Facts) ?? ExtractDataSufficiency(facts);
+            var penalty = PenaltyFor(sufficiency, limitedPenalty);
+            if (penalty > 0)
+            {
+                var before = confidence;
+                confidence = Math.Clamp(confidence - penalty, 12, 95);
+                transformNotes.Add(
+                    $"DataSufficiencyTrust: {sufficiency} KnowledgeConfidence {before}→{confidence} (−{penalty})");
+            }
+            else
+            {
+                transformNotes.Add(
+                    $"DataSufficiencyTrust: {sufficiency?.ToString() ?? "unknown"} no confidence penalty");
+            }
+        }
+
+        var sourceId = groups.HasFlag(KnowledgeImpactGroup.DataSufficiencyTrust)
+            ? FrozenDataSufficiencyTrustExperimentV1.ExperimentId
+            : thinMarginActive
+                ? FrozenRecentFormThinMarginExperimentV1.ExperimentId
+                : FrozenKnowledgeImpactExperimentV1.ExperimentId;
 
         foreach (var note in transformNotes)
         {
@@ -369,6 +428,41 @@ public sealed class KnowledgeImpactApplicator : IKnowledgeImpactApplicator
 
         return Clone(source, facts, signals, opportunity, usage, healthLabel, missing, confidence);
     }
+
+    public static DataSufficiency? ExtractDataSufficiency(IEnumerable<KnowledgeFact> facts)
+    {
+        var fact = facts.FirstOrDefault(f =>
+            f.Key.Equals("projection.data_sufficiency", StringComparison.OrdinalIgnoreCase));
+        if (fact is null)
+        {
+            return null;
+        }
+
+        if (fact.Statement.Contains("Insufficient", StringComparison.OrdinalIgnoreCase))
+        {
+            return DataSufficiency.Insufficient;
+        }
+
+        if (fact.Statement.Contains("Limited", StringComparison.OrdinalIgnoreCase))
+        {
+            return DataSufficiency.Limited;
+        }
+
+        if (fact.Statement.Contains("Sufficient", StringComparison.OrdinalIgnoreCase))
+        {
+            return DataSufficiency.Sufficient;
+        }
+
+        return null;
+    }
+
+    public static int PenaltyFor(DataSufficiency? sufficiency, int limitedPenalty) =>
+        sufficiency switch
+        {
+            DataSufficiency.Limited => limitedPenalty,
+            DataSufficiency.Insufficient => limitedPenalty + FrozenDataSufficiencyTrustExperimentV1.InsufficientExtraPenalty,
+            _ => 0
+        };
 
     public static bool IsThinMargin(double? comparativeMargin, double thinMarginMax) =>
         comparativeMargin is double m && m < thinMarginMax;

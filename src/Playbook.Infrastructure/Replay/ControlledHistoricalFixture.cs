@@ -76,6 +76,7 @@ public static class ControlledHistoricalFixture
                     RoleNote = "Feature back role entering the week",
                     RecentProductionScore = 64,
                     UnavailableSignals = [],
+                    DataSufficiency = DataSufficiency.Sufficient,
                     ProjectedRushYards = 72.0,
                     ProjectedReceivingYards = 18.0,
                     ProjectedReceptions = 2.5
@@ -97,6 +98,7 @@ public static class ControlledHistoricalFixture
                     RoleNote = "Change-of-pace / pass-down role",
                     RecentProductionScore = 50,
                     UnavailableSignals = [],
+                    DataSufficiency = DataSufficiency.Limited,
                     ProjectedRushYards = 45.0,
                     ProjectedReceivingYards = 28.0,
                     ProjectedReceptions = 3.5

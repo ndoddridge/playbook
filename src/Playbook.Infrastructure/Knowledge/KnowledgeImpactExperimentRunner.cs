@@ -545,6 +545,354 @@ public sealed class KnowledgeImpactExperimentRunner
         }
     }
 
+    /// <summary>
+    /// Data Sufficiency Trust Gate Experiment V1: Baseline vs Enhanced(DataSufficiencyTrust).
+    /// Selects Limited penalty on development LOOCV, freezes, ONE 2024 holdout (Start/Sit primary).
+    /// Also records Quick Picks Baseline vs Enhanced under the frozen penalty (trust-only; ranking unchanged).
+    /// </summary>
+    public async Task<KnowledgeImpactExperimentReport> RunOfficialDataSufficiencyTrustExperimentAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var developmentSeasons = FrozenDataSufficiencyTrustExperimentV1.DevelopmentSeasons.ToList();
+        var holdout = FrozenDataSufficiencyTrustExperimentV1.HoldoutSeason;
+        var groups = FrozenDataSufficiencyTrustExperimentV1.ExperimentalGroups;
+
+        var projectionState = _services.GetRequiredService<HistoricalProjectionExperimentState>();
+        var policyState = _services.GetRequiredService<ConfidenceAwareDecisionPolicyState>();
+        var knowledgeState = _services.GetRequiredService<KnowledgeImpactExperimentState>();
+
+        var previousProjection = projectionState.PrimaryMode;
+        var previousPolicy = policyState.Mode;
+        var previousKnowledgeMode = knowledgeState.Mode;
+        var previousGroups = knowledgeState.ActiveGroups;
+        var previousSelectedPenalty = FrozenDataSufficiencyTrustExperimentV1.SelectedLimitedPenalty;
+
+        projectionState.PrimaryMode = HistoricalProjectionPrimaryMode.ProjectionV2;
+        policyState.Mode = ConfidenceAwareDecisionPolicyMode.Off;
+
+        try
+        {
+            AssertFrozenLayersUnchanged();
+            AssertRejectedTransformsStayOff(groups);
+
+            var seasonRunner = _services.GetRequiredService<IMultiWeekHistoricalReplayRunner>();
+            var calendar = _services.GetRequiredService<IHistoricalSeasonCalendar>();
+
+            _logger.LogInformation("DataSufficiencyTrust: development BASELINE");
+            var baselineDevCards = await RunSeasonsAsync(
+                    seasonRunner, calendar, developmentSeasons,
+                    KnowledgeMode.Baseline, KnowledgeImpactGroup.None, knowledgeState, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (baselineDevCards.Any(c => c.Season == holdout))
+            {
+                throw new InvalidOperationException("Holdout leaked into data-sufficiency development set.");
+            }
+
+            // Development selection over candidate Limited penalties (never uses 2024).
+            var looSummaries = new List<string>();
+            var meanByPenalty = new Dictionary<int, double>();
+            foreach (var penalty in FrozenDataSufficiencyTrustExperimentV1.CandidateLimitedPenalties)
+            {
+                FrozenDataSufficiencyTrustExperimentV1.SelectedLimitedPenalty = penalty;
+                knowledgeState.DataSufficiencyLimitedPenalty = penalty;
+
+                var enhanced = await RunSeasonsAsync(
+                        seasonRunner, calendar, developmentSeasons,
+                        KnowledgeMode.Enhanced, groups, knowledgeState, cancellationToken)
+                    .ConfigureAwait(false);
+
+                var foldDeltas = new List<double>();
+                foreach (var valSeason in developmentSeasons)
+                {
+                    var baseTot = TotalDecisionValue(baselineDevCards.Where(c => c.Season == valSeason));
+                    var enhTot = TotalDecisionValue(enhanced.Where(c => c.Season == valSeason));
+                    var delta = enhTot - baseTot;
+                    foldDeltas.Add(delta);
+                    looSummaries.Add(
+                        $"DataSufficiencyTrust penalty={penalty} val={valSeason}: " +
+                        $"baseTot={baseTot:0.00} enhTot={enhTot:0.00} Δ={delta:0.00}");
+                }
+
+                var meanDelta = foldDeltas.Average();
+                meanByPenalty[penalty] = meanDelta;
+                looSummaries.Add($"DataSufficiencyTrust penalty={penalty} meanΔ={meanDelta:0.00}");
+            }
+
+            var selectedPenalty = meanByPenalty.OrderByDescending(kv => kv.Value).First().Key;
+            FrozenDataSufficiencyTrustExperimentV1.SelectedLimitedPenalty = selectedPenalty;
+            knowledgeState.DataSufficiencyLimitedPenalty = selectedPenalty;
+            looSummaries.Add(
+                $"FROZEN SelectedLimitedPenalty={selectedPenalty} " +
+                $"(Insufficient={selectedPenalty + FrozenDataSufficiencyTrustExperimentV1.InsufficientExtraPenalty}) " +
+                string.Join(" ", meanByPenalty.Select(kv => $"p{kv.Key}={kv.Value:0.00}")));
+
+            // Freeze check — no further candidate search.
+            AssertDataSufficiencyTrustFrozen(selectedPenalty);
+
+            _logger.LogInformation(
+                "DataSufficiencyTrust: development ENHANCED frozen penalty={Penalty}",
+                selectedPenalty);
+            var enhancedDevCards = await RunSeasonsAsync(
+                    seasonRunner, calendar, developmentSeasons,
+                    KnowledgeMode.Enhanced, groups, knowledgeState, cancellationToken)
+                .ConfigureAwait(false);
+
+            var basRepeat = await RunSeasonsAsync(
+                    seasonRunner, calendar, [developmentSeasons[0]],
+                    KnowledgeMode.Baseline, KnowledgeImpactGroup.None, knowledgeState, cancellationToken)
+                .ConfigureAwait(false);
+            AssertSeasonCardDeterministic(baselineDevCards[0], basRepeat[0], "Baseline");
+
+            var enhRepeat = await RunSeasonsAsync(
+                    seasonRunner, calendar, [developmentSeasons[0]],
+                    KnowledgeMode.Enhanced, groups, knowledgeState, cancellationToken)
+                .ConfigureAwait(false);
+            AssertSeasonCardDeterministic(enhancedDevCards[0], enhRepeat[0], "Enhanced DataSufficiencyTrust");
+
+            var developmentBaseline = BuildScopeMetrics(
+                "DEV BASELINE", KnowledgeMode.Baseline, KnowledgeImpactGroup.None,
+                baselineDevCards, baselineDevCards);
+            var developmentEnhanced = BuildScopeMetrics(
+                "DEV ENHANCED DataSufficiencyTrust", KnowledgeMode.Enhanced, groups,
+                enhancedDevCards, baselineDevCards);
+
+            AssertFrozenLayersUnchanged();
+            AssertDataSufficiencyTrustFrozen(selectedPenalty);
+
+            _logger.LogInformation("DataSufficiencyTrust: official holdout {Season} BASELINE", holdout);
+            var holdoutBaselineCards = await RunSeasonsAsync(
+                    seasonRunner, calendar, [holdout],
+                    KnowledgeMode.Baseline, KnowledgeImpactGroup.None, knowledgeState, cancellationToken)
+                .ConfigureAwait(false);
+
+            _logger.LogInformation("DataSufficiencyTrust: official holdout {Season} ENHANCED", holdout);
+            var holdoutEnhancedCards = await RunSeasonsAsync(
+                    seasonRunner, calendar, [holdout],
+                    KnowledgeMode.Enhanced, groups, knowledgeState, cancellationToken)
+                .ConfigureAwait(false);
+
+            var holdoutBaseline = BuildScopeMetrics(
+                "HOLDOUT BASELINE", KnowledgeMode.Baseline, KnowledgeImpactGroup.None,
+                holdoutBaselineCards, holdoutBaselineCards);
+            var holdoutEnhanced = BuildScopeMetrics(
+                "HOLDOUT ENHANCED DataSufficiencyTrust", KnowledgeMode.Enhanced, groups,
+                holdoutEnhancedCards, holdoutBaselineCards);
+
+            // Quick Picks secondary measurement under frozen penalty (trust-only → ranking identity expected).
+            var qpNote = await MeasureQuickPicksUnderTrustGateAsync(
+                    selectedPenalty, developmentSeasons, holdout, cancellationToken)
+                .ConfigureAwait(false);
+
+            var failureNotes = BuildFailureAnalysis(
+                holdoutBaselineCards, holdoutEnhancedCards, holdoutBaseline, holdoutEnhanced);
+            failureNotes = failureNotes
+                .Append(FrozenDataSufficiencyTrustExperimentV1.MappingSummary)
+                .Append(
+                    $"SelectedLimitedPenalty={selectedPenalty}; " +
+                    $"InsufficientPenalty={selectedPenalty + FrozenDataSufficiencyTrustExperimentV1.InsufficientExtraPenalty}.")
+                .Append(qpNote)
+                .ToList();
+
+            var holdDelta = (holdoutEnhanced.TotalDecisionValue ?? 0) - (holdoutBaseline.TotalDecisionValue ?? 0);
+            var changeRate = (holdoutEnhanced.ChangeRatePercent ?? 0) / 100.0;
+            var devMean = meanByPenalty[selectedPenalty];
+
+            var (verdict, rationale) = JudgeDataSufficiencyTrust(holdDelta, changeRate, devMean, selectedPenalty);
+
+            var ablation = new KnowledgeImpactAblationRow
+            {
+                GroupName = "DataSufficiencyTrust",
+                Group = groups,
+                CoverageNote =
+                    $"Trust-only KnowledgeConfidence penalty when DataSufficiency Limited/Insufficient; " +
+                    $"LimitedPenalty={selectedPenalty}.",
+                Development = developmentEnhanced,
+                Holdout = holdoutEnhanced,
+                Verdict = verdict,
+                VerdictRationale = rationale
+            };
+
+            return new KnowledgeImpactExperimentReport
+            {
+                GeneratedAt = DateTimeOffset.UtcNow,
+                Hypothesis = FrozenDataSufficiencyTrustExperimentV1.Hypothesis,
+                SuccessCriteriaText = KnowledgeImpactSuccessCriteria.Text,
+                DevelopmentSeasons = developmentSeasons,
+                HoldoutSeason = holdout,
+                UsedHoldoutDuringFitting = false,
+                ProjectionV2Unchanged = true,
+                ConfidenceV2Unchanged = true,
+                DecisionPolicyV1Unchanged = true,
+                AvailableSignalNotes =
+                [
+                    "DataSufficiency from HistoricalFeatureReconstructor (prior REG games only, pre-cutoff).",
+                    "Sufficient: >=3 games; Limited: 1–2; Insufficient: 0.",
+                    "Gate adjusts KnowledgeConfidence only — no Usage/RecentForm/RoleHealth Opportunity restore.",
+                    "Quick Picks: Prediction.Confidence only; RankingScore/ProjectedValue unchanged."
+                ],
+                DataCoverageNotes =
+                [
+                    FrozenDataSufficiencyTrustExperimentV1.MappingSummary,
+                    $"Development candidates: [{string.Join(", ", FrozenDataSufficiencyTrustExperimentV1.CandidateLimitedPenalties)}]; frozen={selectedPenalty}."
+                ],
+                LooFoldSummaries = looSummaries,
+                FrozenGroups = groups,
+                DevelopmentBaseline = developmentBaseline,
+                DevelopmentEnhanced = developmentEnhanced,
+                HoldoutBaseline = holdoutBaseline,
+                HoldoutEnhanced = holdoutEnhanced,
+                AblationRows = [ablation],
+                FailureAnalysisNotes = failureNotes,
+                QuickPicksEvaluationNote = qpNote,
+                Verdict = verdict,
+                VerdictRationale = rationale
+            };
+        }
+        finally
+        {
+            projectionState.PrimaryMode = previousProjection;
+            policyState.Mode = previousPolicy;
+            knowledgeState.Mode = previousKnowledgeMode;
+            knowledgeState.ActiveGroups = previousGroups;
+            FrozenDataSufficiencyTrustExperimentV1.SelectedLimitedPenalty = previousSelectedPenalty;
+            knowledgeState.ConfigurePassthrough();
+        }
+    }
+
+    private async Task<string> MeasureQuickPicksUnderTrustGateAsync(
+        int selectedPenalty,
+        IReadOnlyList<int> developmentSeasons,
+        int holdout,
+        CancellationToken cancellationToken)
+    {
+        var qp = _services.GetRequiredService<Application.Predictions.IQuickPicksHistoricalEvaluationRunner>();
+        var knowledgeState = _services.GetRequiredService<KnowledgeImpactExperimentState>();
+        var previousMode = knowledgeState.Mode;
+        var previousGroups = knowledgeState.ActiveGroups;
+        var previousPenalty = knowledgeState.DataSufficiencyLimitedPenalty;
+
+        try
+        {
+            FrozenDataSufficiencyTrustExperimentV1.SelectedLimitedPenalty = selectedPenalty;
+            knowledgeState.DataSufficiencyLimitedPenalty = selectedPenalty;
+
+            var basDev = new List<Core.Predictions.QuickPickSeasonScorecard>();
+            var enhDev = new List<Core.Predictions.QuickPickSeasonScorecard>();
+            foreach (var season in developmentSeasons)
+            {
+                basDev.Add(await qp.RunSeasonAsync(
+                        season, Core.Predictions.QuickPickMode.Baseline, cancellationToken: cancellationToken)
+                    .ConfigureAwait(false));
+                enhDev.Add(await qp.RunSeasonAsync(
+                        season,
+                        Core.Predictions.QuickPickMode.Enhanced,
+                        enhancedGroups: KnowledgeImpactGroup.DataSufficiencyTrust,
+                        cancellationToken: cancellationToken)
+                    .ConfigureAwait(false));
+            }
+
+            var basHold = await qp.RunSeasonAsync(
+                    holdout, Core.Predictions.QuickPickMode.Baseline, cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+            var enhHold = await qp.RunSeasonAsync(
+                    holdout,
+                    Core.Predictions.QuickPickMode.Enhanced,
+                    enhancedGroups: KnowledgeImpactGroup.DataSufficiencyTrust,
+                    cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+
+            var devChange = Infrastructure.Predictions.QuickPickHistoricalGrader.AnalyzeChanges(basDev, enhDev);
+            var holdChange = Infrastructure.Predictions.QuickPickHistoricalGrader.AnalyzeChanges([basHold], [enhHold]);
+
+            return
+                $"Quick Picks (trust-only gate, penalty={selectedPenalty}): " +
+                $"dev MAE {devChange.BaselineMeanAbsoluteError:0.000}→{devChange.EnhancedMeanAbsoluteError:0.000} " +
+                $"(ranksChanged={devChange.RanksChanged}); " +
+                $"holdout MAE {holdChange.BaselineMeanAbsoluteError:0.000}→{holdChange.EnhancedMeanAbsoluteError:0.000} " +
+                $"Top5 {holdChange.BaselineTop5HitRate:0.0}%→{holdChange.EnhancedTop5HitRate:0.0}% " +
+                $"(ranksChanged={holdChange.RanksChanged}, identical={holdChange.PredictionsIdentical}). " +
+                "Expected: ranking identity because gate adjusts Confidence only.";
+        }
+        finally
+        {
+            knowledgeState.Mode = previousMode;
+            knowledgeState.ActiveGroups = previousGroups;
+            knowledgeState.DataSufficiencyLimitedPenalty = previousPenalty;
+        }
+    }
+
+    private static void AssertDataSufficiencyTrustFrozen(int selectedPenalty)
+    {
+        if (FrozenDataSufficiencyTrustExperimentV1.ExperimentalGroups !=
+            KnowledgeImpactGroup.DataSufficiencyTrust)
+        {
+            throw new InvalidOperationException("DataSufficiencyTrust groups mutated.");
+        }
+
+        if (FrozenDataSufficiencyTrustExperimentV1.SelectedLimitedPenalty != selectedPenalty)
+        {
+            throw new InvalidOperationException("SelectedLimitedPenalty mutated after freeze.");
+        }
+
+        if (!FrozenDataSufficiencyTrustExperimentV1.CandidateLimitedPenalties.Contains(selectedPenalty))
+        {
+            throw new InvalidOperationException("Selected penalty not in development candidate set.");
+        }
+
+        if (FrozenDataSufficiencyTrustExperimentV1.HoldoutSeason != 2024)
+        {
+            throw new InvalidOperationException("Holdout season mutated.");
+        }
+
+        AssertRejectedTransformsStayOff(FrozenDataSufficiencyTrustExperimentV1.ExperimentalGroups);
+    }
+
+    private static void AssertRejectedTransformsStayOff(KnowledgeImpactGroup groups)
+    {
+        if (groups.HasFlag(KnowledgeImpactGroup.Usage) ||
+            groups.HasFlag(KnowledgeImpactGroup.RoleHealth) ||
+            groups.HasFlag(KnowledgeImpactGroup.RecentForm) ||
+            groups.HasFlag(KnowledgeImpactGroup.RecentFormThinMargin))
+        {
+            throw new InvalidOperationException(
+                "Rejected/disabled transforms must stay off for DataSufficiencyTrust experiment.");
+        }
+    }
+
+    private static (ProjectionExperimentVerdict Verdict, string Rationale) JudgeDataSufficiencyTrust(
+        double holdDelta,
+        double changeRate,
+        double devMean,
+        int selectedPenalty)
+    {
+        if (holdDelta >= KnowledgeImpactSuccessCriteria.MinHoldoutTotalValueImprovement &&
+            changeRate >= KnowledgeImpactSuccessCriteria.MinHoldoutChangeRate)
+        {
+            return (ProjectionExperimentVerdict.Improvement,
+                $"Holdout total decision value improved by {holdDelta:0.00} with change rate {changeRate:0.0%}. " +
+                $"Freeze DataSufficiencyTrust (LimitedPenalty={selectedPenalty}) as candidate; " +
+                "production remains Passthrough until accepted. " +
+                $"Dev mean Δ={devMean:0.00} (informational).");
+        }
+
+        if (holdDelta <= -KnowledgeImpactSuccessCriteria.MinHoldoutTotalValueImprovement &&
+            changeRate >= KnowledgeImpactSuccessCriteria.MinHoldoutChangeRate)
+        {
+            return (ProjectionExperimentVerdict.Regression,
+                $"Holdout total decision value worsened by {holdDelta:0.00} (change rate {changeRate:0.0%}). " +
+                $"Reject DataSufficiencyTrust (LimitedPenalty={selectedPenalty}). Production remains Passthrough. " +
+                $"Dev mean Δ={devMean:0.00} (informational).");
+        }
+
+        return (ProjectionExperimentVerdict.NoMaterialImprovement,
+            $"Holdout Δ={holdDelta:0.00}, changeRate={changeRate:0.0%} did not meet success criteria " +
+            $"(need Δ≥{KnowledgeImpactSuccessCriteria.MinHoldoutTotalValueImprovement} and " +
+            $"change≥{KnowledgeImpactSuccessCriteria.MinHoldoutChangeRate:0%}). " +
+            $"Recommendation: DISABLED (LimitedPenalty={selectedPenalty}). Production remains Passthrough. " +
+            $"Dev mean Δ={devMean:0.00} (informational).");
+    }
+
     private static void AssertSeasonCardDeterministic(
         SeasonScorecard a,
         SeasonScorecard b,
@@ -584,6 +932,8 @@ public sealed class KnowledgeImpactExperimentRunner
         {
             knowledgeState.ConfigureEnhanced(groups);
             knowledgeState.ThinMarginMaxPoints = FrozenRecentFormThinMarginExperimentV1.ThinMarginMaxPoints;
+            knowledgeState.DataSufficiencyLimitedPenalty =
+                FrozenDataSufficiencyTrustExperimentV1.SelectedLimitedPenalty;
         }
         else
         {
