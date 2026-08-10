@@ -37,7 +37,7 @@ public sealed class QuickPickFilters
         var term = Search.Trim();
         if (term.Length > 0)
         {
-            q = q.Where(p => MatchesSearch(p, term));
+            q = q.Where(p => QuickPickSearch.Matches(p, term));
         }
 
         if (Market is PredictionMarketType market)
@@ -58,45 +58,38 @@ public sealed class QuickPickFilters
         return q;
     }
 
-    private static bool MatchesSearch(Prediction p, string term)
+    /// <summary>
+    /// Rank eligible (live/mock) props for Top Picks / Watch using existing opportunity scores.
+    /// Does not alter confidence or probability — ranking only.
+    /// </summary>
+    public IReadOnlyList<Prediction> RankEligible(IEnumerable<Prediction> source)
     {
-        if (p.PlayerName?.Contains(term, StringComparison.OrdinalIgnoreCase) == true)
-        {
-            return true;
-        }
+        var term = Search.Trim();
+        return QuickPickSearch.RankEligible(
+            source,
+            p =>
+            {
+                if (term.Length > 0 && !QuickPickSearch.Matches(p, term))
+                {
+                    return false;
+                }
 
-        if (p.TeamName?.Contains(term, StringComparison.OrdinalIgnoreCase) == true)
-        {
-            return true;
-        }
+                if (Market is PredictionMarketType market && p.Market != market)
+                {
+                    return false;
+                }
 
-        if (p.Event.HomeTeam.Contains(term, StringComparison.OrdinalIgnoreCase) ||
-            p.Event.AwayTeam.Contains(term, StringComparison.OrdinalIgnoreCase) ||
-            p.Event.DisplayName.Contains(term, StringComparison.OrdinalIgnoreCase) ||
-            p.Event.MatchupKey.Contains(term, StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
+                if (Direction is PredictionDirection direction && p.Direction != direction)
+                {
+                    return false;
+                }
 
-        if (p.MarketLabel.Contains(term, StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
+                if (MinConfidence > 0 && p.Confidence < MinConfidence)
+                {
+                    return false;
+                }
 
-        // Lightweight aliases
-        var aliases = term.ToLowerInvariant() switch
-        {
-            "buffalo" or "bills" => "BUF",
-            "receiving" or "rec" => "Receiving",
-            "passing" or "pass" => "Passing",
-            "rushing" or "rush" => "Rushing",
-            _ => null
-        };
-        if (aliases is not null)
-        {
-            return MatchesSearch(p, aliases);
-        }
-
-        return false;
+                return true;
+            });
     }
 }

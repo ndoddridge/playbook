@@ -18,9 +18,9 @@ public interface IQuickPicksBoard
 
     NflSeasonContext? SeasonContext { get; }
 
-    IReadOnlyList<Prediction> TopPicks { get; }
+    IReadOnlyList<Prediction> GetTopPicks(int count);
 
-    IReadOnlyList<Prediction> WatchPicks { get; }
+    IReadOnlyList<Prediction> GetWatchPicks(int count, int topCount);
 
     IReadOnlyList<Prediction> SlatePredictions { get; }
 

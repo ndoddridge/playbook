@@ -24,9 +24,10 @@ public sealed class QuickPicksBoard : IQuickPicksBoard
 
     public NflSeasonContext? SeasonContext => _service.SeasonContext;
 
-    public IReadOnlyList<Prediction> TopPicks => _service.GetTopPicks(8);
+    public IReadOnlyList<Prediction> GetTopPicks(int count) => _service.GetTopPicks(count);
 
-    public IReadOnlyList<Prediction> WatchPicks => _service.GetWatchPicks(8);
+    public IReadOnlyList<Prediction> GetWatchPicks(int count, int topCount) =>
+        _service.GetWatchPicks(count, topCount);
 
     public IReadOnlyList<Prediction> SlatePredictions => _service.GetSlatePredictions();
 

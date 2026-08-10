@@ -2,6 +2,16 @@
 
 All notable project changes are recorded here.
 
+## [Unreleased] — Quick Picks final polish (search aliases + Top Picks)
+
+### Fixed / Changed
+
+- Extensible `NflTeamCatalog` aliases (Bengals/Cincinnati/CIN, 49ers/SF, Chiefs/KC, …) for team/player/matchup search
+- Top Picks always ranks best available eligible props — **no confidence floor** that empties the section
+- Compact Top Picks count control (1–20, default 5); filter-then-rank so search + count work together
+- Watch = next opportunities after Top Picks on the same ranking
+- Weak slates show “Best available opportunities” without inflating confidence
+
 ## [Unreleased] — Quick Picks mobile UX + concise cards
 
 ### Fixed / Changed

@@ -327,11 +327,46 @@
     margin-bottom: var(--pb-space-6);
 }
 
+.qp-section__heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    min-width: 0;
+}
+
 .qp-section__title {
     margin: 0;
     font-size: var(--pb-text-lg);
     font-weight: var(--pb-weight-semibold);
     letter-spacing: -0.02em;
+}
+
+.qp-top-count {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    flex-shrink: 0;
+}
+
+.qp-top-count__label {
+    color: #c3ccd6;
+    font-size: 0.68rem;
+    font-weight: var(--pb-weight-medium);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.qp-top-count__select {
+    min-width: 3.1rem;
+    height: 1.85rem;
+    padding: 0 0.35rem;
+    border: 1px solid var(--pb-color-border);
+    border-radius: var(--pb-radius-sm);
+    background: var(--pb-color-surface);
+    color: var(--pb-color-text);
+    font-size: 0.85rem;
+    font-weight: var(--pb-weight-semibold);
 }
 
 .qp-section__subtitle {

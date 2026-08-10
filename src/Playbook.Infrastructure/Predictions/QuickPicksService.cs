@@ -128,37 +128,29 @@ public sealed class QuickPicksService : IQuickPicksService
         return _predictions;
     }
 
-    public IReadOnlyList<Prediction> GetTopPicks(int count = 8)
+    public IReadOnlyList<Prediction> GetTopPicks(int count = 5)
     {
         EnsureLoaded();
-        // Preseason priors keep confidence lower by design — use a softer Top bar there.
-        var minConfidence = _selectedWeek?.Phase == NflSeasonPhase.Preseason ? 40 : 55;
-        return _predictions
-            .Where(p => p.LineFreshness is PropLineFreshness.Live or PropLineFreshness.Mock)
-            .Where(p => p.Confidence >= minConfidence && Math.Abs(p.Edge) >= 0.4m && p.Probability >= 55)
-            .Where(p => _selectedWeek is null || _selectedWeek.Matches(p.Event))
-            .OrderByDescending(p => p.OpportunityScore)
-            .ThenByDescending(p => p.Edge)
-            .ThenByDescending(p => p.Probability)
-            .ThenByDescending(p => p.Confidence)
+        // Top Picks = strongest available on the slate (ranking only — no confidence floor).
+        return RankEligiblePredictions()
+            .Take(Math.Clamp(count, 1, 20))
+            .ToList();
+    }
+
+    public IReadOnlyList<Prediction> GetWatchPicks(int count = 8, int topCount = 5)
+    {
+        EnsureLoaded();
+        var topIds = GetTopPicks(topCount).Select(p => p.Id).ToHashSet();
+        return RankEligiblePredictions()
+            .Where(p => !topIds.Contains(p.Id))
             .Take(Math.Max(1, count))
             .ToList();
     }
 
-    public IReadOnlyList<Prediction> GetWatchPicks(int count = 8)
-    {
-        EnsureLoaded();
-        var topIds = GetTopPicks(count).Select(p => p.Id).ToHashSet();
-        return _predictions
-            .Where(p => !topIds.Contains(p.Id))
-            .Where(p => p.LineFreshness != PropLineFreshness.Unavailable)
-            .Where(p => _selectedWeek is null || _selectedWeek.Matches(p.Event))
-            .OrderByDescending(p => p.OpportunityScore)
-            .ThenByDescending(p => p.Probability)
-            .ThenByDescending(p => p.Confidence)
-            .Take(Math.Max(1, count))
-            .ToList();
-    }
+    private IEnumerable<Prediction> RankEligiblePredictions() =>
+        QuickPickSearch.RankEligible(
+            _predictions,
+            p => _selectedWeek is null || _selectedWeek.Matches(p.Event));
 
     public IReadOnlyList<Prediction> GetSlatePredictions()
     {

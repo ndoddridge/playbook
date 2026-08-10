@@ -24,9 +24,11 @@ public interface IQuickPicksService
 
     IReadOnlyList<Prediction> GetAllPredictions();
 
-    IReadOnlyList<Prediction> GetTopPicks(int count = 8);
+    /// <summary>Strongest available eligible props on the selected slate (ranked, no confidence floor).</summary>
+    IReadOnlyList<Prediction> GetTopPicks(int count = 5);
 
-    IReadOnlyList<Prediction> GetWatchPicks(int count = 8);
+    /// <summary>Next opportunities after Top Picks on the same ranking.</summary>
+    IReadOnlyList<Prediction> GetWatchPicks(int count = 8, int topCount = 5);
 
     /// <summary>All evaluated props for the selected slate (for "All Props" / filtering).</summary>
     IReadOnlyList<Prediction> GetSlatePredictions();
