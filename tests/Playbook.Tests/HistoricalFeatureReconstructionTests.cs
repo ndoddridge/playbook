@@ -44,10 +44,7 @@ public class HistoricalFeatureReconstructionTests
     [Fact]
     public void Expectation_Service_Throws_If_Caller_Passes_Future_Games()
     {
-        var service = new HistoricalExpectationService(
-            new HistoricalFeatureReconstructor(),
-            new RecentAverageProjectionEngine(),
-            new OpportunityAwareProjectionEngine());
+        var service = CreateExpectationService();
 
         Assert.Throws<InvalidOperationException>(() =>
             service.BuildExpectations(
@@ -65,10 +62,7 @@ public class HistoricalFeatureReconstructionTests
     [Fact]
     public void Baseline_Projection_Is_Deterministic_And_Uses_Only_Prior_Weeks()
     {
-        var service = new HistoricalExpectationService(
-            new HistoricalFeatureReconstructor(),
-            new RecentAverageProjectionEngine(),
-            new OpportunityAwareProjectionEngine());
+        var service = CreateExpectationService();
 
         var games = new[]
         {
@@ -115,10 +109,7 @@ public class HistoricalFeatureReconstructionTests
     [Fact]
     public void Insufficient_History_Lowers_Sufficiency_And_Confidence()
     {
-        var service = new HistoricalExpectationService(
-            new HistoricalFeatureReconstructor(),
-            new RecentAverageProjectionEngine(),
-            new OpportunityAwareProjectionEngine());
+        var service = CreateExpectationService();
 
         var none = service.BuildExpectations(
             Guid.NewGuid(), "Nobody", Position.RB, "KC", 2018, 1,
@@ -179,6 +170,17 @@ public class HistoricalFeatureReconstructionTests
         Assert.NotEmpty(sample.ProjectionSourceWeeks);
         Assert.All(sample.ProjectionSourceWeeks, w => Assert.True(w < 7));
         Assert.True(sample.Confidence > 12);
+    }
+
+    private static HistoricalExpectationService CreateExpectationService()
+    {
+        var v1 = new OpportunityAwareProjectionEngine();
+        return new HistoricalExpectationService(
+            new HistoricalFeatureReconstructor(),
+            new RecentAverageProjectionEngine(),
+            v1,
+            new CalibratedOpportunityAwareProjectionEngine(v1),
+            new HistoricalProjectionExperimentState());
     }
 
     private static HistoricalGameObservation Game(

@@ -18,6 +18,7 @@ using Playbook.Application.Stats;
 using Playbook.Application.Stats.Interfaces;
 using Playbook.Infrastructure.Decisions;
 using Playbook.Infrastructure.Replay;
+using Playbook.Infrastructure.Replay.Calibration;
 using Playbook.Infrastructure.Replay.Nflverse;
 using Playbook.Infrastructure.Replay.Reconstruction;
 using Playbook.Infrastructure.Hosting;
@@ -138,7 +139,10 @@ public static class DependencyInjection
         services.AddSingleton<IHistoricalFeatureReconstructor, HistoricalFeatureReconstructor>();
         services.AddSingleton<RecentAverageProjectionEngine>();
         services.AddSingleton<OpportunityAwareProjectionEngine>();
+        services.AddSingleton<CalibratedOpportunityAwareProjectionEngine>();
+        services.AddSingleton<HistoricalProjectionExperimentState>();
         services.AddSingleton<IHistoricalExpectationService, HistoricalExpectationService>();
+        services.AddSingleton<ProjectionCalibrationExperimentRunner>();
         services.AddSingleton<NflverseCsvCache>();
         services.AddHttpClient(NflverseCsvCache.HttpClientName, client =>
         {

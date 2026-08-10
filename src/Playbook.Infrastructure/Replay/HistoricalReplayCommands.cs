@@ -164,4 +164,15 @@ public static class HistoricalReplayCommands
         var runner = services.GetRequiredService<IMultiSeasonHistoricalBenchmarkRunner>();
         return runner.RunAsync(request, cancellationToken);
     }
+
+    /// <summary>
+    /// Experiment 1: projection calibration. Fits on development seasons only, then ONE 2024 holdout.
+    /// </summary>
+    public static Task<ProjectionCalibrationExperimentReport> RunProjectionCalibrationExperimentAsync(
+        IServiceProvider services,
+        CancellationToken cancellationToken = default)
+    {
+        var runner = services.GetRequiredService<Calibration.ProjectionCalibrationExperimentRunner>();
+        return runner.RunOfficialExperimentAsync(cancellationToken);
+    }
 }

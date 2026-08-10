@@ -95,6 +95,9 @@ public sealed class HistoricalPlayerState
     public double? BaselineRecentAveragePoints { get; init; }
 
     public double? BaselineOpportunityAwarePoints { get; init; }
+
+    /// <summary>Projection V2 calibrated points (always computed when available).</summary>
+    public double? ProjectionV2Points { get; init; }
 }
 
 public sealed class HistoricalRosterSlot
