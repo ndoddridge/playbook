@@ -18,14 +18,30 @@ playbook.sln
 │   ├── Playbook.Web            # Blazor Server UI
 │   ├── Playbook.Core           # Domain models & abstractions
 │   ├── Playbook.Application    # Use cases & application services
-│   └── Playbook.Infrastructure # Persistence & external adapters
+│   ├── Playbook.Infrastructure # Persistence & external adapters
+│   └── Playbook.Research       # Offline research CLI workbench
 ├── tests
 │   └── Playbook.Tests          # xUnit tests
+├── research-runs/              # Local experiment/simulation artifacts (gitignored)
+├── scripts/research            # Convenience wrapper for the research CLI
 └── docs
     ├── DESIGN.md
     ├── ARCHITECTURE.md
+    ├── RESEARCH_WORKBENCH.md
     └── DEVELOPMENT_RULES.md
 ```
+
+## Research workbench (manual experiments)
+
+For offline historical evaluation / experiments / future multi-season simulation:
+
+```bash
+dotnet run --project src/Playbook.Research -- --help
+# or
+./scripts/research --help
+```
+
+See [docs/RESEARCH_WORKBENCH.md](docs/RESEARCH_WORKBENCH.md). Production remains `KnowledgeMode.Passthrough`.
 
 ## Tech Stack
 
