@@ -44,9 +44,10 @@ public sealed class QuickPicksHistoricalEvaluationRunner : IQuickPicksHistorical
         QuickPickMode mode,
         string? fixtureId = "nflverse",
         ScoringType scoringType = ScoringType.Ppr,
+        KnowledgeImpactGroup? enhancedGroups = null,
         CancellationToken cancellationToken = default)
     {
-        ConfigureMode(mode);
+        ConfigureMode(mode, enhancedGroups);
         var graded = await EvaluateWeekCoreAsync(season, week, scoringType, fixtureId, mode, cancellationToken)
             .ConfigureAwait(false);
         return QuickPickHistoricalGrader.BuildScorecard(
@@ -58,9 +59,10 @@ public sealed class QuickPicksHistoricalEvaluationRunner : IQuickPicksHistorical
         QuickPickMode mode,
         string? fixtureId = "nflverse",
         ScoringType scoringType = ScoringType.Ppr,
+        KnowledgeImpactGroup? enhancedGroups = null,
         CancellationToken cancellationToken = default)
     {
-        ConfigureMode(mode);
+        ConfigureMode(mode, enhancedGroups);
         var end = await _calendar.GetRegularSeasonEndWeekAsync(season, cancellationToken)
             .ConfigureAwait(false);
 
@@ -84,8 +86,9 @@ public sealed class QuickPicksHistoricalEvaluationRunner : IQuickPicksHistorical
             season, mode, _knowledgeState.ActiveGroups, graded);
 
         _logger.LogInformation(
-            "QuickPicksHistEval: season {Season} mode={Mode} weeks={Weeks}/{End} preds={Preds} MAE={Mae:0.000}",
-            season, mode, card.WeeksEvaluated, end, card.PredictionsEvaluated, card.MeanAbsoluteError);
+            "QuickPicksHistEval: season {Season} mode={Mode} groups={Groups} weeks={Weeks}/{End} preds={Preds} MAE={Mae:0.000}",
+            season, mode, _knowledgeState.ActiveGroups, card.WeeksEvaluated, end,
+            card.PredictionsEvaluated, card.MeanAbsoluteError);
 
         return card;
     }
@@ -180,6 +183,116 @@ public sealed class QuickPicksHistoricalEvaluationRunner : IQuickPicksHistorical
         }
     }
 
+    public async Task<QuickPicksHistoricalEvaluationReport> RunOfficialRecentFormExperimentAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var previousMode = _knowledgeState.Mode;
+        var previousGroups = _knowledgeState.ActiveGroups;
+        var groups = FrozenQuickPicksRecentFormExperimentV1.ExperimentalGroups;
+
+        try
+        {
+            AssertRecentFormExperimentFrozen();
+
+            var developmentSeasons = FrozenQuickPicksRecentFormExperimentV1.DevelopmentSeasons.ToList();
+            var holdout = FrozenQuickPicksRecentFormExperimentV1.HoldoutSeason;
+
+            _logger.LogInformation("QuickPicksRecentForm: development BASELINE");
+            var basDev = new List<QuickPickSeasonScorecard>();
+            foreach (var season in developmentSeasons)
+            {
+                if (season == holdout)
+                {
+                    throw new InvalidOperationException("Holdout season leaked into development list.");
+                }
+
+                basDev.Add(await RunSeasonAsync(
+                        season, QuickPickMode.Baseline, cancellationToken: cancellationToken)
+                    .ConfigureAwait(false));
+            }
+
+            // Determinism check: re-run first development season Baseline and require identity.
+            var basDevRepeat = await RunSeasonAsync(
+                    developmentSeasons[0], QuickPickMode.Baseline, cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+            AssertScorecardIdentical(basDev[0], basDevRepeat, "development Baseline determinism");
+
+            _logger.LogInformation("QuickPicksRecentForm: development ENHANCED RecentForm");
+            var enhDev = new List<QuickPickSeasonScorecard>();
+            foreach (var season in developmentSeasons)
+            {
+                enhDev.Add(await RunSeasonAsync(
+                        season, QuickPickMode.Enhanced, enhancedGroups: groups,
+                        cancellationToken: cancellationToken)
+                    .ConfigureAwait(false));
+            }
+
+            var enhDevRepeat = await RunSeasonAsync(
+                    developmentSeasons[0], QuickPickMode.Enhanced, enhancedGroups: groups,
+                    cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+            AssertScorecardIdentical(enhDev[0], enhDevRepeat, "development Enhanced RecentForm determinism");
+
+            var devChange = QuickPickHistoricalGrader.AnalyzeChanges(basDev, enhDev);
+
+            // Freeze before holdout — no further config changes.
+            AssertRecentFormExperimentFrozen();
+
+            _logger.LogInformation("QuickPicksRecentForm: official holdout {Season} BASELINE", holdout);
+            var basHold = await RunSeasonAsync(
+                    holdout, QuickPickMode.Baseline, cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+
+            _logger.LogInformation("QuickPicksRecentForm: official holdout {Season} ENHANCED RecentForm", holdout);
+            var enhHold = await RunSeasonAsync(
+                    holdout, QuickPickMode.Enhanced, enhancedGroups: groups,
+                    cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+
+            var holdChange = QuickPickHistoricalGrader.AnalyzeChanges([basHold], [enhHold]);
+
+            var rejectedReenabled =
+                groups.HasFlag(KnowledgeImpactGroup.Usage) ||
+                groups.HasFlag(KnowledgeImpactGroup.RoleHealth) ||
+                groups.HasFlag(KnowledgeImpactGroup.Matchup);
+
+            var onlyRecentForm =
+                groups == KnowledgeImpactGroup.RecentForm;
+
+            var verdict = BuildRecentFormVerdict(devChange, holdChange, rejectedReenabled, onlyRecentForm);
+
+            return new QuickPicksHistoricalEvaluationReport
+            {
+                EvaluationId = FrozenQuickPicksRecentFormExperimentV1.ExperimentId,
+                EvaluatorVersion = FrozenQuickPicksHistoricalEvaluationV1.EvaluatorVersion,
+                DevelopmentSeasons = developmentSeasons,
+                HoldoutSeason = holdout,
+                AllowedEnhancedGroups = groups,
+                SelectionSummary =
+                    FrozenQuickPicksRecentFormExperimentV1.Hypothesis + " " +
+                    FrozenQuickPicksRecentFormExperimentV1.MappingSummary,
+                UsedHoldoutDuringDevelopment = false,
+                RejectedKnowledgeTransformsReenabled = rejectedReenabled,
+                ProjectionV2Unchanged = ProjectionLayersUnchanged(),
+                ConfidenceV2Unchanged = ConfidenceLayersUnchanged(),
+                DecisionPolicyV1Unchanged = DecisionPolicyUnchanged(),
+                DevelopmentBaseline = basDev,
+                DevelopmentEnhanced = enhDev,
+                HoldoutBaseline = basHold,
+                HoldoutEnhanced = enhHold,
+                DevelopmentChangeAnalysis = devChange,
+                HoldoutChangeAnalysis = holdChange,
+                Verdict = verdict
+            };
+        }
+        finally
+        {
+            _knowledgeState.Mode = previousMode;
+            _knowledgeState.ActiveGroups = previousGroups;
+            _knowledgeState.ConfigurePassthrough();
+        }
+    }
+
     private async Task<IReadOnlyList<QuickPickGradedPrediction>> EvaluateWeekCoreAsync(
         int season,
         int week,
@@ -220,7 +333,7 @@ public sealed class QuickPicksHistoricalEvaluationRunner : IQuickPicksHistorical
         return QuickPickHistoricalGrader.Grade(predictions, outcomes);
     }
 
-    private void ConfigureMode(QuickPickMode mode)
+    private void ConfigureMode(QuickPickMode mode, KnowledgeImpactGroup? enhancedGroups)
     {
         if (mode == QuickPickMode.Baseline)
         {
@@ -228,8 +341,102 @@ public sealed class QuickPicksHistoricalEvaluationRunner : IQuickPicksHistorical
             return;
         }
 
-        // Enhanced: only groups explicitly allowed by the frozen QP policy.
-        _knowledgeState.ConfigureEnhanced(FrozenQuickPicksHistoricalEvaluationV1.AllowedEnhancedGroups);
+        // Enhanced: experiment override when provided; otherwise frozen QP evaluation policy.
+        var groups = enhancedGroups ?? FrozenQuickPicksHistoricalEvaluationV1.AllowedEnhancedGroups;
+        _knowledgeState.ConfigureEnhanced(groups);
+    }
+
+    private static void AssertRecentFormExperimentFrozen()
+    {
+        if (FrozenQuickPicksRecentFormExperimentV1.ExperimentalGroups != KnowledgeImpactGroup.RecentForm)
+        {
+            throw new InvalidOperationException(
+                "RecentForm experiment groups mutated — must remain RecentForm only.");
+        }
+
+        if (FrozenQuickPicksRecentFormExperimentV1.HighThreshold != 65 ||
+            FrozenQuickPicksRecentFormExperimentV1.LowThreshold != 35 ||
+            Math.Abs(FrozenQuickPicksRecentFormExperimentV1.QuickPickOpportunityDelta - 0.6) > 1e-9)
+        {
+            throw new InvalidOperationException("RecentForm thresholds/delta retuned before holdout.");
+        }
+
+        if (FrozenQuickPicksRecentFormExperimentV1.HoldoutSeason != 2024)
+        {
+            throw new InvalidOperationException("Holdout season mutated.");
+        }
+
+        // Harness V1 freeze must remain observational (None) — this experiment overrides per-call.
+        if (FrozenQuickPicksHistoricalEvaluationV1.AllowedEnhancedGroups != KnowledgeImpactGroup.None)
+        {
+            throw new InvalidOperationException(
+                "QP evaluation V1 AllowedEnhancedGroups mutated — keep None; experiment uses override.");
+        }
+    }
+
+    private static void AssertScorecardIdentical(
+        QuickPickSeasonScorecard a,
+        QuickPickSeasonScorecard b,
+        string label)
+    {
+        if (a.PredictionsEvaluated != b.PredictionsEvaluated ||
+            Math.Abs(a.MeanAbsoluteError - b.MeanAbsoluteError) > 1e-9 ||
+            Math.Abs(a.Top5HitRate - b.Top5HitRate) > 1e-9 ||
+            Math.Abs(a.TotalPredictionValue - b.TotalPredictionValue) > 1e-9)
+        {
+            throw new InvalidOperationException($"Non-deterministic Quick Picks replay ({label}).");
+        }
+
+        var aKeys = a.Graded.Select(g =>
+            (g.Prediction.PlayerId, g.Prediction.Market, g.Prediction.RankingScore, g.Prediction.RankInMarket));
+        var bKeys = b.Graded.Select(g =>
+            (g.Prediction.PlayerId, g.Prediction.Market, g.Prediction.RankingScore, g.Prediction.RankInMarket));
+        if (!aKeys.SequenceEqual(bKeys))
+        {
+            throw new InvalidOperationException($"Non-deterministic graded predictions ({label}).");
+        }
+    }
+
+    private static string BuildRecentFormVerdict(
+        QuickPickChangeAnalysis dev,
+        QuickPickChangeAnalysis hold,
+        bool rejectedReenabled,
+        bool onlyRecentForm)
+    {
+        if (rejectedReenabled || !onlyRecentForm)
+        {
+            return "INVALID — experiment must isolate RecentForm and keep rejected transforms disabled.";
+        }
+
+        var maeDelta = hold.BaselineMeanAbsoluteError - hold.EnhancedMeanAbsoluteError; // + = improvement
+        var top5Delta = hold.EnhancedTop5HitRate - hold.BaselineTop5HitRate; // + = improvement
+        var changeRate = hold.PercentChanged;
+
+        if (hold.PredictionsIdentical || changeRate < QuickPicksRecentFormVerdictRules.MinMaterialChangeRatePercent)
+        {
+            return "NEUTRAL — RecentForm did not materially change holdout Quick Picks " +
+                   $"(changeRate={changeRate:0.00}%, MAE Δ={maeDelta:0.000}). " +
+                   "Recommendation: DISABLED. Production default remains Passthrough.";
+        }
+
+        if (maeDelta >= QuickPicksRecentFormVerdictRules.MinHoldoutMaeImprovement && top5Delta >= -1.0)
+        {
+            return "IMPROVEMENT — RecentForm reduced holdout MAE with material prediction changes " +
+                   $"and no unacceptable Top-5 regression (MAE Δ={maeDelta:0.000}, Top5 Δ={top5Delta:0.0}pp). " +
+                   "Recommendation: ENABLED (behind experiment mode; production default still unchanged until accepted).";
+        }
+
+        if (maeDelta <= -QuickPicksRecentFormVerdictRules.MinHoldoutMaeRegression)
+        {
+            return "REGRESSION — RecentForm worsened holdout MAE " +
+                   $"(MAE Δ={maeDelta:0.000}, changeRate={changeRate:0.00}%). " +
+                   "Recommendation: DISABLED.";
+        }
+
+        return "NEUTRAL — holdout differences were negligible under verdict rules " +
+               $"(MAE Δ={maeDelta:0.000}, Top5 Δ={top5Delta:0.0}pp, changeRate={changeRate:0.00}%). " +
+               $"Dev MAE Δ={dev.BaselineMeanAbsoluteError - dev.EnhancedMeanAbsoluteError:0.000} (informational only). " +
+               "Recommendation: DISABLED.";
     }
 
     private static void AssertNoOutcomeLeakIntoSnapshot(

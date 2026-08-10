@@ -236,9 +236,23 @@ public static class HistoricalReplayCommands
         QuickPickMode mode,
         string? fixtureId = "nflverse",
         ScoringType scoringType = ScoringType.Ppr,
+        KnowledgeImpactGroup? enhancedGroups = null,
         CancellationToken cancellationToken = default)
     {
         var runner = services.GetRequiredService<IQuickPicksHistoricalEvaluationRunner>();
-        return runner.RunWeekAsync(season, week, mode, fixtureId, scoringType, cancellationToken);
+        return runner.RunWeekAsync(
+            season, week, mode, fixtureId, scoringType, enhancedGroups, cancellationToken);
+    }
+
+    /// <summary>
+    /// Quick Picks RecentForm Experiment V1: Baseline vs Enhanced(RecentForm only),
+    /// development seasons first, then ONE 2024 holdout.
+    /// </summary>
+    public static Task<QuickPicksHistoricalEvaluationReport> RunQuickPicksRecentFormExperimentAsync(
+        IServiceProvider services,
+        CancellationToken cancellationToken = default)
+    {
+        var runner = services.GetRequiredService<IQuickPicksHistoricalEvaluationRunner>();
+        return runner.RunOfficialRecentFormExperimentAsync(cancellationToken);
     }
 }

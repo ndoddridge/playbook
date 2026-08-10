@@ -172,6 +172,10 @@ public static class QuickPickHistoricalGrader
             var ledger = QuickPickHistoricalGrading.ClassifyLedger(
                 b.RankAbsoluteError, e.RankAbsoluteError, magnitude);
 
+            var form = e.Prediction.KnowledgeContext?.Knowledge.Evidence
+                .FirstOrDefault(ev =>
+                    ev.Aspect == KnowledgeAspect.RecentProduction && !ev.IsUnavailableMarker);
+
             var record = new QuickPickChangeRecord
             {
                 Season = b.Prediction.Season,
@@ -191,7 +195,13 @@ public static class QuickPickHistoricalGrader
                 EnhancedAbsoluteError = e.AbsoluteError,
                 BaselineRankError = b.RankAbsoluteError,
                 EnhancedRankError = e.RankAbsoluteError,
-                LedgerClass = ledger
+                LedgerClass = ledger,
+                ActualValue = e.ActualValue,
+                Confidence = e.Prediction.Confidence,
+                KnowledgeConfidence = e.Prediction.KnowledgeContext?.Knowledge.KnowledgeConfidence,
+                RecentFormValue = form?.Value,
+                RecentFormStatement = form?.Statement,
+                RecentFormDirection = form?.Direction.ToString()
             };
 
             if (magnitude > 1e-9)

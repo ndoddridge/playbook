@@ -207,6 +207,18 @@ public sealed class QuickPickChangeRecord
     public required int EnhancedRankError { get; init; }
 
     public required string LedgerClass { get; init; }
+
+    public double? ActualValue { get; init; }
+
+    public int? Confidence { get; init; }
+
+    public int? KnowledgeConfidence { get; init; }
+
+    public double? RecentFormValue { get; init; }
+
+    public string? RecentFormStatement { get; init; }
+
+    public string? RecentFormDirection { get; init; }
 }
 
 public sealed class QuickPickChangeAnalysis
