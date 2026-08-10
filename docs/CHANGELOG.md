@@ -2,6 +2,17 @@
 
 All notable project changes are recorded here.
 
+## [Unreleased] — Quick Picks mobile UX + concise cards
+
+### Fixed / Changed
+
+- iPhone/mobile viewport fit: overflow clipping, top-bar shrink/hide nonessential chrome, `viewport-fit=cover`, 16px filter inputs (no iOS focus zoom)
+- Search & Filters collapsed by default with active-filter indicator
+- Hierarchy: compact slate → optional filters → Top Picks first
+- Concise pick cards (player / matchup / pick / line / projection / edge / confidence + one-line summary)
+- Expandable **Why?** uses structured Why / Context / Intelligence / Data sections — no engine debug dump
+- LIVE / MOCK / MOCK FALLBACK status labels use high-contrast colors app-wide (`pb-badge` + Quick Picks badges)
+
 ## [Unreleased] — Compact slate navigator + canonical NFL order
 
 ### Fixed / Changed

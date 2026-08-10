@@ -2,70 +2,93 @@
 @using Playbook.Web.Features.QuickPicks.Models
 
 <div class="qp-filters">
-    <div class="qp-filters__search">
-        <label class="qp-filters__label" for="qp-search">Search</label>
-        <input id="qp-search"
-               class="qp-filters__input"
-               type="search"
-               placeholder="Team, player, matchup…"
-               value="@Filters.Search"
-               @oninput="OnSearch" />
-    </div>
+    <button type="button"
+            class="qp-filters__toggle-btn @(Filters.HasActiveFilters || !Filters.StrongestOnly ? "qp-filters__toggle-btn--active" : null)"
+            @onclick="Toggle"
+            aria-expanded="@_open"
+            aria-controls="qp-filters-panel">
+        <span class="qp-filters__toggle-label">Search &amp; Filters</span>
+        @if (Filters.HasActiveFilters || !Filters.StrongestOnly)
+        {
+            <span class="qp-filters__active-dot" aria-hidden="true"></span>
+            <span class="qp-filters__active-count">@ActiveCount</span>
+        }
+        <span class="qp-filters__toggle-chevron" aria-hidden="true">@(_open ? "▴" : "▾")</span>
+    </button>
 
-    <div class="qp-filters__field">
-        <label class="qp-filters__label" for="qp-market">Market</label>
-        <select id="qp-market" class="qp-filters__select" value="@MarketValue" @onchange="OnMarket">
-            <option value="">All markets</option>
-            <option value="@((int)PredictionMarketType.PassingYards)">Passing Yards</option>
-            <option value="@((int)PredictionMarketType.RushingYards)">Rushing Yards</option>
-            <option value="@((int)PredictionMarketType.ReceivingYards)">Receiving Yards</option>
-            <option value="@((int)PredictionMarketType.Receptions)">Receptions</option>
-            <option value="@((int)PredictionMarketType.AnytimeTouchdown)">Anytime TD</option>
-            <option value="@((int)PredictionMarketType.PassingTouchdowns)">Pass TDs</option>
-            <option value="@((int)PredictionMarketType.GameTotal)">Game Total</option>
-            <option value="@((int)PredictionMarketType.Spread)">Spread</option>
-            <option value="@((int)PredictionMarketType.Winner)">Moneyline</option>
-        </select>
-    </div>
+    <div id="qp-filters-panel"
+         class="qp-filters__panel @(_open ? "qp-filters__panel--open" : null)"
+         aria-hidden="@(!_open)">
+        @if (_open)
+        {
+            <div class="qp-filters__body">
+                <div class="qp-filters__search">
+                    <label class="qp-filters__label" for="qp-search">Search</label>
+                    <input id="qp-search"
+                           class="qp-filters__input"
+                           type="search"
+                           placeholder="Team, player, matchup…"
+                           value="@Filters.Search"
+                           @oninput="OnSearch" />
+                </div>
 
-    <div class="qp-filters__field">
-        <label class="qp-filters__label" for="qp-direction">Side</label>
-        <select id="qp-direction" class="qp-filters__select" value="@DirectionValue" @onchange="OnDirection">
-            <option value="">Any side</option>
-            <option value="@((int)PredictionDirection.Over)">Over</option>
-            <option value="@((int)PredictionDirection.Under)">Under</option>
-            <option value="@((int)PredictionDirection.Yes)">Yes</option>
-            <option value="@((int)PredictionDirection.No)">No</option>
-        </select>
-    </div>
+                <div class="qp-filters__field">
+                    <label class="qp-filters__label" for="qp-market">Market</label>
+                    <select id="qp-market" class="qp-filters__select" value="@MarketValue" @onchange="OnMarket">
+                        <option value="">All markets</option>
+                        <option value="@((int)PredictionMarketType.PassingYards)">Passing Yards</option>
+                        <option value="@((int)PredictionMarketType.RushingYards)">Rushing Yards</option>
+                        <option value="@((int)PredictionMarketType.ReceivingYards)">Receiving Yards</option>
+                        <option value="@((int)PredictionMarketType.Receptions)">Receptions</option>
+                        <option value="@((int)PredictionMarketType.AnytimeTouchdown)">Anytime TD</option>
+                        <option value="@((int)PredictionMarketType.PassingTouchdowns)">Pass TDs</option>
+                        <option value="@((int)PredictionMarketType.GameTotal)">Game Total</option>
+                        <option value="@((int)PredictionMarketType.Spread)">Spread</option>
+                        <option value="@((int)PredictionMarketType.Winner)">Moneyline</option>
+                    </select>
+                </div>
 
-    <div class="qp-filters__field">
-        <label class="qp-filters__label" for="qp-confidence">Confidence</label>
-        <select id="qp-confidence" class="qp-filters__select" value="@Filters.MinConfidence" @onchange="OnConfidence">
-            <option value="0">Any</option>
-            <option value="40">40%+</option>
-            <option value="55">55%+</option>
-            <option value="70">70%+</option>
-        </select>
-    </div>
+                <div class="qp-filters__field">
+                    <label class="qp-filters__label" for="qp-direction">Side</label>
+                    <select id="qp-direction" class="qp-filters__select" value="@DirectionValue" @onchange="OnDirection">
+                        <option value="">Any side</option>
+                        <option value="@((int)PredictionDirection.Over)">Over</option>
+                        <option value="@((int)PredictionDirection.Under)">Under</option>
+                        <option value="@((int)PredictionDirection.Yes)">Yes</option>
+                        <option value="@((int)PredictionDirection.No)">No</option>
+                    </select>
+                </div>
 
-    <div class="qp-filters__toggle">
-        <button type="button"
-                class="qp-filters__mode @(Filters.StrongestOnly ? "qp-filters__mode--active" : null)"
-                @onclick="() => SetStrongest(true)">
-            Strongest
-        </button>
-        <button type="button"
-                class="qp-filters__mode @(!Filters.StrongestOnly ? "qp-filters__mode--active" : null)"
-                @onclick="() => SetStrongest(false)">
-            All props
-        </button>
-    </div>
+                <div class="qp-filters__field">
+                    <label class="qp-filters__label" for="qp-confidence">Confidence</label>
+                    <select id="qp-confidence" class="qp-filters__select" value="@Filters.MinConfidence" @onchange="OnConfidence">
+                        <option value="0">Any</option>
+                        <option value="40">40%+</option>
+                        <option value="55">55%+</option>
+                        <option value="70">70%+</option>
+                    </select>
+                </div>
 
-    @if (Filters.HasActiveFilters || !Filters.StrongestOnly)
-    {
-        <button type="button" class="qp-filters__clear" @onclick="Clear">Clear</button>
-    }
+                <div class="qp-filters__modes">
+                    <button type="button"
+                            class="qp-filters__mode @(Filters.StrongestOnly ? "qp-filters__mode--active" : null)"
+                            @onclick="() => SetStrongest(true)">
+                        Strongest
+                    </button>
+                    <button type="button"
+                            class="qp-filters__mode @(!Filters.StrongestOnly ? "qp-filters__mode--active" : null)"
+                            @onclick="() => SetStrongest(false)">
+                        All props
+                    </button>
+                </div>
+
+                @if (Filters.HasActiveFilters || !Filters.StrongestOnly)
+                {
+                    <button type="button" class="qp-filters__clear" @onclick="Clear">Clear</button>
+                }
+            </div>
+        }
+    </div>
 </div>
 
 @code {
@@ -75,8 +98,26 @@
     [Parameter]
     public EventCallback FiltersChanged { get; set; }
 
+    private bool _open;
+
     private string MarketValue => Filters.Market is null ? "" : ((int)Filters.Market).ToString();
     private string DirectionValue => Filters.Direction is null ? "" : ((int)Filters.Direction).ToString();
+
+    private int ActiveCount
+    {
+        get
+        {
+            var n = 0;
+            if (!string.IsNullOrWhiteSpace(Filters.Search)) n++;
+            if (Filters.Market is not null) n++;
+            if (Filters.Direction is not null) n++;
+            if (Filters.MinConfidence > 0) n++;
+            if (!Filters.StrongestOnly) n++;
+            return n;
+        }
+    }
+
+    private void Toggle() => _open = !_open;
 
     private async Task OnSearch(ChangeEventArgs e)
     {

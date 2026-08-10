@@ -15,9 +15,8 @@
         <p class="pb-page__subtitle">Playbook's strongest football predictions.</p>
         <p class="qp-page__meta">
             <span class="qp-data-badge qp-data-badge--@(dataModeCss)">@dataModeLabel</span>
-            Independent of fantasy leagues ·
-            @SyncStatus.PropProvider ·
-            Last updated @(SyncStatus.LastPredictionRun?.ToLocalTime().ToString("h:mm:ss tt") ?? "—")
+            <span>@SyncStatus.PropProvider</span>
+            <span>Updated @(SyncStatus.LastPredictionRun?.ToLocalTime().ToString("h:mm tt") ?? "—")</span>
         </p>
         @if (SyncStatus.UsedFallback)
         {
@@ -162,7 +161,7 @@
         var isLive = string.Equals(SyncStatus.ProviderStatus, "Live", StringComparison.OrdinalIgnoreCase)
                      && !SyncStatus.UsedFallback;
         dataModeLabel = isLive ? "LIVE DATA" : SyncStatus.UsedFallback ? "MOCK FALLBACK" : "MOCK DATA";
-        dataModeCss = isLive ? "live" : "mock";
+        dataModeCss = isLive ? "live" : SyncStatus.UsedFallback ? "fallback" : "mock";
     }
 
     private void OnSlateSelected(NflWeekRef slate)

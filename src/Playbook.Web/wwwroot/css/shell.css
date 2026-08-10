@@ -7,7 +7,11 @@
     grid-template-areas:
         "sidebar topbar"
         "sidebar main";
+    width: 100%;
+    max-width: 100%;
     min-height: 100vh;
+    min-height: 100dvh;
+    overflow-x: clip;
     background:
         radial-gradient(ellipse 70% 50% at 100% 0%, rgba(62, 207, 142, 0.06), transparent 55%),
         var(--pb-color-bg);
@@ -187,7 +191,10 @@
 /* ---------- Main ---------- */
 .app-main {
     grid-area: main;
-    overflow: auto;
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: clip;
+    overflow-y: auto;
     padding: var(--pb-space-8) var(--pb-space-6);
 }
 
@@ -261,20 +268,60 @@
 
     .app-topbar__menu {
         display: inline-flex;
+        flex-shrink: 0;
     }
 
     .app-topbar {
         min-height: var(--pb-topbar-height);
-        padding: 0 var(--pb-space-4);
+        padding: 0.4rem var(--pb-space-3);
+        gap: var(--pb-space-2);
+        overflow: hidden;
+    }
+
+    .app-topbar__left,
+    .app-topbar__right {
+        gap: var(--pb-space-2);
+        flex: 1 1 auto;
+        min-width: 0;
+    }
+
+    .app-topbar__right {
+        justify-content: flex-end;
+        flex: 0 1 auto;
+    }
+
+    .app-topbar__divider {
+        display: none;
+    }
+
+    .app-topbar__dev-badge {
+        display: none;
     }
 
     .app-main {
-        padding: var(--pb-space-6) var(--pb-space-4);
+        padding: var(--pb-space-4) var(--pb-space-3);
     }
 }
 
 @media (max-width: 640px) {
     .app-topbar__item--time {
         display: none;
+    }
+
+    .app-topbar__profile-slot {
+        width: 1.85rem;
+        height: 1.85rem;
+    }
+
+    .app-topbar__label {
+        display: none;
+    }
+
+    .league-switcher__value {
+        max-width: 9.5rem;
+    }
+
+    .league-switcher__value .app-topbar__value {
+        max-width: 8.5rem;
     }
 }
