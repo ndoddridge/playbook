@@ -117,4 +117,15 @@ public sealed class HistoricalRawPlayerRecord
     public double? BaselineOpportunityAwarePoints { get; init; }
 
     public double? ProjectionV2Points { get; init; }
+
+    /// <summary>Cutoff-safe counting-stat projections (prior-week averages).</summary>
+    public double? ProjectedPassYards { get; init; }
+
+    public double? ProjectedRushYards { get; init; }
+
+    public double? ProjectedReceivingYards { get; init; }
+
+    public double? ProjectedReceptions { get; init; }
+
+    public double? ProjectedPassTouchdowns { get; init; }
 }

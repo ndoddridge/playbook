@@ -1,7 +1,9 @@
 using Microsoft.Extensions.DependencyInjection;
+using Playbook.Application.Predictions;
 using Playbook.Application.Replay;
 using Playbook.Core.Knowledge;
 using Playbook.Core.Leagues;
+using Playbook.Core.Predictions;
 using Playbook.Core.Replay;
 using Playbook.Infrastructure.Knowledge;
 
@@ -212,5 +214,31 @@ public static class HistoricalReplayCommands
     {
         var runner = services.GetRequiredService<Knowledge.KnowledgeImpactExperimentRunner>();
         return runner.RunOfficialExperimentAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Quick Picks Historical Evaluation V1: Baseline then Enhanced (observational),
+    /// development seasons first, then ONE 2024 holdout.
+    /// </summary>
+    public static Task<QuickPicksHistoricalEvaluationReport> RunQuickPicksHistoricalEvaluationAsync(
+        IServiceProvider services,
+        CancellationToken cancellationToken = default)
+    {
+        var runner = services.GetRequiredService<IQuickPicksHistoricalEvaluationRunner>();
+        return runner.RunOfficialEvaluationAsync(cancellationToken);
+    }
+
+    /// <summary>Single-week historical Quick Picks evaluation (Baseline or Enhanced).</summary>
+    public static Task<QuickPickSeasonScorecard> RunQuickPicksHistoricalWeekAsync(
+        IServiceProvider services,
+        int season,
+        int week,
+        QuickPickMode mode,
+        string? fixtureId = "nflverse",
+        ScoringType scoringType = ScoringType.Ppr,
+        CancellationToken cancellationToken = default)
+    {
+        var runner = services.GetRequiredService<IQuickPicksHistoricalEvaluationRunner>();
+        return runner.RunWeekAsync(season, week, mode, fixtureId, scoringType, cancellationToken);
     }
 }
