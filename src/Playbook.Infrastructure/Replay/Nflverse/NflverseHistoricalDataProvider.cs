@@ -305,16 +305,19 @@ public sealed class NflverseHistoricalDataProvider : IHistoricalDataProvider
         int week,
         CancellationToken cancellationToken)
     {
-        using var reader = await _cache.OpenTextAsync(schedulesPath, cancellationToken).ConfigureAwait(false);
-        var header = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false)
-                     ?? throw new InvalidOperationException("Schedules CSV missing header.");
-        var cols = SplitCsv(header);
+        var lines = await _cache.GetLinesAsync(schedulesPath, cancellationToken).ConfigureAwait(false);
+        if (lines.Count == 0)
+        {
+            throw new InvalidOperationException("Schedules CSV missing header.");
+        }
+
+        var cols = SplitCsv(lines[0]);
         var idx = Index(cols);
 
         DateTimeOffset? earliest = null;
-        while (!reader.EndOfStream)
+        for (var i = 1; i < lines.Count; i++)
         {
-            var line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+            var line = lines[i];
             if (string.IsNullOrWhiteSpace(line))
             {
                 continue;
@@ -374,15 +377,18 @@ public sealed class NflverseHistoricalDataProvider : IHistoricalDataProvider
         int week,
         CancellationToken cancellationToken)
     {
-        using var reader = await _cache.OpenTextAsync(path, cancellationToken).ConfigureAwait(false);
-        var header = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false)
-                     ?? throw new InvalidOperationException("Weekly roster CSV missing header.");
-        var idx = Index(SplitCsv(header));
+        var lines = await _cache.GetLinesAsync(path, cancellationToken).ConfigureAwait(false);
+        if (lines.Count == 0)
+        {
+            throw new InvalidOperationException("Weekly roster CSV missing header.");
+        }
+
+        var idx = Index(SplitCsv(lines[0]));
         var map = new Dictionary<string, HistoricalPlayerIdentity>(StringComparer.OrdinalIgnoreCase);
 
-        while (!reader.EndOfStream)
+        for (var i = 1; i < lines.Count; i++)
         {
-            var line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+            var line = lines[i];
             if (string.IsNullOrWhiteSpace(line))
             {
                 continue;
@@ -443,15 +449,18 @@ public sealed class NflverseHistoricalDataProvider : IHistoricalDataProvider
         int? maxWeekInclusive,
         CancellationToken cancellationToken)
     {
-        using var reader = await _cache.OpenTextAsync(path, cancellationToken).ConfigureAwait(false);
-        var header = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false)
-                     ?? throw new InvalidOperationException("player_stats CSV missing header.");
-        var idx = Index(SplitCsv(header));
+        var lines = await _cache.GetLinesAsync(path, cancellationToken).ConfigureAwait(false);
+        if (lines.Count == 0)
+        {
+            throw new InvalidOperationException("player_stats CSV missing header.");
+        }
+
+        var idx = Index(SplitCsv(lines[0]));
         var map = new Dictionary<string, List<StatWeek>>(StringComparer.OrdinalIgnoreCase);
 
-        while (!reader.EndOfStream)
+        for (var i = 1; i < lines.Count; i++)
         {
-            var line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+            var line = lines[i];
             if (string.IsNullOrWhiteSpace(line))
             {
                 continue;
@@ -529,15 +538,18 @@ public sealed class NflverseHistoricalDataProvider : IHistoricalDataProvider
         int week,
         CancellationToken cancellationToken)
     {
-        using var reader = await _cache.OpenTextAsync(path, cancellationToken).ConfigureAwait(false);
-        var header = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false)
-                     ?? throw new InvalidOperationException("snap_counts CSV missing header.");
-        var idx = Index(SplitCsv(header));
+        var lines = await _cache.GetLinesAsync(path, cancellationToken).ConfigureAwait(false);
+        if (lines.Count == 0)
+        {
+            throw new InvalidOperationException("snap_counts CSV missing header.");
+        }
+
+        var idx = Index(SplitCsv(lines[0]));
         var map = new Dictionary<(string Name, int Week), double>();
 
-        while (!reader.EndOfStream)
+        for (var i = 1; i < lines.Count; i++)
         {
-            var line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+            var line = lines[i];
             if (string.IsNullOrWhiteSpace(line))
             {
                 continue;
@@ -573,15 +585,18 @@ public sealed class NflverseHistoricalDataProvider : IHistoricalDataProvider
         int week,
         CancellationToken cancellationToken)
     {
-        using var reader = await _cache.OpenTextAsync(path, cancellationToken).ConfigureAwait(false);
-        var header = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false)
-                     ?? throw new InvalidOperationException("depth_charts CSV missing header.");
-        var idx = Index(SplitCsv(header));
+        var lines = await _cache.GetLinesAsync(path, cancellationToken).ConfigureAwait(false);
+        if (lines.Count == 0)
+        {
+            throw new InvalidOperationException("depth_charts CSV missing header.");
+        }
+
+        var idx = Index(SplitCsv(lines[0]));
         var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
-        while (!reader.EndOfStream)
+        for (var i = 1; i < lines.Count; i++)
         {
-            var line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+            var line = lines[i];
             if (string.IsNullOrWhiteSpace(line))
             {
                 continue;
@@ -626,15 +641,18 @@ public sealed class NflverseHistoricalDataProvider : IHistoricalDataProvider
         DateTimeOffset cutoff,
         CancellationToken cancellationToken)
     {
-        using var reader = await _cache.OpenTextAsync(path, cancellationToken).ConfigureAwait(false);
-        var header = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false)
-                     ?? throw new InvalidOperationException("injuries CSV missing header.");
-        var idx = Index(SplitCsv(header));
+        var lines = await _cache.GetLinesAsync(path, cancellationToken).ConfigureAwait(false);
+        if (lines.Count == 0)
+        {
+            throw new InvalidOperationException("injuries CSV missing header.");
+        }
+
+        var idx = Index(SplitCsv(lines[0]));
         var map = new Dictionary<string, InjuryRow>(StringComparer.OrdinalIgnoreCase);
 
-        while (!reader.EndOfStream)
+        for (var i = 1; i < lines.Count; i++)
         {
-            var line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+            var line = lines[i];
             if (string.IsNullOrWhiteSpace(line))
             {
                 continue;

@@ -175,8 +175,23 @@ public sealed class HistoricalReplayRunner : IHistoricalReplayRunner
             .Select(g => g.ActualDecisionDifferential!.Value)
             .ToList();
 
-        double? maeA = baseA.Count == 0 ? null : Math.Round(baseA.Average(), 2);
-        double? maeB = baseB.Count == 0 ? null : Math.Round(baseB.Average(), 2);
+        var projectionEvals = BuildProjectionEvaluations(snapshot, outcomes);
+
+        // Fair week-level baseline MAE: same eligible player set for current/A/B.
+        var fair = projectionEvals
+            .Where(p =>
+                p.BaselineRecentAbsoluteError is not null &&
+                p.BaselineOpportunityAbsoluteError is not null)
+            .ToList();
+        double? maeA = fair.Count == 0
+            ? (baseA.Count == 0 ? null : Math.Round(baseA.Average(), 2))
+            : Math.Round(fair.Average(p => p.BaselineRecentAbsoluteError!.Value), 2);
+        double? maeB = fair.Count == 0
+            ? (baseB.Count == 0 ? null : Math.Round(baseB.Average(), 2))
+            : Math.Round(fair.Average(p => p.BaselineOpportunityAbsoluteError!.Value), 2);
+        var fairPrimaryMae = fair.Count == 0
+            ? null
+            : (double?)Math.Round(fair.Average(p => p.AbsoluteError), 2);
         string? better = null;
         if (maeA is not null && maeB is not null)
         {
@@ -199,8 +214,11 @@ public sealed class HistoricalReplayRunner : IHistoricalReplayRunner
             IncorrectCount = incorrect,
             UngradedCount = ungraded,
             DecisionAccuracyPercent = graded == 0 ? null : Math.Round(100.0 * correct / graded, 1),
-            AverageProjectionAbsoluteError = projErrors.Count == 0 ? null : Math.Round(projErrors.Average(), 2),
-            AverageProjectionSquaredError = projSq.Count == 0 ? null : Math.Round(projSq.Average(), 2),
+            AverageProjectionAbsoluteError = fairPrimaryMae ??
+                (projErrors.Count == 0 ? null : Math.Round(projErrors.Average(), 2)),
+            AverageProjectionSquaredError = fair.Count > 0
+                ? Math.Round(fair.Average(p => p.SquaredError), 2)
+                : (projSq.Count == 0 ? null : Math.Round(projSq.Average(), 2)),
             BaselineRecentAverageMae = maeA,
             BaselineOpportunityAwareMae = maeB,
             BetterBaselineLabel = better,
@@ -208,9 +226,69 @@ public sealed class HistoricalReplayRunner : IHistoricalReplayRunner
             AverageConfidence = grades.Count == 0 ? 0 : Math.Round(grades.Average(g => g.Confidence), 1),
             Grades = grades,
             DecisionRecords = gradedRecords,
+            ProjectionEvaluations = projectionEvals,
+            PlayersEvaluated = snapshot.Players.Count,
+            PlayersWithValidProjection = snapshot.Players.Count(p => p.ProjectedPoints is not null),
+            PlayersWithInjurySignal = snapshot.Players.Count(p =>
+                !string.IsNullOrWhiteSpace(p.InjuryStatus) &&
+                !string.Equals(p.HealthLabel, "Healthy", StringComparison.OrdinalIgnoreCase)),
+            PlayersWithUsageSignal = snapshot.Players.Count(p => p.UsageScore is not null),
+            PlayersWithRoleSignal = snapshot.Players.Count(p => !string.IsNullOrWhiteSpace(p.RoleNote)),
             UnavailableSources = snapshot.UnavailableSources,
             GeneratedAt = DateTimeOffset.UtcNow
         };
+    }
+
+    private static IReadOnlyList<PlayerProjectionEvaluation> BuildProjectionEvaluations(
+        HistoricalSnapshot snapshot,
+        HistoricalWeekOutcomes outcomes)
+    {
+        var list = new List<PlayerProjectionEvaluation>();
+        foreach (var player in snapshot.Players)
+        {
+            if (player.ProjectedPoints is null)
+            {
+                continue;
+            }
+
+            if (!outcomes.ByPlayerId.TryGetValue(player.PlayerId, out var outcome))
+            {
+                continue;
+            }
+
+            var predicted = (double)player.ProjectedPoints.Value;
+            var actual = outcome.ActualFantasyPoints;
+            var abs = Math.Abs(actual - predicted);
+            var signed = actual - predicted;
+            double? baseA = player.BaselineRecentAveragePoints;
+            double? baseB = player.BaselineOpportunityAwarePoints;
+
+            list.Add(new PlayerProjectionEvaluation
+            {
+                Season = snapshot.Season,
+                Week = snapshot.Week,
+                PlayerId = player.PlayerId,
+                PlayerName = player.PlayerName,
+                Position = player.Position,
+                PredictedPoints = predicted,
+                ActualPoints = actual,
+                AbsoluteError = abs,
+                SignedError = signed,
+                SquaredError = signed * signed,
+                BaselineRecentAveragePoints = baseA,
+                BaselineOpportunityAwarePoints = baseB,
+                BaselineRecentAbsoluteError = baseA is null ? null : Math.Abs(actual - baseA.Value),
+                BaselineOpportunityAbsoluteError = baseB is null ? null : Math.Abs(actual - baseB.Value),
+                DataSufficiency = player.DataSufficiency,
+                ProjectionConfidence = player.ProjectionConfidence,
+                SourceWeeks = player.ProjectionSourceWeeks,
+                OpportunityScore = player.OpportunityScore,
+                UsageScore = player.UsageScore,
+                RecentProductionScore = player.RecentProductionScore
+            });
+        }
+
+        return list;
     }
 
     private static DecisionRecommendation MapAction(StartSitAction action) => action switch
