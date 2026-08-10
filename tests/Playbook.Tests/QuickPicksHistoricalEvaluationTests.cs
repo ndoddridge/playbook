@@ -196,9 +196,6 @@ public class QuickPicksHistoricalEvaluationTests
         Assert.Equal(0, change.PredictionsChanged);
         Assert.Empty(change.Helped);
         Assert.Empty(change.Hurt);
-
-        var state = provider.GetRequiredService<KnowledgeImpactExperimentState>();
-        // Week runner leaves state in last configured mode; official eval restores Passthrough.
         Assert.Equal(QuickPickMode.Enhanced, enh.Mode);
     }
 
@@ -254,5 +251,36 @@ public class QuickPicksHistoricalEvaluationTests
         Assert.True(card.PredictionsEvaluated > 0);
         Assert.True(card.MeanAbsoluteError > 0);
         Assert.True(card.WeeksEvaluated >= 1);
+    }
+
+    [Fact]
+    public async Task Official_Quick_Picks_Historical_Evaluation_Runs_Once()
+    {
+        using var provider = TestServiceFactory.CreateProvider(PlayerDataProviderKind.Mock);
+        var report = await HistoricalReplayCommands.RunQuickPicksHistoricalEvaluationAsync(provider);
+
+        Assert.False(report.UsedHoldoutDuringDevelopment);
+        Assert.False(report.RejectedKnowledgeTransformsReenabled);
+        Assert.True(report.ProjectionV2Unchanged);
+        Assert.True(report.ConfidenceV2Unchanged);
+        Assert.True(report.DecisionPolicyV1Unchanged);
+        Assert.Equal(2024, report.HoldoutSeason);
+        Assert.Equal(KnowledgeImpactGroup.None, report.AllowedEnhancedGroups);
+        Assert.Equal(new[] { 2015, 2018, 2021 }, report.DevelopmentSeasons);
+        Assert.True(report.DevelopmentChangeAnalysis.PredictionsIdentical);
+        Assert.True(report.HoldoutChangeAnalysis.PredictionsIdentical);
+        Assert.Contains("BASELINE ESTABLISHED", report.Verdict);
+
+        var state = provider.GetRequiredService<KnowledgeImpactExperimentState>();
+        Assert.Equal(KnowledgeMode.Passthrough, state.Mode);
+
+        var text = report.ToReportText();
+        Assert.Contains("QUICK PICKS HISTORICAL EVALUATION", text);
+        Assert.Contains("OFFICIAL HOLDOUT 2024", text);
+        Assert.Contains("VERDICT", text);
+
+        var outPath = Path.Combine(AppContext.BaseDirectory, "QUICK_PICKS_HISTORICAL_EVALUATION_V1_REPORT.txt");
+        await File.WriteAllTextAsync(outPath, text);
+        Assert.True(File.Exists(outPath));
     }
 }
