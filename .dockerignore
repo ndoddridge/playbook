@@ -1,0 +1,14 @@
+**/bin/
+**/obj/
+**/.vs/
+.git/
+.github/
+research-runs/
+docs/
+tests/
+src/Playbook.Research/
+*.md
+scripts/
+.dockerignore
+Dockerfile
+fly.toml

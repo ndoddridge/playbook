@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.HttpOverrides;
 using Playbook.Application;
 using Playbook.Infrastructure;
 using Playbook.Web.Components;
@@ -16,6 +17,16 @@ builder.Services
 builder.Services.AddSingleton<IQuickPicksBoard, QuickPicksBoard>();
 
 var app = builder.Build();
+
+// Behind Fly.io's edge proxy, TLS terminates before the request reaches this
+// container; trust its X-Forwarded-* headers so UseHttpsRedirection/UseHsts
+// see the original scheme instead of redirect-looping on internal HTTP.
+app.UseForwardedHeaders(new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto,
+    KnownNetworks = { },
+    KnownProxies = { }
+});
 
 if (!app.Environment.IsDevelopment())
 {
