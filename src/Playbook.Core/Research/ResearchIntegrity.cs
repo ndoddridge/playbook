@@ -45,7 +45,7 @@ public static class ResearchIntegrity
             ["quick-picks-recent-form-v1"] = "Quick Picks RecentForm (DISABLED)",
             ["shared-knowledge-expanded-universe-v1"] = "Shared Knowledge × Expanded Universe (REGRESSION)",
             ["historical-evaluation-coverage-v1"] = "Historical evaluation coverage expansion report",
-            ["position-segmented-calibration-v1"] = "Position-Segmented Projection Calibration V1 (dev gate → conditional 2024 holdout)"
+            ["position-segmented-calibration-v1"] = "Position-Segmented Projection Calibration V1 (REJECTED — dev gate failed, 2024 never touched)"
         };
 
     public static bool IncludesHoldout(IEnumerable<int> seasons) =>
