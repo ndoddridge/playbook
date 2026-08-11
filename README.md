@@ -182,6 +182,10 @@ dotnet run --project src/Playbook.Web
 
 Then open the URL shown in the console (typically `https://localhost:7xxx`). Use the Dashboard **Developer Monitor** to confirm provider, sync time, player count, and any fallback errors.
 
+## Production deployment
+
+The Blazor Server app runs on Fly.io (persistent process + WebSocket support, required for Blazor Server's SignalR circuit) at **https://playbook-genie.fly.dev**. `main` is the production branch — every push triggers `.github/workflows/fly-deploy.yml`, which builds the `Dockerfile` (Core/Application/Infrastructure/Web only — the Research CLI is excluded from the deployed image) and deploys via `flyctl deploy --remote-only`.
+
 ## Run tests
 
 ```bash
