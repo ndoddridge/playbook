@@ -15,6 +15,7 @@ public sealed class HistoricalExpectationService : IHistoricalExpectationService
     private readonly RecentAverageProjectionEngine _baselineA;
     private readonly OpportunityAwareProjectionEngine _projectionV1;
     private readonly CalibratedOpportunityAwareProjectionEngine _projectionV2;
+    private readonly PositionSegmentedCalibratedProjectionEngine _projectionV2PositionSegmented;
     private readonly HistoricalProjectionExperimentState _experimentState;
 
     public HistoricalExpectationService(
@@ -22,12 +23,14 @@ public sealed class HistoricalExpectationService : IHistoricalExpectationService
         RecentAverageProjectionEngine baselineA,
         OpportunityAwareProjectionEngine projectionV1,
         CalibratedOpportunityAwareProjectionEngine projectionV2,
+        PositionSegmentedCalibratedProjectionEngine projectionV2PositionSegmented,
         HistoricalProjectionExperimentState experimentState)
     {
         _features = features;
         _baselineA = baselineA;
         _projectionV1 = projectionV1;
         _projectionV2 = projectionV2;
+        _projectionV2PositionSegmented = projectionV2PositionSegmented;
         _experimentState = experimentState;
     }
 
@@ -66,9 +69,16 @@ public sealed class HistoricalExpectationService : IHistoricalExpectationService
         var v1 = _projectionV1.Project(reconstructed, scoringType);
         var v2 = _projectionV2.Project(reconstructed, scoringType);
 
-        var primary = _experimentState.PrimaryMode == HistoricalProjectionPrimaryMode.ProjectionV2
-            ? (v2.IsValid ? v2 : (v1.IsValid ? v1 : a))
-            : (v1.IsValid ? v1 : a);
+        var primary = _experimentState.PrimaryMode switch
+        {
+            HistoricalProjectionPrimaryMode.ProjectionV2 =>
+                v2.IsValid ? v2 : (v1.IsValid ? v1 : a),
+            HistoricalProjectionPrimaryMode.ProjectionV2PositionSegmented =>
+                _projectionV2PositionSegmented.Project(reconstructed, scoringType) is { IsValid: true } ps
+                    ? ps
+                    : (v1.IsValid ? v1 : a),
+            _ => v1.IsValid ? v1 : a
+        };
 
         return new HistoricalProjectionBundle
         {

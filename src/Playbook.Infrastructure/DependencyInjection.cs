@@ -146,9 +146,12 @@ public static class DependencyInjection
         services.AddSingleton<RecentAverageProjectionEngine>();
         services.AddSingleton<OpportunityAwareProjectionEngine>();
         services.AddSingleton<CalibratedOpportunityAwareProjectionEngine>();
+        services.AddSingleton<PositionSegmentedCalibrationState>();
+        services.AddSingleton<PositionSegmentedCalibratedProjectionEngine>();
         services.AddSingleton<HistoricalProjectionExperimentState>();
         services.AddSingleton<IHistoricalExpectationService, HistoricalExpectationService>();
         services.AddSingleton<ProjectionCalibrationExperimentRunner>();
+        services.AddSingleton<PositionSegmentedCalibrationExperimentRunner>();
         services.AddSingleton<ConfidenceCalibrationExperimentRunner>();
         services.AddSingleton<ConfidenceAwareDecisionPolicyExperimentRunner>();
         services.AddSingleton<NflverseCsvCache>();

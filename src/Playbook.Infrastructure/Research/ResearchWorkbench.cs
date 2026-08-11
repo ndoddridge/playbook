@@ -668,6 +668,12 @@ public sealed class ResearchWorkbench
                         FrozenHistoricalEvaluationCoverageV1.HoldoutSeason
                     }))
                 .ConfigureAwait(false),
+            "position-segmented-calibration-v1" => await Wrap(
+                HistoricalReplayCommands.RunPositionSegmentedCalibrationExperimentAsync(provider, cancellationToken),
+                r => (r.ToReportText(), r.Verdict.ToString(),
+                    PositionSegmentedCalibrationExperiment.DevelopmentSeasons
+                        .Append(PositionSegmentedCalibrationExperiment.HoldoutSeason).ToList()))
+                .ConfigureAwait(false),
             _ => throw new InvalidOperationException($"Experiment not wired: {experimentId}")
         };
 

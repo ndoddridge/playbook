@@ -320,7 +320,7 @@ public class PlayerInjuryServiceTests
     [Fact]
     public void Projection_Handling_Current_Injury()
     {
-        var engine = new ProjectionEngine(Options.Create(new Application.Projections.ProjectionRuleOptions()));
+        var engine = new ProjectionEngine(Options.Create(new global::Playbook.Application.Projections.ProjectionRuleOptions()));
         var player = new Player
         {
             Id = TyreekId,

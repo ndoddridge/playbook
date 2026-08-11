@@ -312,4 +312,17 @@ public static class HistoricalReplayCommands
         var runner = services.GetRequiredService<IQuickPicksHistoricalEvaluationRunner>();
         return runner.RunOfficialRecentFormExperimentAsync(cancellationToken);
     }
+
+    /// <summary>
+    /// Position-Segmented Projection Calibration V1: per-position-group piecewise calibration vs
+    /// the single frozen global Projection V2 curve. Development gate decides whether the 2024
+    /// holdout is touched at all.
+    /// </summary>
+    public static Task<PositionSegmentedCalibrationExperimentReport> RunPositionSegmentedCalibrationExperimentAsync(
+        IServiceProvider services,
+        CancellationToken cancellationToken = default)
+    {
+        var runner = services.GetRequiredService<Calibration.PositionSegmentedCalibrationExperimentRunner>();
+        return runner.RunOfficialExperimentAsync(cancellationToken);
+    }
 }

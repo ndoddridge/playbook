@@ -65,6 +65,7 @@ public sealed class ProjectionCalibrationExperimentRunner
                 Week = p.Week,
                 PlayerId = p.PlayerId,
                 PlayerName = p.PlayerName,
+                Position = p.Position,
                 V1Predicted = p.BaselineOpportunityAwarePoints!.Value,
                 Actual = p.ActualPoints,
                 BaselineAPredicted = p.BaselineRecentAveragePoints!.Value

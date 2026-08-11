@@ -311,7 +311,7 @@ public class SharedKnowledgeModelTests
     public void Live_StartSit_Path_Builds_Shared_PredictionContext()
     {
         using var provider = TestServiceFactory.CreateProvider(PlayerDataProviderKind.Mock);
-        var intel = provider.GetRequiredService<Application.Intelligence.Interfaces.IFantasyTeamIntelligenceService>();
+        var intel = provider.GetRequiredService<global::Playbook.Application.Intelligence.Interfaces.IFantasyTeamIntelligenceService>();
         var report = intel.GetReport();
         Assert.True(report.HasRosterPlayers);
         // Start/Sit recommendations still produced after shared-knowledge routing.

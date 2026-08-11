@@ -53,7 +53,7 @@ public class SharedKnowledgeExpandedUniverseExperimentTests
     {
         using var provider = TestServiceFactory.CreateProvider(PlayerDataProviderKind.Mock);
         var knowledgeState = provider.GetRequiredService<KnowledgeImpactExperimentState>();
-        var seasonRunner = provider.GetRequiredService<Application.Replay.IMultiWeekHistoricalReplayRunner>();
+        var seasonRunner = provider.GetRequiredService<global::Playbook.Application.Replay.IMultiWeekHistoricalReplayRunner>();
 
         knowledgeState.ConfigureBaseline();
         var a1 = await seasonRunner.RunAsync(new MultiWeekReplayRequest

@@ -1,3 +1,5 @@
+using Playbook.Core.Players;
+
 namespace Playbook.Core.Replay;
 
 /// <summary>Which projection feeds Knowledge/Decision engines.</summary>
@@ -7,7 +9,14 @@ public enum HistoricalProjectionPrimaryMode
     ProjectionV1 = 0,
 
     /// <summary>Calibrated Projection V2 (Experiment 1).</summary>
-    ProjectionV2 = 1
+    ProjectionV2 = 1,
+
+    /// <summary>
+    /// Position-segmented calibration (Experiment: position-segmented-calibration-v1).
+    /// Only ever set by <c>PositionSegmentedCalibrationExperimentRunner</c>; restored to
+    /// ProjectionV1 afterward. Never a production default.
+    /// </summary>
+    ProjectionV2PositionSegmented = 2
 }
 
 /// <summary>One (V1 prediction, actual) pair used only for calibration research.</summary>
@@ -20,6 +29,8 @@ public sealed class CalibrationObservation
     public required Guid PlayerId { get; init; }
 
     public required string PlayerName { get; init; }
+
+    public required Position Position { get; init; }
 
     public required double V1Predicted { get; init; }
 
@@ -179,6 +190,12 @@ public sealed class DecisionImpactReport
     public required int ChangedWorsened { get; init; }
 
     public required int ChangedUnchangedOutcome { get; init; }
+
+    /// <summary>Graded (WasCorrect != null) decision count. Optional — only populated by
+    /// experiments that report it explicitly; existing consumers are unaffected.</summary>
+    public int? GradedDecisionsV1 { get; init; }
+
+    public int? GradedDecisionsV2 { get; init; }
 }
 
 /// <summary>Full Experiment 1 report model.</summary>

@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Playbook.Application.Players.Data;
+using Playbook.Core.Players;
 using Playbook.Core.Replay;
 using Playbook.Infrastructure.Replay;
 using Playbook.Infrastructure.Replay.Calibration;
@@ -108,6 +109,7 @@ public class ProjectionCalibrationExperimentTests
             Week = 7,
             PlayerId = Guid.NewGuid(),
             PlayerName = "P",
+            Position = Position.WR,
             V1Predicted = v1,
             Actual = actual,
             BaselineAPredicted = actual

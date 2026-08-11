@@ -180,6 +180,7 @@ public class HistoricalFeatureReconstructionTests
             new RecentAverageProjectionEngine(),
             v1,
             new CalibratedOpportunityAwareProjectionEngine(v1),
+            new PositionSegmentedCalibratedProjectionEngine(v1, new PositionSegmentedCalibrationState()),
             new HistoricalProjectionExperimentState());
     }
 
