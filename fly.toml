@@ -8,6 +8,12 @@ primary_region = 'iad'
 
 [build]
 
+[deploy]
+  # Single-machine personal app with one volume — "immediate" stops the old
+  # machine before starting the new one, so only one volume is ever needed
+  # (a rolling deploy would briefly run two machines, each wanting its own).
+  strategy = 'immediate'
+
 [env]
   # Persistent volume mount (below) — survives redeploys/restarts, unlike the container's own
   # ephemeral filesystem. Uploaded/connected league data lives here.
