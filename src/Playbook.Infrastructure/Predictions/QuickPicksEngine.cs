@@ -4,6 +4,7 @@ using Playbook.Application.Predictions;
 using Playbook.Application.Predictions.Interfaces;
 using Playbook.Core.Injuries.Models;
 using Playbook.Core.Intelligence.Models;
+using Playbook.Core.Players;
 using Playbook.Core.Predictions;
 
 namespace Playbook.Infrastructure.Predictions;
@@ -34,8 +35,9 @@ public sealed class QuickPicksEngine : IQuickPicksEngine
         ArgumentNullException.ThrowIfNull(context);
         var line = context.Line;
 
-        if (line.Freshness == PropLineFreshness.Unavailable)
+        if (line.Freshness is PropLineFreshness.Unavailable or PropLineFreshness.Stale)
         {
+            // A stale line isn't a "current" market — don't present it as an actionable pick.
             return null;
         }
 
@@ -43,6 +45,11 @@ public sealed class QuickPicksEngine : IQuickPicksEngine
             or PredictionMarketType.TeamTotal
             or PredictionMarketType.Winner
             or PredictionMarketType.Spread;
+
+        if (!isGameMarket && !IsRealisticallyExpectedToParticipate(context))
+        {
+            return null;
+        }
 
         if (context.PlaybookProjection is null && !isGameMarket)
         {
@@ -148,15 +155,8 @@ public sealed class QuickPicksEngine : IQuickPicksEngine
             + intelLift);
         pickConfidence = Math.Clamp(pickConfidence, 12, 92);
 
-        if (line.Freshness == PropLineFreshness.Stale)
-        {
-            pickConfidence = Math.Max(12, pickConfidence - _options.StaleConfidencePenalty);
-            probability = Math.Max(15, probability - _options.StaleProbabilityPenalty);
-            supporting.Add("Market line is stale — confidence reduced.");
-            calc.Add(
-                $"Stale-line penalty: −{_options.StaleConfidencePenalty} confidence, −{_options.StaleProbabilityPenalty} probability.");
-        }
-
+        // Stale lines are excluded before reaching here (see the freshness check above) — a
+        // Prediction is only ever built from a Live or Mock (dev) line.
         if (line.Freshness == PropLineFreshness.Mock)
         {
             supporting.Add("Using mock market line (development).");
@@ -196,6 +196,41 @@ public sealed class QuickPicksEngine : IQuickPicksEngine
             EngineVersion = CurrentVersion,
             OpportunityScore = opportunity
         };
+    }
+
+    /// <summary>
+    /// Real-signal-only participation gate for player props — never fabricates depth-chart or
+    /// snap-share data. Excludes confirmed non-participants: roster status
+    /// Suspended/InjuredReserve/PracticeSquad, or a current injury designation of Out/IR. A
+    /// healthy starter simply being rested by a coach (common in preseason) cannot be detected
+    /// from any signal this app has, so it is intentionally not filtered here — that gap is a
+    /// known limitation, not something to guess at.
+    /// </summary>
+    private static bool IsRealisticallyExpectedToParticipate(QuickPickEvaluationContext context)
+    {
+        if (context.Line.PlayerId is null)
+        {
+            // Unmatched player name on the line — no roster/injury record exists to gate on.
+            return true;
+        }
+
+        if (context.RosterStatus is PlayerStatus.Suspended
+            or PlayerStatus.InjuredReserve
+            or PlayerStatus.PracticeSquad)
+        {
+            return false;
+        }
+
+        if (context.InjuryProfile?.CurrentInjury is { } current)
+        {
+            var rule = InjuryIntelligenceMapping.ResolveRuleId(current);
+            if (rule is "injury-out" or "injury-ir")
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private void ApplyPreseasonPrior(
@@ -879,11 +914,6 @@ public sealed class QuickPicksEngine : IQuickPicksEngine
             line.PlayerId is not null)
         {
             core += " Limited player intelligence reduced confidence.";
-        }
-
-        if (line.Freshness == PropLineFreshness.Stale)
-        {
-            core += " The posted line looks stale.";
         }
 
         return core;

@@ -106,12 +106,14 @@ public class QuickPicksEngineTests
     }
 
     [Fact]
-    public void Stale_Line_Reduces_Confidence_And_Probability()
+    public void Stale_Line_Is_Excluded_Not_Merely_Derated()
     {
+        // A stale line isn't "current" — it must never surface as an actionable pick at all.
         var live = Require(Eval(Line(PredictionMarketType.ReceivingYards, 94.5m, PropLineFreshness.Mock), 108.2m, 80, 35, Intel(health: 75)));
-        var stale = Require(Eval(Line(PredictionMarketType.ReceivingYards, 94.5m, PropLineFreshness.Stale), 108.2m, 80, 35, Intel(health: 75)));
-        Assert.True(stale.Confidence < live.Confidence);
-        Assert.True(stale.Probability < live.Probability);
+        var stale = Eval(Line(PredictionMarketType.ReceivingYards, 94.5m, PropLineFreshness.Stale), 108.2m, 80, 35, Intel(health: 75));
+
+        Assert.NotNull(live);
+        Assert.Null(stale);
     }
 
     [Fact]
@@ -171,10 +173,12 @@ public class QuickPicksEngineTests
             108.2m, 80, 35, Intel(health: 70),
             injuryProfile: InjuryProfile(historicalHigh: true)));
 
+        // "Doubtful" rather than "Out"/"IR" — those now hard-exclude the pick entirely (see
+        // QuickPicksParticipationGateTests), so they can no longer be compared here by edge.
         var withCurrent = Require(Eval(
             Line(PredictionMarketType.ReceivingYards, 94.5m),
             108.2m, 80, 35, Intel(health: 70),
-            injuryProfile: InjuryProfile(current: CurrentInjury("Out", "knee"))));
+            injuryProfile: InjuryProfile(current: CurrentInjury("Doubtful", "knee"))));
 
         Assert.True(withCurrent.Edge < withHistory.Edge);
         Assert.Contains(withHistory.SupportingIntelligence, s =>

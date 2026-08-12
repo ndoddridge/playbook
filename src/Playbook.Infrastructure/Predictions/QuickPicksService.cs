@@ -242,11 +242,20 @@ public sealed class QuickPicksService : IQuickPicksService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Prop line load failed; using mock fallback");
-            lines = GetProvider("Mock").GetPropLinesAsync().GetAwaiter().GetResult();
-            usedFallback = true;
-            activeName = "Mock";
             error = ex.Message;
+            activeName = configured;
+            if (_options.AllowMockFallback)
+            {
+                _logger.LogWarning(ex, "Prop line load failed; using mock fallback");
+                lines = GetProvider("Mock").GetPropLinesAsync().GetAwaiter().GetResult();
+                usedFallback = true;
+                activeName = "Mock";
+            }
+            else
+            {
+                _logger.LogWarning(ex, "Prop line load failed; mock fallback disabled, reporting unavailable");
+                lines = [];
+            }
         }
 
         lines = lines
@@ -354,6 +363,7 @@ public sealed class QuickPicksService : IQuickPicksService
             Core.Stats.Models.PlayerStatisticalContext? statsCtx = null;
             PlayerInjuryProfile? injuryProfile = null;
             IReadOnlyList<IntelligenceFact> facts = [];
+            Core.Players.PlayerStatus? rosterStatus = null;
 
             if (line.PlayerId is Guid playerId)
             {
@@ -361,6 +371,7 @@ public sealed class QuickPicksService : IQuickPicksService
                 if (player is not null)
                 {
                     production = _production.GetProduction(player);
+                    rosterStatus = player.Status;
                 }
 
                 intel = _intelligence.GetPlayerProfile(playerId);
@@ -393,6 +404,7 @@ public sealed class QuickPicksService : IQuickPicksService
                 Intelligence = intel,
                 StatisticalContext = statsCtx,
                 InjuryProfile = injuryProfile,
+                RosterStatus = rosterStatus,
                 RecentFacts = facts,
                 SeasonPhase = line.Event.Phase,
                 UsingPriorRegularSeasonProduction = usingPrior,
@@ -413,6 +425,7 @@ public sealed class QuickPicksService : IQuickPicksService
                 Intelligence = evaluation.Intelligence,
                 StatisticalContext = evaluation.StatisticalContext,
                 InjuryProfile = evaluation.InjuryProfile,
+                RosterStatus = evaluation.RosterStatus,
                 RecentFacts = evaluation.RecentFacts,
                 SeasonPhase = evaluation.SeasonPhase,
                 UsingPriorRegularSeasonProduction = evaluation.UsingPriorRegularSeasonProduction,
@@ -454,31 +467,46 @@ public sealed class QuickPicksService : IQuickPicksService
 
         if (_options.Provider == PropLineProviderKind.Mock)
         {
+            // Explicit dev choice, not a fallback — always honored regardless of AllowMockFallback.
             activeName = "Mock";
+            return GetProvider("Mock").GetPropLinesAsync().GetAwaiter().GetResult();
+        }
+
+        if (!PropLineCredentialResolver.HasApiKey(_options))
+        {
+            error = $"{PropLineCredentialResolver.PrimaryEnvVar} is empty. " +
+                    PropLineCredentialResolver.DescribeMissingKeyGuidance();
+            activeName = "TheOddsAPI";
+            _logger.LogWarning(
+                "Live prop provider selected but API key is not configured (ApiKeyConfigured=false).");
+            if (!_options.AllowMockFallback)
+            {
+                return [];
+            }
+
+            usedFallback = true;
+            activeName = "Mock";
+            error += " Falling back to Mock.";
             return GetProvider("Mock").GetPropLinesAsync().GetAwaiter().GetResult();
         }
 
         try
         {
-            if (!PropLineCredentialResolver.HasApiKey(_options))
-            {
-                usedFallback = true;
-                error = $"{PropLineCredentialResolver.PrimaryEnvVar} is empty — falling back to Mock. " +
-                        PropLineCredentialResolver.DescribeMissingKeyGuidance();
-                activeName = "Mock";
-                _logger.LogWarning(
-                    "Live prop provider selected but API key is not configured (ApiKeyConfigured=false). Falling back to Mock.");
-                return GetProvider("Mock").GetPropLinesAsync().GetAwaiter().GetResult();
-            }
-
             var live = GetProvider("TheOddsAPI");
             var lines = live.GetPropLinesAsync().GetAwaiter().GetResult();
-            if (lines.Count == 0 && _options.FallbackToMockWhenEmpty)
+            if (lines.Count == 0)
             {
-                usedFallback = true;
-                error = "The Odds API returned no NFL markets — falling back to Mock.";
-                activeName = "Mock";
-                return GetProvider("Mock").GetPropLinesAsync().GetAwaiter().GetResult();
+                error = "The Odds API returned no NFL markets right now.";
+                activeName = live.ProviderName;
+                if (_options.FallbackToMockWhenEmpty && _options.AllowMockFallback)
+                {
+                    usedFallback = true;
+                    activeName = "Mock";
+                    error += " Falling back to Mock.";
+                    return GetProvider("Mock").GetPropLinesAsync().GetAwaiter().GetResult();
+                }
+
+                return [];
             }
 
             activeName = live.ProviderName;
@@ -486,10 +514,16 @@ public sealed class QuickPicksService : IQuickPicksService
         }
         catch (Exception ex)
         {
-            usedFallback = true;
             error = ex.Message;
+            activeName = "TheOddsAPI";
+            _logger.LogWarning(ex, "Live prop provider failed.");
+            if (!_options.AllowMockFallback)
+            {
+                return [];
+            }
+
+            usedFallback = true;
             activeName = "Mock";
-            _logger.LogWarning(ex, "Live prop provider failed; using Mock fallback");
             return GetProvider("Mock").GetPropLinesAsync().GetAwaiter().GetResult();
         }
     }

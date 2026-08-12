@@ -109,6 +109,65 @@ public class PropLineProviderTests
     }
 
     [Fact]
+    public void Live_Without_Api_Key_And_Fallback_Disabled_Reports_Unavailable_Instead_Of_Mock()
+    {
+        using var provider = TestServiceFactory.CreateProvider(
+            PlayerDataProviderKind.Mock,
+            propLinesProvider: "Live",
+            oddsApiKey: "",
+            allowMockFallback: false);
+
+        var quickPicks = provider.GetRequiredService<IQuickPicksService>();
+        var status = provider.GetRequiredService<IQuickPicksSyncStatus>();
+        quickPicks.Refresh();
+
+        // Never presents mock lines as real when live is unavailable and fallback is disabled.
+        Assert.Empty(quickPicks.GetAllPredictions());
+        Assert.False(status.UsedFallback);
+        Assert.NotEqual("Mock", status.PropProvider);
+        Assert.False(string.IsNullOrWhiteSpace(status.LastError));
+        Assert.Contains("ApiKey", status.LastError!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Live_Provider_Failure_With_Fallback_Disabled_Reports_Unavailable_Instead_Of_Mock()
+    {
+        using var provider = TestServiceFactory.CreateProvider(
+            PlayerDataProviderKind.Mock,
+            propLinesProvider: "Live",
+            oddsApiKey: "any-key",
+            oddsApiBaseUrl: "http://127.0.0.1:1/",
+            allowMockFallback: false);
+
+        var quickPicks = provider.GetRequiredService<IQuickPicksService>();
+        var status = provider.GetRequiredService<IQuickPicksSyncStatus>();
+        quickPicks.Refresh();
+
+        Assert.Empty(quickPicks.GetAllPredictions());
+        Assert.False(status.UsedFallback);
+        Assert.NotEqual("Mock", status.PropProvider);
+        Assert.False(string.IsNullOrWhiteSpace(status.LastError));
+    }
+
+    [Fact]
+    public void Explicit_Mock_Provider_Ignores_AllowMockFallback_Flag()
+    {
+        // Provider=Mock is a deliberate dev choice, not a fallback — always honored.
+        using var provider = TestServiceFactory.CreateProvider(
+            PlayerDataProviderKind.Mock,
+            propLinesProvider: "Mock",
+            allowMockFallback: false);
+
+        var quickPicks = provider.GetRequiredService<IQuickPicksService>();
+        var status = provider.GetRequiredService<IQuickPicksSyncStatus>();
+        quickPicks.Refresh();
+
+        Assert.NotEmpty(quickPicks.GetAllPredictions());
+        Assert.Equal("Mock", status.PropProvider);
+        Assert.False(status.UsedFallback);
+    }
+
+    [Fact]
     public void Live_Configuration_Registers_TheOddsApi_Provider()
     {
         using var provider = TestServiceFactory.CreateProvider(
@@ -128,20 +187,24 @@ public class PropLineProviderTests
     }
 
     [Fact]
-    public void Stale_Lines_Are_Never_Treated_As_Live_In_Top_Picks()
+    public void Stale_Lines_Never_Produce_A_Prediction()
     {
         using var provider = TestServiceFactory.CreateProvider(
             PlayerDataProviderKind.Mock,
             propLinesProvider: "Mock");
 
+        // The mock fixture deliberately includes one stale line to exercise this path.
+        var mockProvider = provider.GetServices<IPropLineProvider>().OfType<MockPropLineProvider>().Single();
+        var rawLines = mockProvider.GetPropLinesAsync().GetAwaiter().GetResult();
+        Assert.Contains(rawLines, l => l.Freshness == PropLineFreshness.Stale);
+
         var quickPicks = provider.GetRequiredService<IQuickPicksService>();
         quickPicks.Refresh();
 
-        Assert.Contains(
+        Assert.DoesNotContain(
             quickPicks.GetAllPredictions(),
             p => p.LineFreshness == PropLineFreshness.Stale);
-
-        Assert.All(quickPicks.GetTopPicks(50), p =>
+        Assert.All(quickPicks.GetAllPredictions(), p =>
             Assert.True(p.LineFreshness is PropLineFreshness.Live or PropLineFreshness.Mock));
     }
 

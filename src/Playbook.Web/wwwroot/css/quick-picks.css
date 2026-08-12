@@ -57,6 +57,12 @@
     border: 1px solid rgba(255, 150, 70, 0.55);
 }
 
+.qp-data-badge--unavailable {
+    color: #ff8a8a;
+    background: rgba(230, 70, 70, 0.16);
+    border: 1px solid rgba(230, 70, 70, 0.5);
+}
+
 /* ---------- Slate navigator (compact control) ---------- */
 .qp-slate-nav {
     margin: 0 0 var(--pb-space-3);
@@ -418,6 +424,13 @@
     color: #c3ccd6;
     font-size: 0.78rem;
     line-height: 1.35;
+}
+
+.qp-card__source {
+    margin: 0.15rem 0 0;
+    color: #8b96a3;
+    font-size: 0.7rem;
+    line-height: 1.3;
 }
 
 .qp-freshness {

@@ -42,6 +42,15 @@ public static class QuickPickDisplay
     public static string Timestamp(DateTimeOffset value) =>
         value.ToLocalTime().ToString("MMM d · h:mm tt");
 
+    /// <summary>"via {Bookmaker} · Updated {time}" — shown on the card face, not just in "Why?".</summary>
+    public static string SourceLine(Prediction prediction)
+    {
+        var book = string.IsNullOrWhiteSpace(prediction.Bookmaker) ? prediction.Source : prediction.Bookmaker;
+        return prediction.LineUpdatedAt is DateTimeOffset updated
+            ? $"via {book} · {Timestamp(updated)}"
+            : $"via {book}";
+    }
+
     /// <summary>Matchup · compact slate · date for the card subtitle.</summary>
     public static string CompactContext(Prediction prediction)
     {

@@ -116,7 +116,7 @@ public sealed class LivePropLineProvider : IPropLineProvider
         var lines = new List<PropLine>();
         var staleAfter = TimeSpan.FromMinutes(Math.Clamp(_options.StaleAfterMinutes, 15, 24 * 60));
         var maxEvents = Math.Clamp(_options.MaxEvents, 1, 40);
-        var preferred = ParsePreferredBookmakers(_options.OddsApi.PreferredBookmakers);
+        var priority = ParseBookmakerPriority(_options.OddsApi.PreferredBookmakers);
         var taken = 0;
 
         foreach (var ev in events.OrderBy(e => e.CommenceTime).Take(maxEvents))
@@ -137,13 +137,19 @@ public sealed class LivePropLineProvider : IPropLineProvider
                 Phase = phaseHint
             };
 
-            foreach (var book in OrderBookmakers(ev.Bookmakers, preferred))
+            // Books are visited in priority order (primary source first); SelectPreferredPerIdentity
+            // keeps only the highest-priority book's line for each market — other listed books only
+            // supplement markets the primary book doesn't have, they never override it.
+            var gameCandidates = new List<PropLine>();
+            foreach (var book in OrderBookmakers(ev.Bookmakers, priority))
             {
                 foreach (var market in book.Markets ?? [])
                 {
-                    lines.AddRange(MapGameMarket(footballEvent, book, market, staleAfter));
+                    gameCandidates.AddRange(MapGameMarket(footballEvent, book, market, staleAfter));
                 }
             }
+
+            lines.AddRange(SelectPreferredPerIdentity(gameCandidates));
 
             if (!_options.OddsApi.FetchPlayerProps)
             {
@@ -165,32 +171,16 @@ public sealed class LivePropLineProvider : IPropLineProvider
                     continue;
                 }
 
-                var propCount = 0;
-                foreach (var book in OrderBookmakers(detail.Bookmakers, preferred))
+                var propCandidates = new List<PropLine>();
+                foreach (var book in OrderBookmakers(detail.Bookmakers, priority))
                 {
                     foreach (var market in book.Markets ?? [])
                     {
-                        foreach (var mapped in MapPlayerMarket(footballEvent, book, market, players, staleAfter))
-                        {
-                            lines.Add(mapped);
-                            propCount++;
-                            if (propCount >= _options.MaxPlayerPropsPerEvent)
-                            {
-                                break;
-                            }
-                        }
-
-                        if (propCount >= _options.MaxPlayerPropsPerEvent)
-                        {
-                            break;
-                        }
-                    }
-
-                    if (propCount >= _options.MaxPlayerPropsPerEvent)
-                    {
-                        break;
+                        propCandidates.AddRange(MapPlayerMarket(footballEvent, book, market, players, staleAfter));
                     }
                 }
+
+                lines.AddRange(SelectPreferredPerIdentity(propCandidates).Take(_options.MaxPlayerPropsPerEvent));
             }
             catch (Exception ex)
             {
@@ -229,7 +219,7 @@ public sealed class LivePropLineProvider : IPropLineProvider
 
     private static IEnumerable<OddsBookmakerDto> OrderBookmakers(
         List<OddsBookmakerDto>? books,
-        HashSet<string> preferred)
+        IReadOnlyList<string> priorityOrder)
     {
         if (books is null || books.Count == 0)
         {
@@ -237,19 +227,65 @@ public sealed class LivePropLineProvider : IPropLineProvider
         }
 
         return books
-            .OrderBy(b =>
-            {
-                var key = b.Key ?? string.Empty;
-                return preferred.Contains(key) ? 0 : 1;
-            })
+            .OrderBy(b => BookmakerPriorityRank(b.Key, priorityOrder))
             .ThenBy(b => b.Title ?? b.Key ?? string.Empty);
     }
 
-    private static HashSet<string> ParsePreferredBookmakers(string? csv) =>
+    /// <summary>
+    /// Lower = higher priority. A book not in <paramref name="priorityOrder"/> sorts after every
+    /// listed book (still eligible to supplement, just never preferred over a listed source).
+    /// </summary>
+    internal static int BookmakerPriorityRank(string? bookmakerKey, IReadOnlyList<string> priorityOrder)
+    {
+        var key = (bookmakerKey ?? string.Empty).ToLowerInvariant();
+        for (var i = 0; i < priorityOrder.Count; i++)
+        {
+            if (priorityOrder[i] == key)
+            {
+                return i;
+            }
+        }
+
+        return priorityOrder.Count;
+    }
+
+    /// <summary>Ordered, de-duplicated bookmaker priority list (position = priority; first = primary).</summary>
+    internal static IReadOnlyList<string> ParseBookmakerPriority(string? csv) =>
         (csv ?? string.Empty)
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Select(s => s.ToLowerInvariant())
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            .Distinct()
+            .ToList();
+
+    /// <summary>
+    /// Keeps only the first (highest-priority-book) line per market identity, assuming
+    /// <paramref name="candidates"/> is already ordered by book priority. This is what makes the
+    /// primary bookmaker win when it has a market, while other listed books only supplement
+    /// markets it doesn't have.
+    /// </summary>
+    internal static IReadOnlyList<PropLine> SelectPreferredPerIdentity(IEnumerable<PropLine> candidates)
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var result = new List<PropLine>();
+        foreach (var line in candidates)
+        {
+            if (seen.Add(LineIdentity(line)))
+            {
+                result.Add(line);
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>Market identity independent of which book posted it (event + market + subject).</summary>
+    internal static string LineIdentity(PropLine line)
+    {
+        var subject = line.PlayerId is Guid id
+            ? id.ToString()
+            : NormalizePersonName(line.PlayerName ?? line.TeamName ?? string.Empty);
+        return $"{line.Event.EventId}|{line.Market}|{subject}";
+    }
 
     private static IEnumerable<PropLine> MapGameMarket(
         FootballEvent ev,

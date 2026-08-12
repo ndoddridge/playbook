@@ -1,6 +1,7 @@
 using Playbook.Core.Injuries.Models;
 using Playbook.Core.Intelligence.Models;
 using Playbook.Core.Knowledge;
+using Playbook.Core.Players;
 using Playbook.Core.Predictions;
 using Playbook.Core.Projections.Models;
 using Playbook.Core.Stats.Models;
@@ -26,6 +27,13 @@ public sealed class QuickPickEvaluationContext
     public PlayerStatisticalContext? StatisticalContext { get; init; }
 
     public PlayerInjuryProfile? InjuryProfile { get; init; }
+
+    /// <summary>
+    /// Player's base roster status (Active/Suspended/InjuredReserve/PracticeSquad/...) — distinct
+    /// from the week-to-week injury designation in <see cref="InjuryProfile"/>. Null when the
+    /// line has no matched player.
+    /// </summary>
+    public PlayerStatus? RosterStatus { get; init; }
 
     public IReadOnlyList<IntelligenceFact> RecentFacts { get; init; } = [];
 

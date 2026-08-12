@@ -6,6 +6,7 @@
         <div class="qp-card__identity">
             <h3 class="qp-card__subject">@Prediction.SubjectLabel</h3>
             <p class="qp-card__context">@QuickPickDisplay.CompactContext(Prediction)</p>
+            <p class="qp-card__source">@QuickPickDisplay.SourceLine(Prediction)</p>
         </div>
         <span class="@QuickPickDisplay.FreshnessCss(Prediction.LineFreshness)">
             @QuickPickDisplay.FreshnessLabel(Prediction.LineFreshness)

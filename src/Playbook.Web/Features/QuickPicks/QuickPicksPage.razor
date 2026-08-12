@@ -33,6 +33,13 @@
                 }
             </p>
         }
+        else if (isUnavailable)
+        {
+            <p class="qp-page__note">
+                Live sportsbook lines are currently unavailable@(string.IsNullOrWhiteSpace(SyncStatus.LastError) ? "." : $": {SyncStatus.LastError}")
+                Mock lines are disabled in production, so no picks are shown rather than presenting mock data as real.
+            </p>
+        }
     </header>
 
     @if (selected is not null && canonicalWeeks.Count > 0)
@@ -158,6 +165,7 @@
     private IReadOnlyList<FootballEvent> events = [];
     private string dataModeLabel = "MOCK DATA";
     private string dataModeCss = "mock";
+    private bool isUnavailable;
     private string topSubtitle = "Best available opportunities";
 
     /// <summary>Persists for the Blazor Server circuit / session.</summary>
@@ -176,8 +184,17 @@
 
         var isLive = string.Equals(SyncStatus.ProviderStatus, "Live", StringComparison.OrdinalIgnoreCase)
                      && !SyncStatus.UsedFallback;
-        dataModeLabel = isLive ? "LIVE DATA" : SyncStatus.UsedFallback ? "MOCK FALLBACK" : "MOCK DATA";
-        dataModeCss = isLive ? "live" : SyncStatus.UsedFallback ? "fallback" : "mock";
+        isUnavailable = !isLive && !SyncStatus.UsedFallback &&
+                        string.Equals(SyncStatus.ProviderStatus, "Error", StringComparison.OrdinalIgnoreCase);
+
+        dataModeLabel = isLive ? "LIVE DATA"
+            : SyncStatus.UsedFallback ? "MOCK FALLBACK"
+            : isUnavailable ? "LIVE UNAVAILABLE"
+            : "MOCK DATA";
+        dataModeCss = isLive ? "live"
+            : SyncStatus.UsedFallback ? "fallback"
+            : isUnavailable ? "unavailable"
+            : "mock";
     }
 
     private void OnSlateSelected(NflWeekRef slate)

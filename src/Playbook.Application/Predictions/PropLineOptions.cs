@@ -34,9 +34,21 @@ public sealed class PropLineOptions
 
     /// <summary>
     /// When Live returns zero usable lines (e.g. offseason), fall back to Mock
-    /// so the board remains usable for development.
+    /// so the board remains usable for development. Only takes effect when
+    /// <see cref="AllowMockFallback"/> is also true.
     /// </summary>
     public bool FallbackToMockWhenEmpty { get; set; } = true;
+
+    /// <summary>
+    /// Master switch for ever silently substituting Mock lines for Live ones — covers a
+    /// missing API key, a failed Live request, and (together with
+    /// <see cref="FallbackToMockWhenEmpty"/>) an empty Live response. True for local
+    /// dev/tests; the deployed product sets this false so it never presents mock lines as
+    /// real — if Live is unavailable, the board reports that honestly instead.
+    /// Explicitly requesting <see cref="PropLineProviderKind.Mock"/> via <see cref="Provider"/>
+    /// is unaffected either way — that is a deliberate dev choice, not a fallback.
+    /// </summary>
+    public bool AllowMockFallback { get; set; } = true;
 }
 
 public sealed class OddsApiOptions
@@ -75,6 +87,12 @@ public sealed class OddsApiOptions
 
     public bool FetchPlayerProps { get; set; } = true;
 
-    /// <summary>Optional preferred bookmaker keys (e.g. draftkings,fanduel). Empty = first available.</summary>
-    public string PreferredBookmakers { get; set; } = "draftkings,fanduel,betmgm,williamhill_us";
+    /// <summary>
+    /// Ordered bookmaker priority (The Odds API bookmaker keys), highest priority first.
+    /// The first book in this list that has a given market is used for that market; other
+    /// listed books only supplement markets the primary book doesn't have. Default:
+    /// <c>williamhill_us</c> (Caesars Sportsbook — primary source) then DraftKings, FanDuel,
+    /// BetMGM as legitimate supplemental sources. Empty = first available, alphabetically.
+    /// </summary>
+    public string PreferredBookmakers { get; set; } = "williamhill_us,draftkings,fanduel,betmgm";
 }

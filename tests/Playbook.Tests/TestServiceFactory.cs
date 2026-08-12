@@ -20,7 +20,8 @@ internal static class TestServiceFactory
         bool backgroundRefreshEnabled = false,
         string propLinesProvider = "Mock",
         string? oddsApiKey = "",
-        string? oddsApiBaseUrl = null)
+        string? oddsApiBaseUrl = null,
+        bool allowMockFallback = true)
     {
         var values = new Dictionary<string, string?>
         {
@@ -50,6 +51,7 @@ internal static class TestServiceFactory
             ["PropLines:Provider"] = propLinesProvider,
             ["PropLines:StaleAfterMinutes"] = "180",
             ["PropLines:FallbackToMockWhenEmpty"] = "true",
+            ["PropLines:AllowMockFallback"] = allowMockFallback ? "true" : "false",
             ["PropLines:OddsApi:ApiKey"] = oddsApiKey ?? "",
             ["PropLines:OddsApi:BaseUrl"] = oddsApiBaseUrl ?? "https://api.the-odds-api.com/v4/",
             ["PropLines:OddsApi:TimeoutSeconds"] = "10"
