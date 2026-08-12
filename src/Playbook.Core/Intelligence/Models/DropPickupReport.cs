@@ -79,10 +79,15 @@ public sealed class DropCandidate
     public required double KeepValueScore { get; init; }
 
     /// <summary>
-    /// Dynasty-only Keep Value adjustment from age / years-pro / related youth signals
+    /// Dynasty-only Keep Value adjustment from age / years-pro / role / production signals
     /// (0 in redraft or when those fields are absent). Used to gate small weekly upgrades.
     /// </summary>
     public double DynastyKeepAdjustment { get; init; }
+
+    /// <summary>
+    /// Keep bonus from fantasy-starter / production-backed NFL role signals (all league types).
+    /// </summary>
+    public double EstablishedRoleKeep { get; init; }
 
     /// <summary>Own projection minus the best available same-position free agent's projection.</summary>
     public required double? ReplacementMargin { get; init; }

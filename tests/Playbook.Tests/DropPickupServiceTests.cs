@@ -244,13 +244,13 @@ public class DropPickupServiceTests
     [Fact]
     public void Redraft_Ignores_Dynasty_Keep_Adjustment()
     {
-        var youngRb = MakePlayer(Position.RB, "Young Upside RB", age: 23, yearsPro: 1);
-        var olderFa = MakePlayer(Position.RB, "Older FA RB", age: 29, yearsPro: 7);
+        var youngRb = MakePlayer(Position.RB, "Young Upside RB", age: 23, yearsPro: 1, team: "CAR");
+        var olderFa = MakePlayer(Position.RB, "Older FA RB", age: 29, yearsPro: 7, team: "CHI");
         var team = MakeTeam([youngRb.Id]);
         var projections = new Dictionary<Guid, PlayerProjection>
         {
             [youngRb.Id] = MakeProjection(youngRb.Id, points: 8, confidence: 40),
-            [olderFa.Id] = MakeProjection(olderFa.Id, points: 12, confidence: 55)
+            [olderFa.Id] = MakeProjection(olderFa.Id, points: 12, confidence: 55, productionBacked: true)
         };
         var service = CreateService(
             [youngRb, olderFa], projections, team, otherTeams: [], leagueType: LeagueType.Redraft);
@@ -260,6 +260,112 @@ public class DropPickupServiceTests
         var suggestion = Assert.Single(report.Suggestions);
         Assert.Equal(youngRb.Id, suggestion.Drop.PlayerId);
         Assert.Equal(0, suggestion.Drop.DynastyKeepAdjustment);
+    }
+
+    [Fact]
+    public void Established_Starter_Is_Not_Dropped_For_Obscure_NoProduction_Backup()
+    {
+        // Starting QB with production-backed projection vs. veteran backup with inflated
+        // AttributeFallback projection and no historical inputs — must not recommend the swap.
+        var starterQb = MakePlayer(Position.QB, "Established Starter QB", age: 34, yearsPro: 10, team: "SEA");
+        var obscureBackup = MakePlayer(Position.QB, "Obscure Backup QB", age: 29, yearsPro: 7, team: "LAC");
+        var team = MakeTeam([starterQb.Id], starterIds: [starterQb.Id]);
+        var projections = new Dictionary<Guid, PlayerProjection>
+        {
+            [starterQb.Id] = MakeProjection(starterQb.Id, points: 14, confidence: 70, productionBacked: true),
+            [obscureBackup.Id] = MakeProjection(
+                obscureBackup.Id, points: 18, confidence: 35, productionBacked: false)
+        };
+        var service = CreateService([starterQb, obscureBackup], projections, team, otherTeams: []);
+
+        var report = service.GetReport();
+
+        Assert.Empty(report.Suggestions);
+        Assert.DoesNotContain("Geno", string.Join(' ', report.Suggestions.Select(s => s.Drop.PlayerName)));
+        Assert.DoesNotContain("Stick", string.Join(' ', report.Suggestions.Select(s => s.Pickup.PlayerName)));
+    }
+
+    [Fact]
+    public void Credible_ProductionBacked_Pickup_Still_Beats_Weak_Bench_Piece()
+    {
+        var weakBench = MakePlayer(Position.WR, "Weak Bench WR", age: 28, yearsPro: 6, team: "NYG");
+        var strongFa = MakePlayer(Position.WR, "Strong Available WR", age: 26, yearsPro: 4, team: "TB");
+        var team = MakeTeam([weakBench.Id]);
+        var projections = new Dictionary<Guid, PlayerProjection>
+        {
+            [weakBench.Id] = MakeProjection(weakBench.Id, points: 4, confidence: 50, productionBacked: true),
+            [strongFa.Id] = MakeProjection(strongFa.Id, points: 12, confidence: 65, productionBacked: true)
+        };
+        var service = CreateService([weakBench, strongFa], projections, team, otherTeams: []);
+
+        var report = service.GetReport();
+
+        var suggestion = Assert.Single(report.Suggestions);
+        Assert.Equal(weakBench.Id, suggestion.Drop.PlayerId);
+        Assert.Equal(strongFa.Id, suggestion.Pickup.PlayerId);
+    }
+
+    [Fact]
+    public void Dynasty_TradeValue_Protects_RoleBacked_Starter_From_Small_Edge()
+    {
+        var starterQb = MakePlayer(Position.QB, "Role Backed QB", age: 34, yearsPro: 10, team: "SEA");
+        var betterFa = MakePlayer(Position.QB, "Slightly Higher FA QB", age: 28, yearsPro: 5, team: "DEN");
+        var team = MakeTeam([starterQb.Id], starterIds: [starterQb.Id]);
+        var projections = new Dictionary<Guid, PlayerProjection>
+        {
+            [starterQb.Id] = MakeProjection(starterQb.Id, points: 15, confidence: 68, productionBacked: true),
+            [betterFa.Id] = MakeProjection(betterFa.Id, points: 18, confidence: 60, productionBacked: true)
+        };
+        var service = CreateService(
+            [starterQb, betterFa], projections, team, otherTeams: [], leagueType: LeagueType.Dynasty);
+
+        var report = service.GetReport();
+
+        Assert.Empty(report.Suggestions);
+        Assert.True(
+            report.StatusMessage.Contains("No improving", StringComparison.OrdinalIgnoreCase) ||
+            report.Suggestions.Count == 0);
+    }
+
+    [Fact]
+    public void Legitimate_HighUpside_Young_Player_Can_Still_Be_A_Pickup()
+    {
+        // Early-career/young player without NFL production sample remains eligible when upside
+        // signals exist; weak bench piece can still be swapped for them.
+        var weakBench = MakePlayer(Position.RB, "Expendable Bench RB", age: 29, yearsPro: 6, team: "ATL");
+        var youngUpside = MakePlayer(Position.RB, "High Upside Rookie RB", age: 22, yearsPro: 0, team: "IND");
+        var team = MakeTeam([weakBench.Id]);
+        var projections = new Dictionary<Guid, PlayerProjection>
+        {
+            [weakBench.Id] = MakeProjection(weakBench.Id, points: 3, confidence: 50, productionBacked: true),
+            [youngUpside.Id] = MakeProjection(
+                youngUpside.Id, points: 11, confidence: 42, productionBacked: false)
+        };
+        var service = CreateService(
+            [weakBench, youngUpside], projections, team, otherTeams: [], leagueType: LeagueType.Dynasty);
+
+        var report = service.GetReport();
+
+        var suggestion = Assert.Single(report.Suggestions);
+        Assert.Equal(weakBench.Id, suggestion.Drop.PlayerId);
+        Assert.Equal(youngUpside.Id, suggestion.Pickup.PlayerId);
+    }
+
+    [Fact]
+    public void Recommendations_Do_Not_Depend_On_Hardcoded_Player_Names()
+    {
+        // Same structural scenario with arbitrary names — proves logic is role/data driven.
+        var a = MakePlayer(Position.QB, "Alpha Starter", age: 33, yearsPro: 9, team: "MIN");
+        var b = MakePlayer(Position.QB, "Beta NoSample Vet", age: 28, yearsPro: 6, team: "WAS");
+        var team = MakeTeam([a.Id], starterIds: [a.Id]);
+        var projections = new Dictionary<Guid, PlayerProjection>
+        {
+            [a.Id] = MakeProjection(a.Id, points: 13, confidence: 66, productionBacked: true),
+            [b.Id] = MakeProjection(b.Id, points: 17, confidence: 30, productionBacked: false)
+        };
+        var service = CreateService([a, b], projections, team, otherTeams: []);
+
+        Assert.Empty(service.GetReport().Suggestions);
     }
 
     private static DropPickupService CreateService(
@@ -299,20 +405,25 @@ public class DropPickupServiceTests
         string name,
         int? age = null,
         int? yearsPro = null,
-        PlayerStatus status = PlayerStatus.Active) => new()
+        PlayerStatus status = PlayerStatus.Active,
+        string team = "KC") => new()
     {
         Id = Guid.NewGuid(),
         FullName = name,
         FirstName = name,
         LastName = name,
         Position = position,
-        Team = "FA",
+        Team = team,
         Status = status,
         Age = age,
         YearsPro = yearsPro
     };
 
-    private static PlayerProjection MakeProjection(Guid playerId, decimal points, int confidence) => new()
+    private static PlayerProjection MakeProjection(
+        Guid playerId,
+        decimal points,
+        int confidence,
+        bool productionBacked = true) => new()
     {
         PlayerId = playerId,
         Week = 1,
@@ -327,16 +438,25 @@ public class DropPickupServiceTests
         SupportingIntelligence = [],
         ProjectionTimestamp = DateTimeOffset.UtcNow,
         ProjectionVersion = "test",
-        InputsUsed = new ProjectionInputsUsed()
+        InputsUsed = new ProjectionInputsUsed
+        {
+            HistoricalStatistics = productionBacked,
+            CareerBaseline = productionBacked,
+            ProductionSource = productionBacked
+                ? nameof(ProductionDataSource.StatsService)
+                : nameof(ProductionDataSource.AttributeFallback)
+        }
     };
 
-    private static FantasyTeam MakeTeam(IReadOnlyList<Guid> playerIds) => new()
+    private static FantasyTeam MakeTeam(
+        IReadOnlyList<Guid> playerIds,
+        IReadOnlyList<Guid>? starterIds = null) => new()
     {
         LeagueId = LeagueId,
         RosterId = 1,
         DisplayName = "My Team",
         PlayerIds = playerIds,
-        StarterIds = []
+        StarterIds = starterIds ?? []
     };
 
     private sealed class FakeLeagueState : ILeagueState
