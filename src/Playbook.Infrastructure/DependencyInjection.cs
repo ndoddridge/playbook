@@ -138,6 +138,7 @@ public static class DependencyInjection
         services.AddSingleton<IDecisionEngine, DecisionEngine>();
         services.AddSingleton<IFantasyTeamIntelligenceService, FantasyTeamIntelligenceService>();
         services.AddSingleton<IWeeklyMatchupGamePlanService, WeeklyMatchupGamePlanService>();
+        services.AddSingleton<IDropPickupService, DropPickupService>();
         RegisterHistoricalReplay(services);
     }
 

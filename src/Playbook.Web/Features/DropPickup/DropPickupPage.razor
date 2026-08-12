@@ -1,0 +1,141 @@
+@page "/drop-pickup"
+@using Playbook.Application.Intelligence.Interfaces
+@using Playbook.Application.Leagues
+@using Playbook.Core.Intelligence.Models
+@using Playbook.Web.Features.League.Models
+@inject ILeagueState LeagueState
+@inject IDropPickupService DropPickup
+@implements IDisposable
+
+<PageTitle>Drop / Pickup — Playbook</PageTitle>
+
+<section class="pb-page ti-page">
+    <header class="pb-page__header ti-page__header">
+        <h1 class="pb-page__title">Drop / Pickup</h1>
+        <p class="pb-page__subtitle">Which roster spot is weakest, and who's available to upgrade it?</p>
+    </header>
+
+    @if (isRefreshing)
+    {
+        <p class="pb-empty">Refreshing Drop/Pickup suggestions for the selected league…</p>
+    }
+    else if (report is null)
+    {
+        <p class="pb-empty">Drop/Pickup intelligence is unavailable.</p>
+    }
+    else if (report.LeagueId is null || !report.IsSetupComplete || !report.HasRosterPlayers)
+    {
+        <p class="pb-empty">@report.StatusMessage</p>
+    }
+    else
+    {
+        <section class="ti-snapshot" aria-label="Roster overview">
+            <div class="ti-snapshot__identity">
+                <h2 class="ti-snapshot__team">@report.TeamName</h2>
+                <p class="ti-snapshot__meta">
+                    @report.LeagueName
+                    · Roster @report.RosterCount@(report.RosterLimit is int limit ? $"/{limit}" : "")
+                    · @report.AvailablePlayerCount available league-wide
+                    @if (LeagueState.CurrentLeague is { } league)
+                    {
+                        <span class="league-source-badge @(LeagueDisplay.IsLive(league) ? "league-source-badge--live" : "league-source-badge--mock")">
+                            @LeagueDisplay.DataSource(league.DataSource)
+                        </span>
+                    }
+                </p>
+            </div>
+        </section>
+
+        <section class="ti-section" aria-labelledby="dp-suggestions-title">
+            <h2 id="dp-suggestions-title" class="ti-section__title">Suggested swaps</h2>
+            @if (report.Suggestions.Count == 0)
+            {
+                <p class="ti-muted">@report.StatusMessage</p>
+            }
+            else
+            {
+                <ul class="ti-roster">
+                    @foreach (var suggestion in report.Suggestions)
+                    {
+                        <li class="ti-roster__item">
+                            <div class="ti-roster__top">
+                                <span class="ti-roster__badge">+@suggestion.ValueGain.ToString("0.0") pts</span>
+                            </div>
+                            <p><strong>Drop:</strong> @suggestion.Drop.PlayerName (@suggestion.Drop.PositionLabel)
+                                @if (suggestion.Drop.IsStarter)
+                                {
+                                    <span class="ti-roster__badge">Starter</span>
+                                }
+                            </p>
+                            <ul class="ti-list ti-list--compact">
+                                @foreach (var reason in suggestion.Drop.Reasons)
+                                {
+                                    <li>@reason</li>
+                                }
+                            </ul>
+                            <p><strong>Pickup:</strong> @suggestion.Pickup.PlayerName (@suggestion.Pickup.PositionLabel)</p>
+                            <ul class="ti-list ti-list--compact">
+                                @foreach (var reason in suggestion.Pickup.Reasons)
+                                {
+                                    <li>@reason</li>
+                                }
+                            </ul>
+                            <p class="ti-muted">@suggestion.Reasoning</p>
+                        </li>
+                    }
+                </ul>
+            }
+        </section>
+
+        @if (report.UnavailableSignals.Count > 0)
+        {
+            <section class="ti-section ti-section--secondary">
+                <h2 class="ti-section__title">Unavailable</h2>
+                <ul class="ti-list">
+                    @foreach (var missing in report.UnavailableSignals)
+                    {
+                        <li>@missing</li>
+                    }
+                </ul>
+            </section>
+        }
+
+        <p class="ti-footnote">@report.StatusMessage · Updated @report.GeneratedAt.ToLocalTime().ToString("MMM d, h:mm tt")</p>
+    }
+</section>
+
+@code {
+    private DropPickupReport? report;
+    private bool isRefreshing;
+    private PersonalizedAnalysisContext _boundContext;
+
+    protected override void OnInitialized()
+    {
+        LeagueState.Changed += OnLeagueChanged;
+        Reload();
+    }
+
+    private void OnLeagueChanged() => InvokeAsync(() =>
+    {
+        isRefreshing = true;
+        report = null;
+        StateHasChanged();
+        Reload();
+        isRefreshing = false;
+        StateHasChanged();
+    });
+
+    private void Reload()
+    {
+        _boundContext = PersonalizedAnalysisContext.FromState(LeagueState);
+        report = DropPickup.GetReport();
+
+        if (report is not null &&
+            !_boundContext.Matches(report.LeagueId, report.SelectedRosterId))
+        {
+            report = DropPickup.GetReport();
+        }
+    }
+
+    public void Dispose() => LeagueState.Changed -= OnLeagueChanged;
+}
