@@ -174,18 +174,107 @@ public class DropPickupServiceTests
         Assert.False(report.HasRosterPlayers);
     }
 
+    [Fact]
+    public void Dynasty_Protects_Young_EarlyCareer_Player_From_Small_Projection_Edge()
+    {
+        // Young RB with early-career years: a modest FA projection edge must not auto-drop them.
+        var youngRb = MakePlayer(Position.RB, "Young Upside RB", age: 23, yearsPro: 1);
+        var olderFa = MakePlayer(Position.RB, "Older FA RB", age: 29, yearsPro: 7);
+        var team = MakeTeam([youngRb.Id]);
+        var projections = new Dictionary<Guid, PlayerProjection>
+        {
+            [youngRb.Id] = MakeProjection(youngRb.Id, points: 8, confidence: 40),
+            [olderFa.Id] = MakeProjection(olderFa.Id, points: 12, confidence: 55)
+        };
+        var service = CreateService(
+            [youngRb, olderFa], projections, team, otherTeams: [], leagueType: LeagueType.Dynasty);
+
+        var report = service.GetReport();
+
+        Assert.Empty(report.Suggestions);
+    }
+
+    [Fact]
+    public void Dynasty_Still_Recommends_Dropping_Older_LowUpside_Player()
+    {
+        var agingRb = MakePlayer(Position.RB, "Aging RB", age: 30, yearsPro: 8);
+        var betterFa = MakePlayer(Position.RB, "Better Available RB", age: 26, yearsPro: 4);
+        var team = MakeTeam([agingRb.Id]);
+        var projections = new Dictionary<Guid, PlayerProjection>
+        {
+            [agingRb.Id] = MakeProjection(agingRb.Id, points: 5, confidence: 50),
+            [betterFa.Id] = MakeProjection(betterFa.Id, points: 12, confidence: 60)
+        };
+        var service = CreateService(
+            [agingRb, betterFa], projections, team, otherTeams: [], leagueType: LeagueType.Dynasty);
+
+        var report = service.GetReport();
+
+        var suggestion = Assert.Single(report.Suggestions);
+        Assert.Equal(agingRb.Id, suggestion.Drop.PlayerId);
+        Assert.Equal(betterFa.Id, suggestion.Pickup.PlayerId);
+        Assert.True(suggestion.Drop.DynastyKeepAdjustment < 0);
+        Assert.Contains(suggestion.Drop.Reasons, r => r.Contains("aging", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Dynasty_Missing_Age_And_YearsPro_Does_Not_Break_Recommendations()
+    {
+        var unknownWr = MakePlayer(Position.WR, "Unknown Meta WR"); // age/yearsPro null
+        var faWr = MakePlayer(Position.WR, "Available WR");
+        var team = MakeTeam([unknownWr.Id]);
+        var projections = new Dictionary<Guid, PlayerProjection>
+        {
+            [unknownWr.Id] = MakeProjection(unknownWr.Id, points: 4, confidence: 50),
+            [faWr.Id] = MakeProjection(faWr.Id, points: 11, confidence: 55)
+        };
+        var service = CreateService(
+            [unknownWr, faWr], projections, team, otherTeams: [], leagueType: LeagueType.Dynasty);
+
+        var report = service.GetReport();
+
+        var suggestion = Assert.Single(report.Suggestions);
+        Assert.Equal(unknownWr.Id, suggestion.Drop.PlayerId);
+        Assert.Equal(0, suggestion.Drop.DynastyKeepAdjustment);
+        Assert.DoesNotContain(
+            suggestion.Drop.Reasons,
+            r => r.Contains("Dynasty", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Redraft_Ignores_Dynasty_Keep_Adjustment()
+    {
+        var youngRb = MakePlayer(Position.RB, "Young Upside RB", age: 23, yearsPro: 1);
+        var olderFa = MakePlayer(Position.RB, "Older FA RB", age: 29, yearsPro: 7);
+        var team = MakeTeam([youngRb.Id]);
+        var projections = new Dictionary<Guid, PlayerProjection>
+        {
+            [youngRb.Id] = MakeProjection(youngRb.Id, points: 8, confidence: 40),
+            [olderFa.Id] = MakeProjection(olderFa.Id, points: 12, confidence: 55)
+        };
+        var service = CreateService(
+            [youngRb, olderFa], projections, team, otherTeams: [], leagueType: LeagueType.Redraft);
+
+        var report = service.GetReport();
+
+        var suggestion = Assert.Single(report.Suggestions);
+        Assert.Equal(youngRb.Id, suggestion.Drop.PlayerId);
+        Assert.Equal(0, suggestion.Drop.DynastyKeepAdjustment);
+    }
+
     private static DropPickupService CreateService(
         IReadOnlyList<Player> players,
         IReadOnlyDictionary<Guid, PlayerProjection> projections,
         FantasyTeam? team,
-        IReadOnlyList<FantasyTeam> otherTeams)
+        IReadOnlyList<FantasyTeam> otherTeams,
+        LeagueType leagueType = LeagueType.Redraft)
     {
         var league = new League
         {
             Id = LeagueId,
             Name = "Test League",
             Platform = LeaguePlatform.Sleeper,
-            LeagueType = LeagueType.Redraft,
+            LeagueType = leagueType,
             ScoringType = ScoringType.Ppr,
             NumberOfTeams = 10,
             CurrentWeek = 1,
@@ -205,7 +294,12 @@ public class DropPickupServiceTests
         return new DropPickupService(leagueState, playerService, projectionService);
     }
 
-    private static Player MakePlayer(Position position, string name) => new()
+    private static Player MakePlayer(
+        Position position,
+        string name,
+        int? age = null,
+        int? yearsPro = null,
+        PlayerStatus status = PlayerStatus.Active) => new()
     {
         Id = Guid.NewGuid(),
         FullName = name,
@@ -213,7 +307,9 @@ public class DropPickupServiceTests
         LastName = name,
         Position = position,
         Team = "FA",
-        Status = PlayerStatus.Active
+        Status = status,
+        Age = age,
+        YearsPro = yearsPro
     };
 
     private static PlayerProjection MakeProjection(Guid playerId, decimal points, int confidence) => new()

@@ -72,10 +72,17 @@ public sealed class DropCandidate
 
     /// <summary>
     /// Composite roster-keep score (projection + confidence + replacement margin + positional
-    /// depth). Lower = more expendable. Used only to rank drop candidates, never shown as a
-    /// bare number to avoid implying false precision — see <see cref="Reasons"/> instead.
+    /// depth, plus dynasty age/early-career adjustment when applicable). Lower = more
+    /// expendable. Used only to rank drop candidates, never shown as a bare number to avoid
+    /// implying false precision — see <see cref="Reasons"/> instead.
     /// </summary>
     public required double KeepValueScore { get; init; }
+
+    /// <summary>
+    /// Dynasty-only Keep Value adjustment from age / years-pro / related youth signals
+    /// (0 in redraft or when those fields are absent). Used to gate small weekly upgrades.
+    /// </summary>
+    public double DynastyKeepAdjustment { get; init; }
 
     /// <summary>Own projection minus the best available same-position free agent's projection.</summary>
     public required double? ReplacementMargin { get; init; }

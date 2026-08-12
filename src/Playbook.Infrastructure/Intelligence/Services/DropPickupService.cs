@@ -14,9 +14,11 @@ namespace Playbook.Infrastructure.Intelligence.Services;
 /// reads or writes <c>IDecisionEngine</c>/knowledge state, so it cannot disturb Start/Sit or
 /// Quick Picks. Ranking uses more than raw projected points: replacement value (own projection
 /// vs. the best available same-position free agent), projection confidence, and positional depth
-/// on the roster. Never fabricates ownership beyond known league rosters, waiver priority,
-/// betting lines, news, or matchup information — those signals are simply absent from every
-/// candidate rather than guessed at.
+/// on the roster. In dynasty leagues, Keep Value also applies an explainable age / early-career
+/// adjustment from data already on <see cref="Player"/> so small weekly projection edges cannot
+/// alone justify dropping young or high-upside roster pieces. Never fabricates ownership beyond
+/// known league rosters, waiver priority, betting lines, news, draft capital, or matchup
+/// information — those signals are simply absent from every candidate rather than guessed at.
 /// </summary>
 public sealed class DropPickupService : IDropPickupService
 {
@@ -27,6 +29,24 @@ public sealed class DropPickupService : IDropPickupService
     private const double StarterBonus = 2.0;
     private const int MaxSuggestions = 3;
     private const int MaxDropCandidatesConsidered = 8;
+
+    // Dynasty keep-value: large enough that a small weekly projection edge cannot alone surface
+    // a young/early-career player as a drop, but not so large that aging low-upside pieces are
+    // frozen on the roster forever.
+    private const double DynastyEarlyCareerYears0 = 14.0;
+    private const double DynastyEarlyCareerYears1 = 11.0;
+    private const double DynastyEarlyCareerYears2 = 7.0;
+    private const double DynastyEarlyCareerYears3 = 3.0;
+    private const double DynastyYoungAgeBonus = 8.0;
+    private const double DynastyNearYoungAgeBonus = 4.0;
+    private const double DynastyAgingPenalty = 3.0;
+    private const double DynastyOlderPenalty = 6.0;
+    private const double DynastyLowConfidenceYouthBonus = 2.0;
+    private const double DynastyInjuredYouthBonus = 3.0;
+    /// <summary>Dynasty keep bonus at/above this requires a larger value-gain to recommend a drop.</summary>
+    private const double DynastyProtectedKeepThreshold = 8.0;
+    /// <summary>Minimum projected-points gain to drop a dynasty-protected player.</summary>
+    private const double DynastyProtectedMinValueGain = 10.0;
 
     private readonly ILeagueState _leagueState;
     private readonly IPlayerService _players;
@@ -146,13 +166,15 @@ public sealed class DropPickupService : IDropPickupService
                 .OrderByDescending(x => (double)x.Projection!.ProjectedFantasyPoints)
                 .ToList());
 
+        var isDynasty = league.LeagueType == LeagueType.Dynasty;
         var dropCandidates = rosterRows
             .Select(player => BuildDropCandidate(
                 player,
                 starterSet.Contains(player.Id),
                 projectionByPlayer.GetValueOrDefault(player.Id),
                 depthByPosition.GetValueOrDefault(player.Position),
-                freeAgentsByPosition.GetValueOrDefault(player.Position)))
+                freeAgentsByPosition.GetValueOrDefault(player.Position),
+                isDynasty))
             .OrderBy(c => c.KeepValueScore)
             .ToList();
 
@@ -180,6 +202,15 @@ public sealed class DropPickupService : IDropPickupService
             if (valueGain <= 0)
             {
                 // Only recommend swaps that are a real improvement — never a lateral or worse move.
+                continue;
+            }
+
+            // Dynasty: a small weekly projection edge must not auto-justify dropping a protected
+            // young/early-career piece. Large upgrades can still clear the bar.
+            if (isDynasty &&
+                drop.DynastyKeepAdjustment >= DynastyProtectedKeepThreshold &&
+                valueGain < DynastyProtectedMinValueGain)
+            {
                 continue;
             }
 
@@ -235,7 +266,8 @@ public sealed class DropPickupService : IDropPickupService
         bool isStarter,
         PlayerProjection? projection,
         int positionDepth,
-        List<(Player Player, PlayerProjection? Projection)>? freeAgentsAtPosition)
+        List<(Player Player, PlayerProjection? Projection)>? freeAgentsAtPosition,
+        bool isDynasty)
     {
         var ownPoints = projection is null ? (double?)null : (double)projection.ProjectedFantasyPoints;
         var confidence = projection?.Confidence;
@@ -245,11 +277,16 @@ public sealed class DropPickupService : IDropPickupService
 
         var scarcityBonus = positionDepth <= 1 ? ThinPositionBonus : positionDepth == 2 ? ShallowPositionBonus : 0.0;
         var confidenceAdjustment = confidence is int c ? (c - 50) * ConfidenceWeightPerPoint : 0.0;
+        var dynastyReasons = new List<string>();
+        var dynastyKeep = isDynasty
+            ? ComputeDynastyKeepAdjustment(player, confidence, dynastyReasons)
+            : 0.0;
         var keepValue =
             (replacementMargin ?? -100) + // unknown projection is treated as maximally expendable
             confidenceAdjustment +
             scarcityBonus +
-            (isStarter ? StarterBonus : 0.0);
+            (isStarter ? StarterBonus : 0.0) +
+            dynastyKeep;
 
         var reasons = new List<string>();
         if (replacementMargin is { } margin)
@@ -282,6 +319,8 @@ public sealed class DropPickupService : IDropPickupService
             reasons.Add("Currently a starter.");
         }
 
+        reasons.AddRange(dynastyReasons);
+
         return new DropCandidate
         {
             PlayerId = player.Id,
@@ -291,11 +330,100 @@ public sealed class DropPickupService : IDropPickupService
             ProjectedPoints = ownPoints,
             Confidence = confidence,
             KeepValueScore = Math.Round(keepValue, 2),
+            DynastyKeepAdjustment = Math.Round(dynastyKeep, 2),
             ReplacementMargin = replacementMargin is null ? null : Math.Round(replacementMargin.Value, 1),
             PositionDepthOnRoster = positionDepth,
             Reasons = reasons
         };
     }
+
+    /// <summary>
+    /// Dynasty-only Keep Value adjustment from data already present on <see cref="Player"/> /
+    /// the projection. Draft round/pick are not on the player model and are never invented —
+    /// early-career <see cref="Player.YearsPro"/> is the available career-capital proxy.
+    /// </summary>
+    private static double ComputeDynastyKeepAdjustment(
+        Player player,
+        int? confidence,
+        List<string> reasons)
+    {
+        var adjustment = 0.0;
+        var youthSignal = false;
+
+        if (player.YearsPro is int yearsPro)
+        {
+            var yearsBonus = yearsPro switch
+            {
+                <= 0 => DynastyEarlyCareerYears0,
+                1 => DynastyEarlyCareerYears1,
+                2 => DynastyEarlyCareerYears2,
+                3 => DynastyEarlyCareerYears3,
+                _ => 0.0
+            };
+            if (yearsBonus > 0)
+            {
+                adjustment += yearsBonus;
+                youthSignal = true;
+                reasons.Add($"Dynasty early-career keep ({yearsPro} years pro).");
+            }
+        }
+
+        if (player.Age is int age)
+        {
+            var (youngCutoff, agingStart) = player.Position switch
+            {
+                Position.QB => (26, 32),
+                Position.TE => (25, 30),
+                Position.RB => (24, 27),
+                _ => (24, 29)
+            };
+
+            if (age <= youngCutoff - 2)
+            {
+                adjustment += DynastyYoungAgeBonus;
+                youthSignal = true;
+                reasons.Add($"Dynasty young-player keep (age {age}).");
+            }
+            else if (age <= youngCutoff)
+            {
+                adjustment += DynastyNearYoungAgeBonus;
+                youthSignal = true;
+                reasons.Add($"Dynasty near-prime keep (age {age}).");
+            }
+            else if (age >= agingStart + 3)
+            {
+                adjustment -= DynastyOlderPenalty;
+                reasons.Add($"Dynasty aging risk (age {age}) — lower long-term keep.");
+            }
+            else if (age >= agingStart)
+            {
+                adjustment -= DynastyAgingPenalty;
+                reasons.Add($"Dynasty aging risk (age {age}) — modest keep discount.");
+            }
+        }
+
+        // Low confidence on a youth piece: weekly projection is a weak reason to abandon upside.
+        if (youthSignal && confidence is int conf && conf < 45)
+        {
+            adjustment += DynastyLowConfidenceYouthBonus;
+            reasons.Add($"Dynasty: low weekly confidence ({conf}%) does not erase early-career upside.");
+        }
+
+        // Temporary injury status on a youth piece should not alone make them the drop.
+        if (youthSignal && IsTemporarilyUnavailable(player.Status))
+        {
+            adjustment += DynastyInjuredYouthBonus;
+            reasons.Add($"Dynasty: {player.Status} status treated as temporary for a young/early-career piece.");
+        }
+
+        return adjustment;
+    }
+
+    private static bool IsTemporarilyUnavailable(PlayerStatus status) =>
+        status is PlayerStatus.Out
+            or PlayerStatus.Doubtful
+            or PlayerStatus.Questionable
+            or PlayerStatus.InjuredReserve;
 
     private static PickupCandidate BuildPickupCandidate(
         Player player,
