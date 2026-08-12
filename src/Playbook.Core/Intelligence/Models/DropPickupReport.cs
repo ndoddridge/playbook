@@ -35,6 +35,16 @@ public sealed class DropPickupReport
     /// </summary>
     public required IReadOnlyList<DropPickupSuggestion> Suggestions { get; init; }
 
+    /// <summary>
+    /// Ranked drop-only candidates (lowest Keep Value first). Populated when the counted
+    /// roster is over the configured limit so the user still sees who to cut even if no
+    /// improving pickup exists. Never invents pickups.
+    /// </summary>
+    public IReadOnlyList<DropCandidate> DropCandidates { get; init; } = [];
+
+    /// <summary>True when counted roster size exceeds the league's configured roster limit.</summary>
+    public bool IsOverRosterLimit { get; init; }
+
     public required IReadOnlyList<string> UnavailableSignals { get; init; }
 
     public required string StatusMessage { get; init; }

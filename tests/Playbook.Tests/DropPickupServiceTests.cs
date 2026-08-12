@@ -459,12 +459,75 @@ public class DropPickupServiceTests
         Assert.Empty(service.GetReport().Suggestions);
     }
 
+    [Fact]
+    public void Over_Roster_Limit_Shows_Ranked_Drop_Candidates_Without_Inventing_Pickups()
+    {
+        // Four rostered players, limit 3, every roster projection already beats available FAs —
+        // no improving pickup exists, but over-limit UX must still surface 3 ranked drops.
+        var weak = MakePlayer(Position.WR, "Weakest Keep WR");
+        var mid = MakePlayer(Position.WR, "Mid Keep WR");
+        var strong = MakePlayer(Position.WR, "Strong Keep WR");
+        var best = MakePlayer(Position.RB, "Best Keep RB");
+        var weakFa = MakePlayer(Position.WR, "Weaker Available WR");
+        var weakFaRb = MakePlayer(Position.RB, "Weaker Available RB");
+        var team = MakeTeam([weak.Id, mid.Id, strong.Id, best.Id]);
+        var projections = new Dictionary<Guid, PlayerProjection>
+        {
+            [weak.Id] = MakeProjection(weak.Id, points: 8, confidence: 50),
+            [mid.Id] = MakeProjection(mid.Id, points: 12, confidence: 55),
+            [strong.Id] = MakeProjection(strong.Id, points: 16, confidence: 60),
+            [best.Id] = MakeProjection(best.Id, points: 18, confidence: 65),
+            [weakFa.Id] = MakeProjection(weakFa.Id, points: 3, confidence: 40),
+            [weakFaRb.Id] = MakeProjection(weakFaRb.Id, points: 4, confidence: 40)
+        };
+        var service = CreateService(
+            [weak, mid, strong, best, weakFa, weakFaRb],
+            projections,
+            team,
+            otherTeams: [],
+            rosterLimitSlots: 3);
+
+        var report = service.GetReport();
+
+        Assert.True(report.IsOverRosterLimit);
+        Assert.Empty(report.Suggestions);
+        Assert.Equal(3, report.DropCandidates.Count);
+        Assert.Equal(weak.Id, report.DropCandidates[0].PlayerId);
+        Assert.Equal(mid.Id, report.DropCandidates[1].PlayerId);
+        Assert.Equal(strong.Id, report.DropCandidates[2].PlayerId);
+        Assert.True(report.DropCandidates[0].KeepValueScore <= report.DropCandidates[1].KeepValueScore);
+        Assert.True(report.DropCandidates[1].KeepValueScore <= report.DropCandidates[2].KeepValueScore);
+        Assert.Contains("over the configured limit", report.StatusMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Within_Roster_Limit_Does_Not_Populate_Drop_Only_Candidates()
+    {
+        var bestWr = MakePlayer(Position.WR, "Best WR");
+        var worseWr = MakePlayer(Position.WR, "Worse Available WR");
+        var team = MakeTeam([bestWr.Id]);
+        var projections = new Dictionary<Guid, PlayerProjection>
+        {
+            [bestWr.Id] = MakeProjection(bestWr.Id, points: 15, confidence: 70),
+            [worseWr.Id] = MakeProjection(worseWr.Id, points: 4, confidence: 40)
+        };
+        var service = CreateService(
+            [bestWr, worseWr], projections, team, otherTeams: [], rosterLimitSlots: 10);
+
+        var report = service.GetReport();
+
+        Assert.False(report.IsOverRosterLimit);
+        Assert.Empty(report.Suggestions);
+        Assert.Empty(report.DropCandidates);
+    }
+
     private static DropPickupService CreateService(
         IReadOnlyList<Player> players,
         IReadOnlyDictionary<Guid, PlayerProjection> projections,
         FantasyTeam? team,
         IReadOnlyList<FantasyTeam> otherTeams,
-        LeagueType leagueType = LeagueType.Redraft)
+        LeagueType leagueType = LeagueType.Redraft,
+        int? rosterLimitSlots = null)
     {
         var league = new League
         {
@@ -478,7 +541,10 @@ public class DropPickupServiceTests
             Season = 2026,
             IsActive = true,
             DataSource = LeagueDataSource.Sleeper,
-            SelectedRosterId = team?.RosterId
+            SelectedRosterId = team?.RosterId,
+            RosterPositions = rosterLimitSlots is int n
+                ? Enumerable.Repeat("BN", n).ToList()
+                : []
         };
 
         var leagueState = new FakeLeagueState(

@@ -47,13 +47,9 @@
         </section>
 
         <section class="ti-section" aria-labelledby="dp-suggestions-title">
-            <h2 id="dp-suggestions-title" class="ti-section__title">Suggested swaps</h2>
-            @if (report.Suggestions.Count == 0)
+            @if (report.Suggestions.Count > 0)
             {
-                <p class="ti-muted">@report.StatusMessage</p>
-            }
-            else
-            {
+                <h2 id="dp-suggestions-title" class="ti-section__title">Suggested swaps</h2>
                 <ul class="ti-roster">
                     @foreach (var suggestion in report.Suggestions)
                     {
@@ -84,6 +80,35 @@
                         </li>
                     }
                 </ul>
+            }
+            else if (report.DropCandidates.Count > 0)
+            {
+                <h2 id="dp-suggestions-title" class="ti-section__title">Drop candidates</h2>
+                <p class="ti-muted">@report.StatusMessage</p>
+                <ul class="ti-roster">
+                    @foreach (var drop in report.DropCandidates)
+                    {
+                        <li class="ti-roster__item">
+                            <p><strong>Drop:</strong> @drop.PlayerName (@drop.PositionLabel)
+                                @if (drop.IsStarter)
+                                {
+                                    <span class="ti-roster__badge">Starter</span>
+                                }
+                            </p>
+                            <ul class="ti-list ti-list--compact">
+                                @foreach (var reason in drop.Reasons)
+                                {
+                                    <li>@reason</li>
+                                }
+                            </ul>
+                        </li>
+                    }
+                </ul>
+            }
+            else
+            {
+                <h2 id="dp-suggestions-title" class="ti-section__title">Suggested swaps</h2>
+                <p class="ti-muted">@report.StatusMessage</p>
             }
         </section>
 

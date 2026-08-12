@@ -277,6 +277,22 @@ public sealed class DropPickupService : IDropPickupService
         ]);
 
         var rosterLimitStatus = RosterLimitReconciler.Check(team, league);
+        var isOverLimit = rosterLimitStatus is { IsKnown: true, IsOverLimit: true };
+
+        // Over-limit teams always need cut guidance even when no improving pickup exists.
+        // Reuse the already-ranked Keep Value list; do not invent pickups.
+        IReadOnlyList<DropCandidate> dropOnlyCandidates = isOverLimit
+            ? dropCandidates.Take(MaxSuggestions).ToList()
+            : [];
+
+        var statusMessage = suggestions.Count > 0
+            ? $"{suggestions.Count} suggested swap(s) for {context.DisplayLabel}." +
+              (isOverLimit ? $" Note: {rosterLimitStatus.Message}" : string.Empty)
+            : isOverLimit && dropOnlyCandidates.Count > 0
+                ? $"Roster is over the configured limit — {dropOnlyCandidates.Count} drop candidate(s) ranked by keep value. " +
+                  rosterLimitStatus.Message
+                : $"No improving same-position swap found for {rosterRows.Count} roster players against " +
+                  $"{allPlayers.Count - rosteredElsewhere.Count} available players.";
 
         return new DropPickupReport
         {
@@ -290,14 +306,10 @@ public sealed class DropPickupService : IDropPickupService
             RosterCount = team.CountedPlayerIds.Count,
             AvailablePlayerCount = allPlayers.Count - rosteredElsewhere.Count,
             Suggestions = suggestions,
+            DropCandidates = dropOnlyCandidates,
+            IsOverRosterLimit = isOverLimit,
             UnavailableSignals = unavailable.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
-            StatusMessage = suggestions.Count == 0
-                ? $"No improving same-position swap found for {rosterRows.Count} roster players against " +
-                  $"{allPlayers.Count - rosteredElsewhere.Count} available players."
-                : $"{suggestions.Count} suggested swap(s) for {context.DisplayLabel}." +
-                  (rosterLimitStatus is { IsKnown: true, IsOverLimit: true }
-                      ? $" Note: {rosterLimitStatus.Message}"
-                      : string.Empty),
+            StatusMessage = statusMessage,
             GeneratedAt = now
         };
     }
