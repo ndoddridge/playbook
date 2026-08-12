@@ -460,6 +460,107 @@ public class DropPickupServiceTests
     }
 
     [Fact]
+    public void Dynasty_Starting_Role_Not_Dropped_For_Roster_Depth_Alone()
+    {
+        // Production-backed starting QB with three QBs on roster — depth must not by itself
+        // make him the drop when he would be a top same-position waiver target if released.
+        var starterQb = MakePlayer(Position.QB, "Starting Role QB", age: 34, yearsPro: 10, team: "SEA");
+        var qb2 = MakePlayer(Position.QB, "Backup QB Two", age: 28, yearsPro: 5, team: "SEA");
+        var qb3 = MakePlayer(Position.QB, "Backup QB Three", age: 26, yearsPro: 3, team: "SEA");
+        var lowWr = MakePlayer(Position.WR, "Expendable WR", age: 29, yearsPro: 7, team: "NYG");
+        var faQb = MakePlayer(Position.QB, "Mediocre FA QB", age: 30, yearsPro: 8, team: "CLE");
+        var faWr = MakePlayer(Position.WR, "Upgrade FA WR", age: 26, yearsPro: 4, team: "TB");
+        var team = MakeTeam(
+            [starterQb.Id, qb2.Id, qb3.Id, lowWr.Id],
+            starterIds: [starterQb.Id]);
+        var projections = new Dictionary<Guid, PlayerProjection>
+        {
+            [starterQb.Id] = MakeProjection(starterQb.Id, points: 16, confidence: 68, productionBacked: true),
+            [qb2.Id] = MakeProjection(qb2.Id, points: 4, confidence: 40, productionBacked: true),
+            [qb3.Id] = MakeProjection(qb3.Id, points: 2, confidence: 35, productionBacked: false),
+            [lowWr.Id] = MakeProjection(lowWr.Id, points: 3, confidence: 45, productionBacked: true, ceiling: 4),
+            [faQb.Id] = MakeProjection(faQb.Id, points: 9, confidence: 50, productionBacked: true),
+            [faWr.Id] = MakeProjection(faWr.Id, points: 12, confidence: 60, productionBacked: true)
+        };
+        var service = CreateService(
+            [starterQb, qb2, qb3, lowWr, faQb, faWr],
+            projections,
+            team,
+            otherTeams: [],
+            leagueType: LeagueType.Dynasty,
+            rosterLimitSlots: 3);
+
+        var report = service.GetReport();
+
+        Assert.DoesNotContain(report.Suggestions, s => s.Drop.PlayerId == starterQb.Id);
+        Assert.DoesNotContain(report.DropCandidates, d => d.PlayerId == starterQb.Id);
+        Assert.DoesNotContain("Geno", starterQb.FullName);
+    }
+
+    [Fact]
+    public void Dynasty_Young_Injured_High_Waiver_Value_Not_A_Drop_Candidate()
+    {
+        var youngInjured = MakePlayer(
+            Position.RB, "Young Injured Upside RB", age: 23, yearsPro: 2, team: "SEA",
+            status: PlayerStatus.Out);
+        var rb1 = MakePlayer(Position.RB, "RB1 Locked", age: 26, yearsPro: 5, team: "SEA");
+        var rb2 = MakePlayer(Position.RB, "RB2 Locked", age: 25, yearsPro: 4, team: "SEA");
+        var lowValue = MakePlayer(
+            Position.RB, "Low Value Depth RB", age: 24, yearsPro: 2, team: "CHI");
+        var waiverRb = MakePlayer(Position.RB, "Ordinary FA RB", age: 27, yearsPro: 5, team: "DEN");
+        var team = MakeTeam([youngInjured.Id, rb1.Id, rb2.Id, lowValue.Id]);
+        var projections = new Dictionary<Guid, PlayerProjection>
+        {
+            [youngInjured.Id] = MakeProjection(
+                youngInjured.Id, points: 3, confidence: 40, productionBacked: true,
+                ceiling: 14, floor: 0, injurySignal: true),
+            [rb1.Id] = MakeProjection(rb1.Id, points: 17, confidence: 72),
+            [rb2.Id] = MakeProjection(rb2.Id, points: 13, confidence: 66),
+            [lowValue.Id] = MakeProjection(
+                lowValue.Id, points: 4, confidence: 42, productionBacked: true,
+                ceiling: 5, floor: 2),
+            [waiverRb.Id] = MakeProjection(waiverRb.Id, points: 9, confidence: 55)
+        };
+        var service = CreateService(
+            [youngInjured, rb1, rb2, lowValue, waiverRb],
+            projections,
+            team,
+            otherTeams: [],
+            leagueType: LeagueType.Dynasty,
+            rosterLimitSlots: 3);
+
+        var report = service.GetReport();
+
+        Assert.DoesNotContain(report.Suggestions, s => s.Drop.PlayerId == youngInjured.Id);
+        Assert.DoesNotContain(report.DropCandidates, d => d.PlayerId == youngInjured.Id);
+        Assert.Contains(report.DropCandidates, d => d.PlayerId == lowValue.Id);
+        Assert.DoesNotContain("Charbonnet", youngInjured.FullName);
+    }
+
+    [Fact]
+    public void Dynasty_High_Waiver_Value_Player_Survives_Small_SamePosition_Edge()
+    {
+        var valuable = MakePlayer(Position.QB, "Valuable Starter QB", age: 33, yearsPro: 9, team: "MIN");
+        var slightlyBetterFa = MakePlayer(Position.QB, "Plus Five FA QB", age: 29, yearsPro: 6, team: "WAS");
+        var team = MakeTeam([valuable.Id], starterIds: [valuable.Id]);
+        var projections = new Dictionary<Guid, PlayerProjection>
+        {
+            [valuable.Id] = MakeProjection(valuable.Id, points: 15, confidence: 66, productionBacked: true),
+            [slightlyBetterFa.Id] = MakeProjection(
+                slightlyBetterFa.Id, points: 20, confidence: 60, productionBacked: true)
+        };
+        var service = CreateService(
+            [valuable, slightlyBetterFa],
+            projections,
+            team,
+            otherTeams: [],
+            leagueType: LeagueType.Dynasty);
+
+        Assert.Equal(5.0, 20.0 - 15.0, 3);
+        Assert.Empty(service.GetReport().Suggestions);
+    }
+
+    [Fact]
     public void Over_Roster_Limit_Shows_Ranked_Drop_Candidates_Without_Inventing_Pickups()
     {
         // Four rostered players, limit 3, every roster projection already beats available FAs —
