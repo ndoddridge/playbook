@@ -22,7 +22,12 @@ public sealed class LeagueUserTeamStore : ILeagueUserTeamStore
     public LeagueUserTeamStore(ILogger<LeagueUserTeamStore> logger, string? fileName = null)
     {
         _logger = logger;
-        var root = Path.Combine(AppContext.BaseDirectory, "data");
+        // PLAYBOOK_DATA_DIR points at a mounted persistent volume in production (see fly.toml) so
+        // connected leagues survive redeploys; falls back to the app's own directory locally.
+        var configuredRoot = Environment.GetEnvironmentVariable("PLAYBOOK_DATA_DIR");
+        var root = string.IsNullOrWhiteSpace(configuredRoot)
+            ? Path.Combine(AppContext.BaseDirectory, "data")
+            : configuredRoot;
         Directory.CreateDirectory(root);
         _path = Path.Combine(root, string.IsNullOrWhiteSpace(fileName)
             ? "league-user-teams.json"
@@ -75,6 +80,42 @@ public sealed class LeagueUserTeamStore : ILeagueUserTeamStore
         }
     }
 
+    public IReadOnlyList<string> GetConnectedExternalLeagueIds()
+    {
+        lock (_gate)
+        {
+            return Load().ConnectedExternalLeagueIds.ToList();
+        }
+    }
+
+    public void SaveConnectedExternalLeagueId(string externalLeagueId)
+    {
+        if (string.IsNullOrWhiteSpace(externalLeagueId))
+        {
+            return;
+        }
+
+        var trimmed = externalLeagueId.Trim();
+        lock (_gate)
+        {
+            var doc = Load();
+            if (!doc.ConnectedExternalLeagueIds.Contains(trimmed, StringComparer.Ordinal))
+            {
+                doc.ConnectedExternalLeagueIds.Add(trimmed);
+            }
+
+            doc.LastUpdatedUtc = DateTimeOffset.UtcNow;
+            try
+            {
+                File.WriteAllText(_path, JsonSerializer.Serialize(doc, JsonOptions));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to persist connected league id at {Path}", _path);
+            }
+        }
+    }
+
     private LeagueUserTeamDocument Load()
     {
         if (!File.Exists(_path))
@@ -99,6 +140,8 @@ public sealed class LeagueUserTeamStore : ILeagueUserTeamStore
     {
         public Dictionary<string, int> Selections { get; set; } =
             new(StringComparer.OrdinalIgnoreCase);
+
+        public List<string> ConnectedExternalLeagueIds { get; set; } = [];
 
         public DateTimeOffset LastUpdatedUtc { get; set; }
     }

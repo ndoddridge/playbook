@@ -15,9 +15,29 @@ public sealed class FantasyTeam
 
     public string? TeamName { get; init; }
 
+    /// <summary>Every player on the roster, including taxi squad and IR/reserve.</summary>
     public IReadOnlyList<Guid> PlayerIds { get; init; } = [];
 
     public IReadOnlyList<Guid> StarterIds { get; init; } = [];
 
+    /// <summary>
+    /// Taxi-squad player ids (dynasty leagues). Governed by a separate platform slot count,
+    /// not part of <see cref="League.RosterPositions"/> — excluded when checking the roster
+    /// limit. Subset of <see cref="PlayerIds"/>.
+    /// </summary>
+    public IReadOnlyList<Guid> TaxiPlayerIds { get; init; } = [];
+
+    /// <summary>IR/reserve player ids. Subset of <see cref="PlayerIds"/>.</summary>
+    public IReadOnlyList<Guid> ReservePlayerIds { get; init; } = [];
+
     public IReadOnlyList<string> ExternalPlayerIds { get; init; } = [];
+
+    /// <summary>
+    /// Roster spots that count against <see cref="League.RosterLimit"/> — every player except
+    /// taxi squad (see <see cref="TaxiPlayerIds"/>).
+    /// </summary>
+    public IReadOnlyList<Guid> CountedPlayerIds =>
+        TaxiPlayerIds.Count == 0
+            ? PlayerIds
+            : PlayerIds.Where(id => !TaxiPlayerIds.Contains(id)).ToList();
 }

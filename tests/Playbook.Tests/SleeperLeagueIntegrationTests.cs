@@ -2,6 +2,7 @@ using System.Net;
 using System.Text;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Playbook.Application.Leagues;
 using Playbook.Application.Leagues.Sleeper;
 using Playbook.Application.Players;
@@ -204,6 +205,7 @@ public class SleeperLeagueIntegrationTests
             new SleeperLeagueClient(new FixedHttpClientFactory(httpClient), NullLogger<SleeperLeagueClient>.Instance),
             store,
             new LeagueSyncStatus(),
+            Options.Create(new LeagueOptions()),
             NullLogger<CompositeLeagueService>.Instance);
     }
 

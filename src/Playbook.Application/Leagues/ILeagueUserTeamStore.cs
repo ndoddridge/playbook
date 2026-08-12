@@ -10,6 +10,15 @@ public interface ILeagueUserTeamStore
 
     void SaveSelectedRosterId(string leagueKey, int rosterId);
 
+    /// <summary>
+    /// Sleeper league ids the user has connected. Read once at startup to auto-reconnect
+    /// without requiring the league id to be re-entered after every restart/redeploy.
+    /// </summary>
+    IReadOnlyList<string> GetConnectedExternalLeagueIds();
+
+    /// <summary>Records a successful Sleeper connection so it survives process restarts.</summary>
+    void SaveConnectedExternalLeagueId(string externalLeagueId);
+
     static string KeyForExternalId(string externalLeagueId) =>
         $"sleeper:{externalLeagueId.Trim()}";
 

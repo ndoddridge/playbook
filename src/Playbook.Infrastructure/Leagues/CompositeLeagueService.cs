@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Playbook.Application.Leagues;
 using Playbook.Application.Leagues.Sleeper;
 using Playbook.Core.Leagues;
@@ -8,8 +9,10 @@ using Playbook.Infrastructure.Players;
 namespace Playbook.Infrastructure.Leagues;
 
 /// <summary>
-/// Combines mock demo leagues with on-demand Sleeper league connections.
-/// Live league setup is incomplete until the user selects their own roster.
+/// Combines on-demand Sleeper league connections with the fixed demo leagues (only when
+/// <see cref="LeagueOptions.EnableMockLeagues"/> is on — off in the deployed personal-use
+/// product, where connected leagues are the only source of truth and no mock team is ever
+/// auto-created). Live league setup is incomplete until the user selects their own roster.
 /// </summary>
 public sealed class CompositeLeagueService : ILeagueService
 {
@@ -18,6 +21,7 @@ public sealed class CompositeLeagueService : ILeagueService
     private readonly ILeagueUserTeamStore _userTeamStore;
     private readonly LeagueSyncStatus _syncStatus;
     private readonly ILogger<CompositeLeagueService> _logger;
+    private readonly bool _mockEnabled;
     private readonly object _gate = new();
     private readonly ConcurrentDictionary<string, Guid> _externalIdToLeagueId =
         new(StringComparer.Ordinal);
@@ -31,6 +35,7 @@ public sealed class CompositeLeagueService : ILeagueService
         ISleeperLeagueClient sleeperClient,
         ILeagueUserTeamStore userTeamStore,
         LeagueSyncStatus syncStatus,
+        IOptions<LeagueOptions> options,
         ILogger<CompositeLeagueService> logger)
     {
         _mock = mock;
@@ -38,14 +43,15 @@ public sealed class CompositeLeagueService : ILeagueService
         _userTeamStore = userTeamStore;
         _syncStatus = syncStatus;
         _logger = logger;
-        _currentLeague = mock.GetCurrentLeague();
+        _mockEnabled = options.Value.EnableMockLeagues;
+        _currentLeague = _mockEnabled ? mock.GetCurrentLeague() : null;
     }
 
     public IReadOnlyList<League> GetAllLeagues()
     {
         lock (_gate)
         {
-            return _mock.GetAllLeagues().Concat(_liveLeagues).ToList();
+            return _mockEnabled ? _mock.GetAllLeagues().Concat(_liveLeagues).ToList() : _liveLeagues.ToList();
         }
     }
 
@@ -65,6 +71,11 @@ public sealed class CompositeLeagueService : ILeagueService
             if (live is not null)
             {
                 _currentLeague = live;
+                return;
+            }
+
+            if (!_mockEnabled)
+            {
                 return;
             }
 
@@ -237,7 +248,8 @@ public sealed class CompositeLeagueService : ILeagueService
                 ExternalId = snapshot.ExternalLeagueId,
                 DataSource = LeagueDataSource.Sleeper,
                 ReceptionPoints = receptionPoints,
-                SelectedRosterId = restoredRosterId
+                SelectedRosterId = restoredRosterId,
+                RosterPositions = snapshot.RosterPositions
             };
 
             var teams = snapshot.Rosters
@@ -249,6 +261,10 @@ public sealed class CompositeLeagueService : ILeagueService
                 _syncStatus.RecordFailure("This Sleeper league has no teams/rosters yet.");
                 return LeagueConnectResult.Fail("This Sleeper league has no teams/rosters yet.");
             }
+
+            // Remember this connection so it auto-reconnects on the next process start/redeploy
+            // instead of requiring the league id to be re-entered.
+            _userTeamStore.SaveConnectedExternalLeagueId(snapshot.ExternalLeagueId);
 
             var needsTeamSelection = restoredRosterId is null;
             FantasyTeam? selectedTeam = restoredRosterId is int rid
@@ -324,24 +340,16 @@ public sealed class CompositeLeagueService : ILeagueService
             ExternalId = league.ExternalId,
             DataSource = league.DataSource,
             ReceptionPoints = league.ReceptionPoints,
-            SelectedRosterId = rosterId
+            SelectedRosterId = rosterId,
+            RosterPositions = league.RosterPositions
         };
 
     private static FantasyTeam MapRoster(Guid leagueId, SleeperRosterSnapshot roster)
     {
-        var playbookIds = roster.SleeperPlayerIds
-            .Where(id => !string.IsNullOrWhiteSpace(id) &&
-                         !string.Equals(id, "0", StringComparison.Ordinal))
-            .Select(SleeperPlayerIds.ToPlaybookId)
-            .Distinct()
-            .ToList();
-
-        var starterIds = roster.StarterSleeperPlayerIds
-            .Where(id => !string.IsNullOrWhiteSpace(id) &&
-                         !string.Equals(id, "0", StringComparison.Ordinal))
-            .Select(SleeperPlayerIds.ToPlaybookId)
-            .Distinct()
-            .ToList();
+        var playbookIds = ToPlaybookIds(roster.SleeperPlayerIds);
+        var starterIds = ToPlaybookIds(roster.StarterSleeperPlayerIds);
+        var taxiIds = ToPlaybookIds(roster.TaxiSleeperPlayerIds);
+        var reserveIds = ToPlaybookIds(roster.ReserveSleeperPlayerIds);
 
         return new FantasyTeam
         {
@@ -352,7 +360,17 @@ public sealed class CompositeLeagueService : ILeagueService
             TeamName = roster.TeamName,
             PlayerIds = playbookIds,
             StarterIds = starterIds,
+            TaxiPlayerIds = taxiIds,
+            ReservePlayerIds = reserveIds,
             ExternalPlayerIds = roster.SleeperPlayerIds
         };
     }
+
+    private static List<Guid> ToPlaybookIds(IReadOnlyList<string> sleeperIds) =>
+        sleeperIds
+            .Where(id => !string.IsNullOrWhiteSpace(id) &&
+                         !string.Equals(id, "0", StringComparison.Ordinal))
+            .Select(SleeperPlayerIds.ToPlaybookId)
+            .Distinct()
+            .ToList();
 }

@@ -158,6 +158,23 @@ public sealed class FantasyTeamIntelligenceService : IFantasyTeamIntelligenceSer
         var decisionContext = DecisionContext.FromLeague(league, team, DecisionKind.StartSit);
         var startSit = BuildStartSitViaEngine(rows, decisionContext);
         var alerts = BuildAlerts(rows, startSit);
+        var rosterLimit = RosterLimitReconciler.Check(team, league);
+        if (rosterLimit is { IsKnown: true, IsOverLimit: true })
+        {
+            alerts =
+            [
+                new TeamRosterAlert
+                {
+                    Title = "Roster over the configured limit",
+                    Detail = rosterLimit.Message,
+                    Severity = TeamAlertSeverity.Watch,
+                    PlayerId = null,
+                    Category = "Roster"
+                },
+                .. alerts
+            ];
+        }
+
         var rosterIntel = BuildRosterIntelligence(rows, alerts);
         var (strengths, weaknesses, concerns) = BuildStrengthWeakness(rows);
         var whatMatters = BuildWhatMatters(rows, alerts, strengths, weaknesses, concerns);

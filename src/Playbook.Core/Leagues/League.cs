@@ -34,6 +34,20 @@ public sealed class League
     /// </summary>
     public int? SelectedRosterId { get; init; }
 
+    /// <summary>
+    /// Platform-configured roster slots (e.g. QB,RB,RB,WR,WR,TE,FLEX,K,DEF,BN×6,IR×2).
+    /// Empty for mock leagues (no platform settings exist). Taxi-squad slots are tracked
+    /// separately by the platform and are intentionally NOT part of this list.
+    /// </summary>
+    public IReadOnlyList<string> RosterPositions { get; init; } = [];
+
+    /// <summary>
+    /// The league's configured roster size (count of <see cref="RosterPositions"/>), i.e. the
+    /// number of NON-taxi roster spots a team may hold. Null when unknown (mock leagues, or a
+    /// live league whose settings did not report roster positions).
+    /// </summary>
+    public int? RosterLimit => RosterPositions.Count > 0 ? RosterPositions.Count : null;
+
     public bool HasSelectedTeam => SelectedRosterId is int;
 
     public bool IsSetupComplete =>

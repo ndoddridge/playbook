@@ -62,6 +62,7 @@ public static class DependencyInjection
             services.Configure<InjuryOptions>(configuration.GetSection(InjuryOptions.SectionName));
             services.Configure<PropLineOptions>(configuration.GetSection(PropLineOptions.SectionName));
             services.PostConfigure<PropLineOptions>(PropLineCredentialResolver.ApplyAliasEnvironmentVariables);
+            services.Configure<LeagueOptions>(configuration.GetSection(LeagueOptions.SectionName));
         }
         else
         {
@@ -76,6 +77,7 @@ public static class DependencyInjection
             services.Configure<InjuryOptions>(_ => { });
             services.Configure<PropLineOptions>(_ => { });
             services.PostConfigure<PropLineOptions>(PropLineCredentialResolver.ApplyAliasEnvironmentVariables);
+            services.Configure<LeagueOptions>(_ => { });
         }
 
         RegisterPlayerData(services);
@@ -92,6 +94,7 @@ public static class DependencyInjection
         services.AddSingleton<IRecommendationService, MockRecommendationService>();
 
         services.AddHostedService<DataRefreshBackgroundService>();
+        services.AddHostedService<LeagueAutoReconnectHostedService>();
         return services;
     }
 
