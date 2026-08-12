@@ -51,13 +51,22 @@ public sealed class DropPickupService : IDropPickupService
     private const double DynastyAgingPenalty = 3.0;
     private const double DynastyOlderPenalty = 6.0;
     private const double DynastyLowConfidenceYouthBonus = 2.0;
-    private const double DynastyInjuredYouthBonus = 3.0;
+    private const double DynastyInjuredYouthBonus = 10.0;
+    private const double DynastyInjuredOpportunityBonus = 10.0;
     private const double DynastyStarterTradeValueBonus = 6.0;
     private const double DynastyProductionTradeValueBonus = 3.0;
+    private const double DynastyHealthyLowRolePenalty = 8.0;
+    private const double DynastyEasilyReplaceablePenalty = 5.0;
+    /// <summary>How much weekly replacement margin counts toward dynasty Keep Value (0–1).</summary>
+    private const double DynastyMarginWeight = 0.4;
+    /// <summary>Ceiling minus current projection that signals healthy upside / future opportunity.</summary>
+    private const double DynastyCeilingOpportunityGap = 4.0;
     /// <summary>Dynasty keep bonus at/above this requires a larger value-gain to recommend a drop.</summary>
     private const double DynastyProtectedKeepThreshold = 8.0;
+    /// <summary>Minimum projected-points gain for any dynasty drop recommendation (+5/+6 is not enough).</summary>
+    private const double DynastyAnyDropMinValueGain = 8.0;
     /// <summary>Minimum projected-points gain to drop a dynasty-protected player.</summary>
-    private const double DynastyProtectedMinValueGain = 10.0;
+    private const double DynastyProtectedMinValueGain = 12.0;
     /// <summary>Minimum projected-points gain to drop a fantasy starter.</summary>
     private const double StarterProtectedMinValueGain = 6.0;
     /// <summary>Minimum projected-points gain to drop an established NFL-role player.</summary>
@@ -232,8 +241,13 @@ public sealed class DropPickupService : IDropPickupService
                 continue;
             }
 
-            // Dynasty: a small weekly projection edge must not auto-justify dropping a protected
-            // young/early-career/role-backed piece. Large upgrades can still clear the bar.
+            // Dynasty: small weekly projection edges must not auto-justify drops. Protected
+            // young/opportunity pieces need an even clearer upgrade.
+            if (isDynasty && valueGain < DynastyAnyDropMinValueGain)
+            {
+                continue;
+            }
+
             if (isDynasty &&
                 drop.DynastyKeepAdjustment >= DynastyProtectedKeepThreshold &&
                 valueGain < DynastyProtectedMinValueGain)
@@ -308,10 +322,14 @@ public sealed class DropPickupService : IDropPickupService
         var establishedRoleKeep = ComputeEstablishedRoleKeep(player, projection, isStarter, roleReasons);
         var dynastyReasons = new List<string>();
         var dynastyKeep = isDynasty
-            ? ComputeDynastyKeepAdjustment(player, projection, isStarter, dynastyReasons)
+            ? ComputeDynastyKeepAdjustment(
+                player, projection, isStarter, positionDepth, replacementMargin, dynastyReasons)
             : 0.0;
+        // Dynasty Keep Value down-weights weekly replacement margin so short-term projection
+        // swings (including injury-depressed weeks) do not dominate long-term ranking.
+        var marginContribution = (replacementMargin ?? -100) * (isDynasty ? DynastyMarginWeight : 1.0);
         var keepValue =
-            (replacementMargin ?? -100) + // unknown projection is treated as maximally expendable
+            marginContribution +
             confidenceAdjustment +
             scarcityBonus +
             establishedRoleKeep +
@@ -454,19 +472,27 @@ public sealed class DropPickupService : IDropPickupService
     /// <summary>
     /// Dynasty trade-value Keep Value adjustment from data already present on
     /// <see cref="Player"/> / the projection (age, years-pro as career-capital proxy, role,
-    /// production-backed inputs, confidence). Draft round/pick are not on the player model and
-    /// are never invented.
+    /// production-backed inputs, confidence, ceiling-vs-current as healthy upside, roster
+    /// depth). Draft round/pick are not on the player model and are never invented. Injury on
+    /// a young/early-career piece is treated as temporary opportunity context — not a keep
+    /// penalty — especially when ceiling remains elevated versus the depressed weekly median.
     /// </summary>
     private static double ComputeDynastyKeepAdjustment(
         Player player,
         PlayerProjection? projection,
         bool isStarter,
+        int positionDepth,
+        double? replacementMargin,
         List<string> reasons)
     {
         var adjustment = 0.0;
         var youthSignal = false;
         var confidence = projection?.Confidence;
         var hasProduction = projection is not null && HasProductionBackedProjection(projection);
+        var injured = IsTemporarilyUnavailable(player.Status);
+        var ceilingUpside = projection is null
+            ? 0.0
+            : (double)(projection.Ceiling - projection.ProjectedFantasyPoints);
 
         if (player.YearsPro is int yearsPro)
         {
@@ -542,11 +568,42 @@ public sealed class DropPickupService : IDropPickupService
             reasons.Add($"Dynasty: low weekly confidence ({conf}%) does not erase early-career upside.");
         }
 
-        // Temporary injury status on a youth piece should not alone make them the drop.
-        if (youthSignal && IsTemporarilyUnavailable(player.Status))
+        // Injury is not a dynasty negative for young/early-career pieces. When production-backed
+        // ceiling remains well above the depressed weekly projection, treat that as a credible
+        // path to a larger role when healthy.
+        if (youthSignal && injured)
         {
             adjustment += DynastyInjuredYouthBonus;
-            reasons.Add($"Dynasty: {player.Status} status treated as temporary for a young/early-career piece.");
+            reasons.Add($"Dynasty: {player.Status} status treated as temporary — not a trade-value penalty.");
+
+            if (hasProduction &&
+                (ceilingUpside >= DynastyCeilingOpportunityGap ||
+                 projection!.InputsUsed.InjurySignal))
+            {
+                adjustment += DynastyInjuredOpportunityBonus;
+                reasons.Add(
+                    "Dynasty future-role opportunity: production-backed ceiling remains elevated " +
+                    "while current projection looks injury-depressed.");
+            }
+        }
+        else if (youthSignal &&
+                 player.Status == PlayerStatus.Active &&
+                 replacementMargin is < -1 &&
+                 ceilingUpside < DynastyCeilingOpportunityGap &&
+                 (confidence is < 55 || positionDepth > 2))
+        {
+            // Healthy early-career piece already projecting poorly with limited ceiling upside —
+            // youth alone should not freeze a low long-term role on the roster.
+            adjustment -= DynastyHealthyLowRolePenalty;
+            reasons.Add(
+                "Dynasty: healthy but limited current role/ceiling — early-career shield reduced.");
+        }
+
+        if (positionDepth > 2 && !(youthSignal && injured))
+        {
+            adjustment -= DynastyEasilyReplaceablePenalty;
+            reasons.Add(
+                $"Dynasty: {positionDepth} {player.Position}s on roster — easier to replace at the position.");
         }
 
         return adjustment;

@@ -203,7 +203,7 @@ public class DropPickupServiceTests
         var projections = new Dictionary<Guid, PlayerProjection>
         {
             [agingRb.Id] = MakeProjection(agingRb.Id, points: 5, confidence: 50),
-            [betterFa.Id] = MakeProjection(betterFa.Id, points: 12, confidence: 60)
+            [betterFa.Id] = MakeProjection(betterFa.Id, points: 14, confidence: 60)
         };
         var service = CreateService(
             [agingRb, betterFa], projections, team, otherTeams: [], leagueType: LeagueType.Dynasty);
@@ -226,7 +226,7 @@ public class DropPickupServiceTests
         var projections = new Dictionary<Guid, PlayerProjection>
         {
             [unknownWr.Id] = MakeProjection(unknownWr.Id, points: 4, confidence: 50),
-            [faWr.Id] = MakeProjection(faWr.Id, points: 11, confidence: 55)
+            [faWr.Id] = MakeProjection(faWr.Id, points: 13, confidence: 55)
         };
         var service = CreateService(
             [unknownWr, faWr], projections, team, otherTeams: [], leagueType: LeagueType.Dynasty);
@@ -366,6 +366,97 @@ public class DropPickupServiceTests
         var service = CreateService([a, b], projections, team, otherTeams: []);
 
         Assert.Empty(service.GetReport().Suggestions);
+        Assert.DoesNotContain("Charbonnet", a.FullName);
+        Assert.DoesNotContain("Roschon", b.FullName);
+    }
+
+    [Fact]
+    public void Dynasty_Protects_Young_Injured_Player_With_Future_Role_Opportunity()
+    {
+        // Young RB, currently injured, production-backed ceiling still high vs depressed weekly
+        // median — modest and even double-digit waiver edges must not force the drop.
+        var youngInjured = MakePlayer(
+            Position.RB, "Young Injured Path RB", age: 23, yearsPro: 2, team: "SEA",
+            status: PlayerStatus.Out);
+        var waiverRb = MakePlayer(Position.RB, "Waiver Edge RB", age: 27, yearsPro: 5, team: "DEN");
+        var team = MakeTeam([youngInjured.Id]);
+        var projections = new Dictionary<Guid, PlayerProjection>
+        {
+            [youngInjured.Id] = MakeProjection(
+                youngInjured.Id, points: 4, confidence: 40, productionBacked: true,
+                ceiling: 14, floor: 1, injurySignal: true),
+            [waiverRb.Id] = MakeProjection(waiverRb.Id, points: 15, confidence: 60)
+        };
+        var service = CreateService(
+            [youngInjured, waiverRb], projections, team, otherTeams: [], leagueType: LeagueType.Dynasty);
+
+        // +11 projected points still below protected dynasty threshold.
+        Assert.Empty(service.GetReport().Suggestions);
+    }
+
+    [Fact]
+    public void Dynasty_LowValue_Redundant_Player_Can_Be_Top_Drop_Over_Young_Injured_Upside()
+    {
+        var youngInjured = MakePlayer(
+            Position.RB, "Young Injured Path RB", age: 23, yearsPro: 2, team: "SEA",
+            status: PlayerStatus.Out);
+        var rb1 = MakePlayer(Position.RB, "RB1 Locked", age: 26, yearsPro: 5, team: "SEA");
+        var rb2 = MakePlayer(Position.RB, "RB2 Locked", age: 25, yearsPro: 4, team: "SEA");
+        var lowValue = MakePlayer(
+            Position.RB, "Low Value Healthy Depth RB", age: 24, yearsPro: 2, team: "CHI");
+        var waiverRb = MakePlayer(Position.RB, "Clear Upgrade RB", age: 27, yearsPro: 5, team: "DEN");
+        var team = MakeTeam([youngInjured.Id, rb1.Id, rb2.Id, lowValue.Id]);
+        var projections = new Dictionary<Guid, PlayerProjection>
+        {
+            [youngInjured.Id] = MakeProjection(
+                youngInjured.Id, points: 3, confidence: 38, productionBacked: true,
+                ceiling: 13, floor: 0, injurySignal: true),
+            [rb1.Id] = MakeProjection(rb1.Id, points: 17, confidence: 72),
+            [rb2.Id] = MakeProjection(rb2.Id, points: 13, confidence: 66),
+            [lowValue.Id] = MakeProjection(
+                lowValue.Id, points: 4, confidence: 42, productionBacked: true,
+                ceiling: 5, floor: 2),
+            [waiverRb.Id] = MakeProjection(waiverRb.Id, points: 13, confidence: 62)
+        };
+        var service = CreateService(
+            [youngInjured, rb1, rb2, lowValue, waiverRb],
+            projections,
+            team,
+            otherTeams: [],
+            leagueType: LeagueType.Dynasty);
+
+        var report = service.GetReport();
+
+        var suggestion = Assert.Single(report.Suggestions);
+        Assert.Equal(lowValue.Id, suggestion.Drop.PlayerId);
+        Assert.Equal(waiverRb.Id, suggestion.Pickup.PlayerId);
+        Assert.DoesNotContain(report.Suggestions, s => s.Drop.PlayerId == youngInjured.Id);
+        Assert.True(suggestion.Drop.DynastyKeepAdjustment < 8);
+        Assert.Contains(
+            suggestion.Drop.Reasons,
+            r => r.Contains("limited current role", StringComparison.OrdinalIgnoreCase) ||
+                 r.Contains("easier to replace", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain("Roschon", suggestion.Drop.PlayerName);
+        Assert.DoesNotContain("Charbonnet", youngInjured.FullName);
+    }
+
+    [Fact]
+    public void Dynasty_Small_Projection_Edge_Does_Not_Override_Dynasty_Value()
+    {
+        var young = MakePlayer(Position.WR, "Young Dynasty WR", age: 22, yearsPro: 1, team: "DET");
+        var fa = MakePlayer(Position.WR, "Plus Six FA WR", age: 28, yearsPro: 6, team: "LV");
+        var team = MakeTeam([young.Id]);
+        var projections = new Dictionary<Guid, PlayerProjection>
+        {
+            [young.Id] = MakeProjection(young.Id, points: 8, confidence: 48, productionBacked: true),
+            [fa.Id] = MakeProjection(fa.Id, points: 14, confidence: 58, productionBacked: true)
+        };
+        var service = CreateService(
+            [young, fa], projections, team, otherTeams: [], leagueType: LeagueType.Dynasty);
+
+        // +6 projected points is explicitly not enough to force a dynasty drop.
+        Assert.Equal(6.0, 14.0 - 8.0, 3);
+        Assert.Empty(service.GetReport().Suggestions);
     }
 
     private static DropPickupService CreateService(
@@ -423,15 +514,18 @@ public class DropPickupServiceTests
         Guid playerId,
         decimal points,
         int confidence,
-        bool productionBacked = true) => new()
+        bool productionBacked = true,
+        decimal? ceiling = null,
+        decimal? floor = null,
+        bool injurySignal = false) => new()
     {
         PlayerId = playerId,
         Week = 1,
         ScoringFormat = ScoringType.Ppr,
         ProjectedFantasyPoints = points,
-        Floor = points,
+        Floor = floor ?? points,
         Median = points,
-        Ceiling = points,
+        Ceiling = ceiling ?? points,
         Confidence = confidence,
         Volatility = 30,
         ProjectionReasoning = [],
@@ -442,6 +536,7 @@ public class DropPickupServiceTests
         {
             HistoricalStatistics = productionBacked,
             CareerBaseline = productionBacked,
+            InjurySignal = injurySignal,
             ProductionSource = productionBacked
                 ? nameof(ProductionDataSource.StatsService)
                 : nameof(ProductionDataSource.AttributeFallback)
