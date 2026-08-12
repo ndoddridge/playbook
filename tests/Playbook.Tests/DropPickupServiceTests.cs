@@ -561,10 +561,10 @@ public class DropPickupServiceTests
     }
 
     [Fact]
-    public void Over_Roster_Limit_Shows_Ranked_Drop_Candidates_Without_Inventing_Pickups()
+    public void Over_Roster_Limit_Does_Not_Manufacture_Drops_For_Valuable_Keepers()
     {
-        // Four rostered players, limit 3, every roster projection already beats available FAs —
-        // no improving pickup exists, but over-limit UX must still surface 3 ranked drops.
+        // Four rostered players, limit 3, no improving pickups. Only genuinely expendable
+        // keepers become drops; production-backed higher-value pieces are trade candidates.
         var weak = MakePlayer(Position.WR, "Weakest Keep WR");
         var mid = MakePlayer(Position.WR, "Mid Keep WR");
         var strong = MakePlayer(Position.WR, "Strong Keep WR");
@@ -592,13 +592,53 @@ public class DropPickupServiceTests
 
         Assert.True(report.IsOverRosterLimit);
         Assert.Empty(report.Suggestions);
-        Assert.Equal(3, report.DropCandidates.Count);
-        Assert.Equal(weak.Id, report.DropCandidates[0].PlayerId);
-        Assert.Equal(mid.Id, report.DropCandidates[1].PlayerId);
-        Assert.Equal(strong.Id, report.DropCandidates[2].PlayerId);
-        Assert.True(report.DropCandidates[0].KeepValueScore <= report.DropCandidates[1].KeepValueScore);
-        Assert.True(report.DropCandidates[1].KeepValueScore <= report.DropCandidates[2].KeepValueScore);
-        Assert.Contains("over the configured limit", report.StatusMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(weak.Id, Assert.Single(report.DropCandidates).PlayerId);
+        Assert.True(report.DropCandidates.Count < 3);
+        Assert.Contains(report.TradeCandidates, t => t.PlayerId == mid.Id);
+        Assert.Contains(report.TradeCandidates, t => t.PlayerId == strong.Id);
+        Assert.Contains(report.TradeCandidates, t => t.PlayerId == best.Id);
+        Assert.Contains("legitimate drop", report.StatusMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("trad", report.StatusMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Dynasty_Valuable_Young_Injured_Is_Trade_Not_Forced_Drop_When_Over_Limit()
+    {
+        var youngInjured = MakePlayer(
+            Position.RB, "Young Injured Upside RB", age: 23, yearsPro: 2, team: "SEA",
+            status: PlayerStatus.Out);
+        var rb1 = MakePlayer(Position.RB, "RB1 Locked", age: 26, yearsPro: 5, team: "SEA");
+        var expendable = MakePlayer(
+            Position.WR, "Expendable Depth WR", age: 29, yearsPro: 7, team: "NYG");
+        var waiverWr = MakePlayer(Position.WR, "Weak FA WR", age: 28, yearsPro: 6, team: "LV");
+        var waiverRb = MakePlayer(Position.RB, "Ordinary FA RB", age: 27, yearsPro: 5, team: "DEN");
+        var team = MakeTeam([youngInjured.Id, rb1.Id, expendable.Id]);
+        var projections = new Dictionary<Guid, PlayerProjection>
+        {
+            [youngInjured.Id] = MakeProjection(
+                youngInjured.Id, points: 3, confidence: 40, productionBacked: true,
+                ceiling: 14, floor: 0, injurySignal: true),
+            [rb1.Id] = MakeProjection(rb1.Id, points: 17, confidence: 72),
+            [expendable.Id] = MakeProjection(
+                expendable.Id, points: 4, confidence: 45, productionBacked: true, ceiling: 5),
+            [waiverWr.Id] = MakeProjection(waiverWr.Id, points: 2, confidence: 40),
+            [waiverRb.Id] = MakeProjection(waiverRb.Id, points: 8, confidence: 55)
+        };
+        var service = CreateService(
+            [youngInjured, rb1, expendable, waiverWr, waiverRb],
+            projections,
+            team,
+            otherTeams: [],
+            leagueType: LeagueType.Dynasty,
+            rosterLimitSlots: 2);
+
+        var report = service.GetReport();
+
+        Assert.True(report.IsOverRosterLimit);
+        Assert.DoesNotContain(report.DropCandidates, d => d.PlayerId == youngInjured.Id);
+        Assert.Contains(report.TradeCandidates, t => t.PlayerId == youngInjured.Id);
+        Assert.Contains(report.DropCandidates, d => d.PlayerId == expendable.Id);
+        Assert.DoesNotContain("Charbonnet", youngInjured.FullName);
     }
 
     [Fact]
@@ -620,6 +660,7 @@ public class DropPickupServiceTests
         Assert.False(report.IsOverRosterLimit);
         Assert.Empty(report.Suggestions);
         Assert.Empty(report.DropCandidates);
+        Assert.Empty(report.TradeCandidates);
     }
 
     private static DropPickupService CreateService(

@@ -285,18 +285,33 @@ public sealed class DropPickupService : IDropPickupService
         var rosterLimitStatus = RosterLimitReconciler.Check(team, league);
         var isOverLimit = rosterLimitStatus is { IsKnown: true, IsOverLimit: true };
 
-        // Over-limit teams always need cut guidance even when no improving pickup exists.
-        // Reuse the already-ranked Keep Value list; do not invent pickups.
-        IReadOnlyList<DropCandidate> dropOnlyCandidates = isOverLimit
-            ? dropCandidates.Take(MaxSuggestions).ToList()
-            : [];
+        // Over-limit: split genuinely expendable drops from valuable trade candidates.
+        // Never pad drops to MaxSuggestions — valuable keepers must not become drops just to
+        // fill a count of 3.
+        IReadOnlyList<DropCandidate> dropOnlyCandidates = [];
+        IReadOnlyList<TradeCandidate> tradeCandidates = [];
+        if (isOverLimit)
+        {
+            var expendable = dropCandidates
+                .Where(c => IsGenuineDropCandidate(c, isDynasty))
+                .Take(MaxSuggestions)
+                .ToList();
+            var tradable = dropCandidates
+                .Where(c => !IsGenuineDropCandidate(c, isDynasty))
+                .OrderByDescending(c => c.KeepValueScore)
+                .Take(MaxSuggestions)
+                .Select(ToTradeCandidate)
+                .ToList();
+            dropOnlyCandidates = expendable;
+            tradeCandidates = tradable;
+        }
 
         var statusMessage = suggestions.Count > 0
             ? $"{suggestions.Count} suggested swap(s) for {context.DisplayLabel}." +
               (isOverLimit ? $" Note: {rosterLimitStatus.Message}" : string.Empty)
-            : isOverLimit && dropOnlyCandidates.Count > 0
-                ? $"Roster is over the configured limit — {dropOnlyCandidates.Count} drop candidate(s) ranked by keep value. " +
-                  rosterLimitStatus.Message
+            : isOverLimit
+                ? BuildOverLimitStatusMessage(
+                    dropOnlyCandidates.Count, tradeCandidates.Count, rosterLimitStatus.Message)
                 : $"No improving same-position swap found for {rosterRows.Count} roster players against " +
                   $"{allPlayers.Count - rosteredElsewhere.Count} available players.";
 
@@ -313,11 +328,87 @@ public sealed class DropPickupService : IDropPickupService
             AvailablePlayerCount = allPlayers.Count - rosteredElsewhere.Count,
             Suggestions = suggestions,
             DropCandidates = dropOnlyCandidates,
+            TradeCandidates = tradeCandidates,
             IsOverRosterLimit = isOverLimit,
             UnavailableSignals = unavailable.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
             StatusMessage = statusMessage,
             GeneratedAt = now
         };
+    }
+
+    /// <summary>
+    /// Genuine drops only: not a fantasy starter, not dynasty-protected keep, and not an
+    /// established production-backed role worth trading instead of cutting.
+    /// </summary>
+    private static bool IsGenuineDropCandidate(DropCandidate candidate, bool isDynasty)
+    {
+        if (candidate.IsStarter)
+        {
+            return false;
+        }
+
+        if (candidate.DynastyKeepAdjustment >= DynastyProtectedKeepThreshold)
+        {
+            return false;
+        }
+
+        if (candidate.EstablishedRoleKeep >= EstablishedNflRoleKeepBonus)
+        {
+            return false;
+        }
+
+        // Dynasty: require keep value to look expendable, not merely "least bad" among keepers.
+        if (isDynasty && candidate.KeepValueScore >= DynastyProtectedKeepThreshold)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private static TradeCandidate ToTradeCandidate(DropCandidate drop) =>
+        new()
+        {
+            PlayerId = drop.PlayerId,
+            PlayerName = drop.PlayerName,
+            PositionLabel = drop.PositionLabel,
+            IsStarter = drop.IsStarter,
+            ProjectedPoints = drop.ProjectedPoints,
+            KeepValueScore = drop.KeepValueScore,
+            Reasons =
+            [
+                "Meaningful keep / trade value — prefer trading to free a roster spot rather than dropping.",
+                .. drop.Reasons
+            ]
+        };
+
+    private static string BuildOverLimitStatusMessage(
+        int dropCount,
+        int tradeCount,
+        string rosterLimitMessage)
+    {
+        if (dropCount == 0 && tradeCount > 0)
+        {
+            return $"Roster is over the configured limit with no legitimate drop candidates — " +
+                   $"prefer trading ({tradeCount} trade candidate(s)). {rosterLimitMessage}";
+        }
+
+        if (dropCount > 0 && dropCount < MaxSuggestions)
+        {
+            return $"Roster is over the configured limit — {dropCount} legitimate drop candidate(s); " +
+                   $"fewer than {MaxSuggestions} because valuable keepers should be traded, not cut" +
+                   (tradeCount > 0 ? $" ({tradeCount} trade candidate(s)). " : ". ") +
+                   rosterLimitMessage;
+        }
+
+        if (dropCount > 0)
+        {
+            return $"Roster is over the configured limit — {dropCount} drop candidate(s) ranked by keep value" +
+                   (tradeCount > 0 ? $"; {tradeCount} trade candidate(s). " : ". ") +
+                   rosterLimitMessage;
+        }
+
+        return $"Roster is over the configured limit. {rosterLimitMessage}";
     }
 
     private static DropCandidate BuildDropCandidate(

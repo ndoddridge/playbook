@@ -36,11 +36,17 @@ public sealed class DropPickupReport
     public required IReadOnlyList<DropPickupSuggestion> Suggestions { get; init; }
 
     /// <summary>
-    /// Ranked drop-only candidates (lowest Keep Value first). Populated when the counted
-    /// roster is over the configured limit so the user still sees who to cut even if no
-    /// improving pickup exists. Never invents pickups.
+    /// Ranked drop-only candidates (lowest Keep Value first) who are genuinely expendable.
+    /// Populated when over the roster limit. Never padded to a fixed count — valuable keepers
+    /// are listed under <see cref="TradeCandidates"/> instead.
     /// </summary>
     public IReadOnlyList<DropCandidate> DropCandidates { get; init; } = [];
+
+    /// <summary>
+    /// Players with meaningful keep / dynasty / waiver value who can solve an over-limit roster
+    /// via trade rather than a straight drop. Never invents trade partners or values.
+    /// </summary>
+    public IReadOnlyList<TradeCandidate> TradeCandidates { get; init; } = [];
 
     /// <summary>True when counted roster size exceeds the league's configured roster limit.</summary>
     public bool IsOverRosterLimit { get; init; }
@@ -103,6 +109,27 @@ public sealed class DropCandidate
     public required double? ReplacementMargin { get; init; }
 
     public required int PositionDepthOnRoster { get; init; }
+
+    public required IReadOnlyList<string> Reasons { get; init; }
+}
+
+/// <summary>
+/// A roster player with meaningful keep value who should be traded (not dropped) to resolve
+/// an over-limit roster.
+/// </summary>
+public sealed class TradeCandidate
+{
+    public required Guid PlayerId { get; init; }
+
+    public required string PlayerName { get; init; }
+
+    public required string PositionLabel { get; init; }
+
+    public required bool IsStarter { get; init; }
+
+    public required double? ProjectedPoints { get; init; }
+
+    public required double KeepValueScore { get; init; }
 
     public required IReadOnlyList<string> Reasons { get; init; }
 }
