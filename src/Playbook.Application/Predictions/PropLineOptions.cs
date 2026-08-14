@@ -91,8 +91,13 @@ public sealed class OddsApiOptions
     /// Ordered bookmaker priority (The Odds API bookmaker keys), highest priority first.
     /// The first book in this list that has a given market is used for that market; other
     /// listed books only supplement markets the primary book doesn't have. Default:
-    /// <c>williamhill_us</c> (Caesars Sportsbook — primary source) then DraftKings, FanDuel,
-    /// BetMGM as legitimate supplemental sources. Empty = first available, alphabetically.
+    /// <c>williamhill_us</c> / <c>caesars</c> (Caesars Sportsbook — primary source, both known
+    /// Odds-API key spellings kept so either activates it automatically) then DraftKings, FanDuel,
+    /// BetMGM as legitimate supplemental sources. As of Aug 2026 the connected Odds API account
+    /// does not return Caesars under either key for any sport (verified directly against the
+    /// provider) — this is an upstream data-coverage gap, not something Playbook can force; the
+    /// priority order activates it the moment the provider carries it again. Empty = first
+    /// available, alphabetically.
     /// </summary>
-    public string PreferredBookmakers { get; set; } = "williamhill_us,draftkings,fanduel,betmgm";
+    public string PreferredBookmakers { get; set; } = "williamhill_us,caesars,draftkings,fanduel,betmgm";
 }

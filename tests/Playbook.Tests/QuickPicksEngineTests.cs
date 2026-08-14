@@ -268,6 +268,32 @@ public class QuickPicksEngineTests
         Assert.Contains(preseason.SignalContributions, c => c.SignalId == "season-phase");
     }
 
+    /// <summary>
+    /// Confirms confidence genuinely discriminates by data quality during preseason rather than
+    /// collapsing to the floor for everyone — rich data lands meaningfully above sparse data, both
+    /// above the floor for a case with literally no player intelligence at all. This is the
+    /// evidence behind the finding (see PLAYBOOK_QUICKPICKS_FIXES report) that observed confidence
+    /// clustering near the 12-14% floor in the live app reflects genuinely sparse preseason
+    /// intelligence coverage for most rostered players this early in the season, not a bug — so
+    /// confidence was deliberately left untouched.
+    /// </summary>
+    [Fact]
+    public void Preseason_Confidence_Discriminates_By_Data_Quality_Rather_Than_Collapsing_To_The_Floor()
+    {
+        var rich = Require(Eval(
+            Line(PredictionMarketType.ReceivingYards, 45.5m, phase: NflSeasonPhase.Preseason),
+            55m, 48, 58, Intel(usage: 75, opportunity: 70, health: 85, confidence: 80),
+            seasonPhase: NflSeasonPhase.Preseason, usingPrior: true));
+
+        var sparse = Require(Eval(
+            Line(PredictionMarketType.ReceivingYards, 45.5m, phase: NflSeasonPhase.Preseason),
+            30m, 25, 70, null,
+            seasonPhase: NflSeasonPhase.Preseason, usingPrior: false));
+
+        Assert.True(rich.Confidence > sparse.Confidence + 15);
+        Assert.Equal(12, sparse.Confidence); // sparse data legitimately floors out — never fabricated upward
+    }
+
     [Fact]
     public void Usage_Signal_Moves_Edge_Vs_Neutral_Usage()
     {

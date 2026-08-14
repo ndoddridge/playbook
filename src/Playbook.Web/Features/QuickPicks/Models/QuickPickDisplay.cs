@@ -28,12 +28,13 @@ public static class QuickPickDisplay
             return prediction.DirectionLabel.ToUpperInvariant();
         }
 
-        if (prediction.Line is null)
-        {
-            return prediction.DirectionLabel.ToUpperInvariant();
-        }
-
-        return $"{prediction.DirectionLabel.ToUpperInvariant()} {prediction.Line.Value:0.0}";
+        return BetLabelFormatter.FormatBadge(
+            prediction.Market,
+            prediction.Direction,
+            prediction.Line,
+            prediction.TeamName,
+            prediction.Event.HomeTeam,
+            prediction.Event.AwayTeam);
     }
 
     public static string ProjectionText(Prediction prediction) =>

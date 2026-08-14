@@ -40,6 +40,14 @@
                 Mock lines are disabled in production, so no picks are shown rather than presenting mock data as real.
             </p>
         }
+        else if (!SyncStatus.ConfiguredPrimaryBookmakerActive && SyncStatus.ProviderStatus == "Live")
+        {
+            <p class="qp-page__note">
+                @SyncStatus.ConfiguredPrimaryBookmaker is configured as the primary source but did not have a
+                line in this sync — using the next available legitimate book instead (@SyncStatus.ActiveBookmakerSummary).
+                Every pick still shows its actual bookmaker and timestamp.
+            </p>
+        }
     </header>
 
     @if (selected is not null && canonicalWeeks.Count > 0)

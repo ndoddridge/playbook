@@ -326,6 +326,7 @@ public sealed class QuickPicksService : IQuickPicksService
             watch.Elapsed,
             error,
             apiKeyConfigured);
+        RecordBookmakerCoverage(_enrichedLines);
 
         BuildPredictionsForSelectedWeekLocked();
 
@@ -591,6 +592,69 @@ public sealed class QuickPicksService : IQuickPicksService
 
         return line;
     }
+
+    private static readonly IReadOnlyDictionary<string, string> BookmakerFriendlyNames =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["williamhill_us"] = "Caesars Sportsbook",
+            ["caesars"] = "Caesars Sportsbook",
+            ["draftkings"] = "DraftKings",
+            ["fanduel"] = "FanDuel",
+            ["betmgm"] = "BetMGM"
+        };
+
+    /// <summary>
+    /// Honest transparency, not a fix to the priority logic itself (that's already correct and
+    /// tested): records whether the configured primary bookmaker actually supplied a line this
+    /// sync, so "DraftKings shown instead of Caesars" is visibly explained by data-provider
+    /// coverage rather than looking like a silent bug.
+    /// </summary>
+    private void RecordBookmakerCoverage(IReadOnlyList<PropLine> lines)
+    {
+        var priority = LivePropLineProvider.ParseBookmakerPriority(_options.OddsApi.PreferredBookmakers);
+        var (primaryName, primaryActive, summary) = ComputeBookmakerCoverage(lines, priority, BookmakerFriendlyNames);
+        if (primaryName is null)
+        {
+            return;
+        }
+
+        _status.RecordBookmakerCoverage(primaryName, primaryActive, summary);
+    }
+
+    /// <summary>Pure computation, directly unit-testable without constructing a full service.</summary>
+    internal static (string? PrimaryName, bool PrimaryActive, string Summary) ComputeBookmakerCoverage(
+        IReadOnlyList<PropLine> lines,
+        IReadOnlyList<string> priority,
+        IReadOnlyDictionary<string, string> friendlyNames)
+    {
+        if (priority.Count == 0)
+        {
+            return (null, false, "none");
+        }
+
+        var primaryKey = priority[0];
+        var primaryName = friendlyNames.GetValueOrDefault(primaryKey, primaryKey);
+
+        var counts = lines
+            .Where(l => !string.IsNullOrWhiteSpace(l.Bookmaker) &&
+                        string.Equals(l.Source, "TheOddsAPI", StringComparison.OrdinalIgnoreCase))
+            .GroupBy(l => l.Bookmaker!, StringComparer.OrdinalIgnoreCase)
+            .OrderByDescending(g => g.Count())
+            .ToList();
+
+        var primaryActive = counts.Any(g =>
+            NormalizeForMatch(g.Key) == NormalizeForMatch(primaryName) ||
+            NormalizeForMatch(g.Key) == NormalizeForMatch(primaryKey));
+
+        var summary = counts.Count == 0
+            ? "none"
+            : string.Join(", ", counts.Take(4).Select(g => $"{g.Key} ({g.Count()})"));
+
+        return (primaryName, primaryActive, summary);
+    }
+
+    private static string NormalizeForMatch(string value) =>
+        new(value.ToLowerInvariant().Where(char.IsLetterOrDigit).ToArray());
 
     private static PropLine CloneWithFreshness(PropLine line, PropLineFreshness freshness) =>
         new()

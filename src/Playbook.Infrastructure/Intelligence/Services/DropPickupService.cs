@@ -48,6 +48,18 @@ public sealed class DropPickupService : IDropPickupService
     private const double DynastyMajorInjuryPenalty = -8.0;
     private const double DynastyUnknownSeverityInjuryPenalty = -2.0;
 
+    // Roster context: positional surplus/deficit and this-roster age distribution, Dynasty only.
+    // "Normal" depth = this team's own current starters at the position (real roster data) plus a
+    // generic bench-depth allowance by position — RB/WR commonly roster deeper than their raw
+    // starter count suggests because FLEX pulls from either, so a fixed "1 bench per starter"
+    // would falsely flag ordinary RB/WR depth as surplus. QB/TE need much less. This is general
+    // fantasy roster-construction knowledge (the same kind already behind ThinPositionBonus /
+    // ShallowPositionBonus above), not a per-league setting or player-specific exception.
+    private const int MinimumNormalAllowance = 2;
+    private const double SurplusPenaltyPerExcessPlayer = -2.5;
+    private const double RelativeAgePressurePerYear = -0.5;
+    private const double RelativeAgePressureCap = 6.0;
+
     private const double HoldThreshold = 3.0;
     private const double DropThreshold = -3.0;
 
@@ -166,6 +178,20 @@ public sealed class DropPickupService : IDropPickupService
             .GroupBy(p => p.Position)
             .ToDictionary(g => g.Key, g => g.Count());
 
+        // Roster context: how many of THIS position are currently started (from the connected
+        // league's actual lineup) and the position's average known age on THIS roster — both
+        // derived only from real roster data, never an invented league setting or player-specific
+        // exception.
+        var startersByPosition = rosterRows
+            .Where(p => starterSet.Contains(p.Id))
+            .GroupBy(p => p.Position)
+            .ToDictionary(g => g.Key, g => g.Count());
+
+        var averageAgeByPosition = rosterRows
+            .Where(p => p.Age is not null)
+            .GroupBy(p => p.Position)
+            .ToDictionary(g => g.Key, g => g.Average(p => p.Age!.Value));
+
         var freeAgentsByPosition = allPlayers.Values
             .Where(p => !rosteredElsewhere.Contains(p.Id))
             .GroupBy(p => p.Position)
@@ -177,25 +203,39 @@ public sealed class DropPickupService : IDropPickupService
 
         var isDynasty = league.LeagueType == LeagueType.Dynasty;
         var dropCandidates = rosterRows
-            .Select(player => BuildDropCandidate(
-                player,
-                starterSet.Contains(player.Id),
-                projectionByPlayer.GetValueOrDefault(player.Id),
-                depthByPosition.GetValueOrDefault(player.Position),
-                freeAgentsByPosition.GetValueOrDefault(player.Position),
-                isDynasty,
-                _injuries.GetCurrentInjury(player.Id)))
+            .Select(player =>
+            {
+                var positionDepth = depthByPosition.GetValueOrDefault(player.Position);
+                var starters = startersByPosition.GetValueOrDefault(player.Position);
+                var normalAllowance = Math.Max(starters + NormalBenchAllowance(player.Position), MinimumNormalAllowance);
+                var positionSurplus = Math.Max(0, positionDepth - normalAllowance);
+                double? ageDelta = player.Age is int age && averageAgeByPosition.TryGetValue(player.Position, out var avgAge)
+                    ? age - avgAge
+                    : null;
+
+                return BuildDropCandidate(
+                    player,
+                    starterSet.Contains(player.Id),
+                    projectionByPlayer.GetValueOrDefault(player.Id),
+                    positionDepth,
+                    freeAgentsByPosition.GetValueOrDefault(player.Position),
+                    isDynasty,
+                    _injuries.GetCurrentInjury(player.Id),
+                    positionSurplus,
+                    ageDelta);
+            })
             .OrderBy(c => c.KeepValueScore)
             .ToList();
 
         // Dynasty leagues: a swap-for-immediate-upgrade suggestion is only appropriate for players
-        // whose KeepValueScore (which already blends DynastyValue) actually classifies as Drop.
-        // Hold/Trade-classified dynasty assets must never be offered as a same-week cut merely
-        // because a hotter waiver option exists this week — that's exactly how a talented young
-        // player with a soft week gets mislabeled as expendable. Redraft/Keeper leagues have no
-        // long-horizon value to protect, so their existing (ungated) behavior is unchanged.
+        // whose KeepValueScore (which already blends DynastyValue, including roster-context surplus
+        // and relative-age pressure) actually classifies as DropCompetitive. Protected/Trade dynasty
+        // assets must never be offered as a same-week cut merely because a hotter waiver option
+        // exists this week — that's exactly how a talented young player with a soft week gets
+        // mislabeled as expendable. Redraft/Keeper leagues have no long-horizon value to protect,
+        // so their existing (ungated) behavior is unchanged.
         var swapCandidatePool = isDynasty
-            ? dropCandidates.Where(c => c.Classification == DropPickupClassification.Drop).ToList()
+            ? dropCandidates.Where(c => c.Classification == DropPickupClassification.DropCompetitive).ToList()
             : dropCandidates;
 
         var suggestions = new List<DropPickupSuggestion>();
@@ -293,7 +333,9 @@ public sealed class DropPickupService : IDropPickupService
         int positionDepth,
         List<(Player Player, PlayerProjection? Projection)>? freeAgentsAtPosition,
         bool isDynasty,
-        PlayerInjuryRecord? currentInjury)
+        PlayerInjuryRecord? currentInjury,
+        int positionSurplus,
+        double? ageDeltaFromPositionAverage)
     {
         var ownPoints = projection is null ? (double?)null : (double)projection.ProjectedFantasyPoints;
         var confidence = projection?.Confidence;
@@ -310,6 +352,7 @@ public sealed class DropPickupService : IDropPickupService
             (isStarter ? StarterBonus : 0.0);
 
         double? dynastyValue = null;
+        double? rosterPressure = null;
         var scoreBreakdown = new List<string>
         {
             $"Immediate value {immediateValue:0.00}: replacement {(replacementMargin ?? -100):0.0;-0.0;0.0}, " +
@@ -328,13 +371,25 @@ public sealed class DropPickupService : IDropPickupService
                 confidence is int dc ? (dc - 50) * DynastyConfidenceWeightPerPoint : 0.0;
             var waiverComponent = DynastyWaiverComponent(replacementMargin);
 
+            // Roster context: surplus depth at this position (beyond this team's own starters +
+            // normal bench) makes every player there more expendable; being older than the
+            // position's average age on THIS roster compounds that, being younger offsets it.
+            // Purely roster-derived — no player-specific exception, no invented league setting.
+            var surplusPressure = positionSurplus * SurplusPenaltyPerExcessPlayer;
+            var relativeAgePressure = ageDeltaFromPositionAverage is { } delta
+                ? Math.Clamp(delta * RelativeAgePressurePerYear, -RelativeAgePressureCap, RelativeAgePressureCap)
+                : 0.0;
+            rosterPressure = surplusPressure + relativeAgePressure;
+
             dynastyValue = ageComponent + roleComponent + injuryComponent +
-                dynastyScarcityBonus + dynastyConfidenceAdjustment + waiverComponent;
+                dynastyScarcityBonus + dynastyConfidenceAdjustment + waiverComponent + rosterPressure.Value;
 
             scoreBreakdown.Add(
                 $"Dynasty value {dynastyValue:0.00}: age {ageComponent:0.0;-0.0;0.0}, role {roleComponent:0.0}, " +
                 $"injury {injuryComponent:0.0;-0.0;0.0}, scarcity {dynastyScarcityBonus:0.0}, " +
-                $"confidence {dynastyConfidenceAdjustment:0.00;-0.00;0.00}, waiver {waiverComponent:0.0}.");
+                $"confidence {dynastyConfidenceAdjustment:0.00;-0.00;0.00}, waiver {waiverComponent:0.0}, " +
+                $"roster pressure {rosterPressure:0.00;-0.00;0.00} ({positionSurplus} surplus at position, " +
+                $"age {(ageDeltaFromPositionAverage is { } d ? $"{d:+0.0;-0.0;0.0} yrs vs position avg" : "unknown")}).");
         }
 
         var keepValue = isDynasty
@@ -343,8 +398,8 @@ public sealed class DropPickupService : IDropPickupService
 
         var classification = keepValue switch
         {
-            >= HoldThreshold => DropPickupClassification.Hold,
-            <= DropThreshold => DropPickupClassification.Drop,
+            >= HoldThreshold => DropPickupClassification.Protected,
+            <= DropThreshold => DropPickupClassification.DropCompetitive,
             _ => DropPickupClassification.Trade
         };
 
@@ -365,13 +420,26 @@ public sealed class DropPickupService : IDropPickupService
             reasons.Add($"Low projection confidence ({conf}%).");
         }
 
-        if (positionDepth > 2)
+        if (isDynasty && positionSurplus > 0)
+        {
+            reasons.Add(
+                $"{positionDepth} {player.Position}s rostered — {positionSurplus} beyond this team's own " +
+                "starters + normal bench depth at the position.");
+        }
+        else if (positionDepth > 2)
         {
             reasons.Add($"{positionDepth} {player.Position}s already on the roster — depth is not a concern here.");
         }
         else if (positionDepth <= 1)
         {
             reasons.Add($"Only {player.Position} on the roster — dropping leaves a positional hole.");
+        }
+
+        if (isDynasty && ageDeltaFromPositionAverage is { } ageDelta && Math.Abs(ageDelta) >= 2.0)
+        {
+            reasons.Add(ageDelta > 0
+                ? $"{ageDelta:0.0} years older than this roster's average {player.Position} — aging within a crowded group."
+                : $"{Math.Abs(ageDelta):0.0} years younger than this roster's average {player.Position}.");
         }
 
         if (isStarter)
@@ -390,6 +458,7 @@ public sealed class DropPickupService : IDropPickupService
             KeepValueScore = Math.Round(keepValue, 2),
             ImmediateValue = Math.Round(immediateValue, 2),
             DynastyValue = dynastyValue is null ? null : Math.Round(dynastyValue.Value, 2),
+            RosterPressure = rosterPressure is null ? null : Math.Round(rosterPressure.Value, 2),
             Classification = classification,
             ScoreBreakdown = scoreBreakdown,
             ReplacementMargin = replacementMargin is null ? null : Math.Round(replacementMargin.Value, 1),
@@ -397,6 +466,20 @@ public sealed class DropPickupService : IDropPickupService
             Reasons = reasons
         };
     }
+
+    /// <summary>
+    /// Generic bench-depth allowance per starting slot at a position, used only to detect surplus
+    /// on THIS roster (combined with this team's own current starter count) — not a league setting.
+    /// RB/WR get more because FLEX makes deeper rosters normal there; QB/TE need little bench.
+    /// </summary>
+    private static int NormalBenchAllowance(Position position) => position switch
+    {
+        Position.RB => 3,
+        Position.WR => 3,
+        Position.QB => 1,
+        Position.TE => 1,
+        _ => 2
+    };
 
     /// <summary>
     /// Coarse dynasty age curve. Bucketed rather than continuous so a single year of age never

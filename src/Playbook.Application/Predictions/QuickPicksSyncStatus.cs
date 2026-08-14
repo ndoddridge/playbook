@@ -35,6 +35,19 @@ public interface IQuickPicksSyncStatus
     string? ProviderErrors { get; }
 
     TimeSpan? ProviderResponseTime { get; }
+
+    /// <summary>Friendly name of the configured highest-priority bookmaker (e.g. "Caesars Sportsbook").</summary>
+    string ConfiguredPrimaryBookmaker { get; }
+
+    /// <summary>
+    /// Whether the configured primary bookmaker actually supplied at least one line in the most
+    /// recent sync. False does not mean anything is broken — it means that book didn't currently
+    /// have a market posted with the connected data provider; other listed books supplement.
+    /// </summary>
+    bool ConfiguredPrimaryBookmakerActive { get; }
+
+    /// <summary>Bookmakers that actually supplied lines in the most recent sync, most-used first.</summary>
+    string ActiveBookmakerSummary { get; }
 }
 
 public sealed class QuickPicksSyncStatus : IQuickPicksSyncStatus
@@ -70,6 +83,22 @@ public sealed class QuickPicksSyncStatus : IQuickPicksSyncStatus
     public string? ProviderErrors => LastError;
 
     public TimeSpan? ProviderResponseTime { get; private set; }
+
+    public string ConfiguredPrimaryBookmaker { get; private set; } = "—";
+
+    public bool ConfiguredPrimaryBookmakerActive { get; private set; }
+
+    public string ActiveBookmakerSummary { get; private set; } = "—";
+
+    public void RecordBookmakerCoverage(string configuredPrimaryBookmaker, bool primaryActive, string activeSummary)
+    {
+        lock (_gate)
+        {
+            ConfiguredPrimaryBookmaker = configuredPrimaryBookmaker;
+            ConfiguredPrimaryBookmakerActive = primaryActive;
+            ActiveBookmakerSummary = activeSummary;
+        }
+    }
 
     public void SetConfigured(string configured, bool apiKeyConfigured = false)
     {

@@ -62,7 +62,7 @@
                                 {
                                     <span class="ti-roster__badge">Starter</span>
                                 }
-                                <span class="ti-roster__badge">@suggestion.Drop.Classification</span>
+                                <span class="ti-roster__badge">@suggestion.Drop.ClassificationLabel</span>
                             </p>
                             <ul class="ti-list ti-list--compact">
                                 @foreach (var reason in suggestion.Drop.Reasons)
@@ -106,7 +106,7 @@
                     {
                         <li class="ti-roster__item">
                             <div class="ti-roster__top">
-                                <span class="ti-roster__badge">@candidate.Classification</span>
+                                <span class="ti-roster__badge">@candidate.ClassificationLabel</span>
                             </div>
                             <p><strong>@candidate.PlayerName</strong> (@candidate.PositionLabel)
                                 @if (candidate.IsStarter)

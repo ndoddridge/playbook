@@ -847,18 +847,22 @@ public sealed class QuickPicksEngine : IQuickPicksEngine
     {
         var subject = line.PlayerName ?? line.TeamName ?? line.Event.DisplayName;
         var market = line.MarketLabel.ToLowerInvariant();
-        var side = direction switch
-        {
-            PredictionDirection.Over => "Over",
-            PredictionDirection.Under => "Under",
-            PredictionDirection.Yes => "Yes",
-            PredictionDirection.No => "No",
-            PredictionDirection.Cover => "cover",
-            PredictionDirection.NotCover => "not cover",
-            PredictionDirection.Home => "home",
-            PredictionDirection.Away => "away",
-            _ => direction.ToString()
-        };
+        // Spread/total: name the actual team + sign or OVER/UNDER + line — never bare
+        // "cover"/"not cover", which forces the reader to work out which team and which sign.
+        var side = line.Market is PredictionMarketType.Spread or PredictionMarketType.GameTotal
+            or PredictionMarketType.TeamTotal
+            ? BetLabelFormatter.FormatSide(
+                line.Market, direction, line.Line, line.TeamName, line.Event.HomeTeam, line.Event.AwayTeam)
+            : direction switch
+            {
+                PredictionDirection.Over => "Over",
+                PredictionDirection.Under => "Under",
+                PredictionDirection.Yes => "Yes",
+                PredictionDirection.No => "No",
+                PredictionDirection.Home => "home",
+                PredictionDirection.Away => "away",
+                _ => direction.ToString()
+            };
 
         var delta = Math.Abs(projection - lineValue);
         var relation = projection >= lineValue ? "above" : "below";

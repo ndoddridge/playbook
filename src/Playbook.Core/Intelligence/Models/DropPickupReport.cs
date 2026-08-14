@@ -72,16 +72,24 @@ public sealed class DropPickupSuggestion
 }
 
 /// <summary>
-/// Rough keep/drop lean for a roster player. Derived only from ImmediateValue/DynastyValue
-/// thresholds on existing data — NOT a real trade-market assessment (no trade value is modeled
-/// yet), so "Trade" here means "meaningful value but positionally replaceable," not an appraised
-/// asset price.
+/// Roster-context-aware keep/drop lean for a roster player. Derived from ImmediateValue/DynastyValue
+/// thresholds — where DynastyValue itself now accounts for positional surplus and this player's age
+/// relative to their position group on THIS roster, not just an absolute per-player score — so
+/// "expendable" means expendable relative to teammates at the same position, not merely "projects
+/// worse than a waiver player this week." NOT a real trade-market assessment (no trade value is
+/// modeled yet), so <see cref="Trade"/> means "meaningful value but positionally replaceable," not
+/// an appraised asset price.
 /// </summary>
 public enum DropPickupClassification
 {
-    Hold,
+    /// <summary>Valuable dynasty asset — must not be surfaced as a drop merely from a weekly projection gap.</summary>
+    Protected,
+
+    /// <summary>Meaningful value, better monetized via trade than cut outright.</summary>
     Trade,
-    Drop
+
+    /// <summary>Genuinely expendable relative to teammates at the same position.</summary>
+    DropCompetitive
 }
 
 /// <summary>A current roster player evaluated as a candidate to drop.</summary>
@@ -128,6 +136,22 @@ public sealed class DropCandidate
     /// for what "Trade" does and doesn't mean here.
     /// </summary>
     public required DropPickupClassification Classification { get; init; }
+
+    public string ClassificationLabel => Classification switch
+    {
+        DropPickupClassification.Protected => "Protected",
+        DropPickupClassification.Trade => "Trade",
+        DropPickupClassification.DropCompetitive => "Drop-Competitive",
+        _ => Classification.ToString()
+    };
+
+    /// <summary>
+    /// Dynasty leagues only: how much this player's own position group on THIS roster (surplus
+    /// depth beyond starters+normal bench, and this player's age relative to the position's average
+    /// age on the roster) pushed DynastyValue down (surplus/older) or up (thin position/younger).
+    /// Folded into <see cref="DynastyValue"/>; null for Redraft/Keeper.
+    /// </summary>
+    public required double? RosterPressure { get; init; }
 
     /// <summary>Human-readable line(s) showing how ImmediateValue/DynastyValue were composed.</summary>
     public required IReadOnlyList<string> ScoreBreakdown { get; init; }
