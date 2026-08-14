@@ -57,6 +57,22 @@ public sealed class DropPickupService : IDropPickupService
     // ShallowPositionBonus above), not a per-league setting or player-specific exception.
     private const int MinimumNormalAllowance = 2;
     private const double SurplusPenaltyPerExcessPlayer = -2.5;
+
+    /// <summary>
+    /// Bounds the raw surplus penalty's magnitude (mirrors <see cref="RelativeAgePressureCap"/> for
+    /// age) so positional depth alone can never spiral without limit as a position gets deeper.
+    /// </summary>
+    private const double SurplusPenaltyCap = -6.0;
+
+    /// <summary>
+    /// A player who currently holds a starting lineup spot is, by definition, not excess bench
+    /// depth this week — surplus measures bench burden, not starter quality. Current starters keep
+    /// only a fraction of the (already capped) surplus penalty so positional depth alone can never
+    /// push a legitimate starter into Drop-Competitive; genuine age/injury/confidence decline still
+    /// can, since only the surplus component is dampened here.
+    /// </summary>
+    private const double StarterSurplusProtectionFactor = 0.25;
+
     private const double RelativeAgePressurePerYear = -0.5;
     private const double RelativeAgePressureCap = 6.0;
 
@@ -375,7 +391,11 @@ public sealed class DropPickupService : IDropPickupService
             // normal bench) makes every player there more expendable; being older than the
             // position's average age on THIS roster compounds that, being younger offsets it.
             // Purely roster-derived — no player-specific exception, no invented league setting.
-            var surplusPressure = positionSurplus * SurplusPenaltyPerExcessPlayer;
+            // The surplus term is bounded (SurplusPenaltyCap) and further dampened for a current
+            // starter (StarterSurplusProtectionFactor) so positional depth alone — however deep —
+            // can never by itself overwhelm a legitimate starter's role/confidence baseline.
+            var rawSurplusPressure = Math.Max(SurplusPenaltyCap, positionSurplus * SurplusPenaltyPerExcessPlayer);
+            var surplusPressure = isStarter ? rawSurplusPressure * StarterSurplusProtectionFactor : rawSurplusPressure;
             var relativeAgePressure = ageDeltaFromPositionAverage is { } delta
                 ? Math.Clamp(delta * RelativeAgePressurePerYear, -RelativeAgePressureCap, RelativeAgePressureCap)
                 : 0.0;

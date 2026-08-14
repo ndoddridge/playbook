@@ -10,10 +10,16 @@ namespace Playbook.Infrastructure.Research;
 
 /// <summary>
 /// Postgame reconciliation pass. Grades snapshots whose event has concluded (commence time plus a
-/// buffer) against actual production from the existing game-log store, then persists the result
-/// via <see cref="IPredictionResearchStore"/>. Player-level markets only (Passing/Rushing/Receiving
+/// buffer) against real actual production, then persists the result via
+/// <see cref="IPredictionResearchStore"/>. Player-level markets only (Passing/Rushing/Receiving
 /// Yards, Receptions, Passing/Anytime Touchdowns) — game-level markets (Winner/Spread/Totals) have
 /// no wired actual-outcome source yet and are graded as DataGap rather than guessed at.
+///
+/// Regular/postseason snapshots are graded from the existing REG/POST game-log store
+/// (<see cref="IPlayerGameLogStore"/>) exactly as before. Preseason snapshots are graded from a
+/// separate real source (<see cref="IPreseasonPlayerGameLogProvider"/>, ESPN boxscores) — nflverse's
+/// player_stats feed has no preseason rows at all, and this separation also guarantees preseason
+/// production can never leak into the regular-season game-log store that Projection consumes.
 /// </summary>
 public sealed class PostEventReconciliationService : IPostEventReconciliationService
 {
@@ -21,6 +27,7 @@ public sealed class PostEventReconciliationService : IPostEventReconciliationSer
 
     private readonly IPredictionResearchStore _store;
     private readonly IPlayerGameLogStore _gameLogs;
+    private readonly IPreseasonPlayerGameLogProvider _preseasonGameLogs;
     private readonly IPlayerInjuryService _injuries;
     private readonly IPredictionOutcomeClassifier _classifier;
     private readonly ILogger<PostEventReconciliationService> _logger;
@@ -28,12 +35,14 @@ public sealed class PostEventReconciliationService : IPostEventReconciliationSer
     public PostEventReconciliationService(
         IPredictionResearchStore store,
         IPlayerGameLogStore gameLogs,
+        IPreseasonPlayerGameLogProvider preseasonGameLogs,
         IPlayerInjuryService injuries,
         IPredictionOutcomeClassifier classifier,
         ILogger<PostEventReconciliationService> logger)
     {
         _store = store;
         _gameLogs = gameLogs;
+        _preseasonGameLogs = preseasonGameLogs;
         _injuries = injuries;
         _classifier = classifier;
         _logger = logger;
@@ -77,15 +86,27 @@ public sealed class PostEventReconciliationService : IPostEventReconciliationSer
             return null;
         }
 
+        // Preseason has its own real source (ESPN) — nflverse's REG/POST-only game-log store has
+        // nothing for these weeks, and must never be asked to answer for a preseason snapshot.
+        if (snapshot.SeasonPhase == NflSeasonPhase.Preseason)
+        {
+            var preseasonLog = _preseasonGameLogs
+                .GetPreseasonGameLogsAsync(snapshot.Season, snapshot.CommenceTime)
+                .GetAwaiter()
+                .GetResult()
+                .FirstOrDefault(g => g.PlayerId == playerId);
+
+            return preseasonLog is null ? null : ExtractMarketValue(snapshot.Market, preseasonLog);
+        }
+
         var log = _gameLogs.GetGameLogsForPlayer(playerId)
             .FirstOrDefault(g => g.Season == snapshot.Season && g.Week == snapshot.Week);
 
-        if (log is null)
-        {
-            return null;
-        }
+        return log is null ? null : ExtractMarketValue(snapshot.Market, log);
+    }
 
-        return snapshot.Market switch
+    private static decimal? ExtractMarketValue(PredictionMarketType market, PlayerGameStats log) =>
+        market switch
         {
             PredictionMarketType.PassingYards => log.PassYards,
             PredictionMarketType.RushingYards => log.RushYards,
@@ -95,7 +116,6 @@ public sealed class PostEventReconciliationService : IPostEventReconciliationSer
             PredictionMarketType.AnytimeTouchdown => AnytimeTouchdowns(log),
             _ => null
         };
-    }
 
     private static decimal? AnytimeTouchdowns(PlayerGameStats log)
     {

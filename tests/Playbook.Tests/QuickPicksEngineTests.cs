@@ -106,6 +106,18 @@ public class QuickPicksEngineTests
     }
 
     [Fact]
+    public void Game_Market_With_No_Legitimate_Projection_Is_Excluded_Not_Fabricated()
+    {
+        // Game markets (Spread/Total/Winner/TeamTotal) have no real team/game projection input —
+        // PropStatProjector reports null rather than a placeholder constant, and the engine must
+        // exclude the market entirely rather than building a pick around a fabricated number.
+        Assert.Null(Eval(Line(PredictionMarketType.Spread, -3.5m), null, 0, 100, intelligence: null));
+        Assert.Null(Eval(Line(PredictionMarketType.GameTotal, 44.5m), null, 0, 100, intelligence: null));
+        Assert.Null(Eval(Line(PredictionMarketType.TeamTotal, 21.5m), null, 0, 100, intelligence: null));
+        Assert.Null(Eval(Line(PredictionMarketType.Winner, null), null, 0, 100, intelligence: null));
+    }
+
+    [Fact]
     public void Stale_Line_Is_Excluded_Not_Merely_Derated()
     {
         // A stale line isn't "current" — it must never surface as an actionable pick at all.

@@ -2,6 +2,27 @@
 
 All notable project changes are recorded here.
 
+## [Unreleased] — Preseason validation fixes (research memory, Drop/Pickup, Quick Picks)
+
+### Fixed
+
+- **Preseason research-memory grading**: nflverse's player_stats feed carries only REG/POST rows
+  (confirmed against the real feed — never PRE), so preseason Quick Pick snapshots could never be
+  graded. Added `IPreseasonPlayerGameLogProvider` (ESPN boxscore-backed, resolved via the existing
+  Sleeper-populated `EspnId` identity crosswalk) as a separate real source used only to grade
+  preseason snapshots — never merged into the REG/POST game-log store that Projection consumes.
+- **Drop/Pickup roster-pressure override**: `SurplusPenaltyPerExcessPlayer` was uncapped and could
+  swamp a current starter's role bonus on a numerically deep position (verified on a real dynasty
+  roster). Surplus pressure is now capped (`SurplusPenaltyCap`) and further dampened for current
+  starters (`StarterSurplusProtectionFactor`) — positional depth alone can never drop a legitimate
+  starter; genuine age/injury/confidence decline still can.
+- **Quick Picks placeholder game-market projections**: Spread/Total/Winner/TeamTotal markets had no
+  real team/game projection input (`IMatchupContextProvider` / `IGameEnvironmentProvider` are both
+  "Unavailable") and were using fixed constants (e.g. spread always −2.5) identical across every
+  game, in every season phase. `PropStatProjector` now reports "no projection" honestly for these
+  markets instead of fabricating a number; `QuickPicksEngine` excludes any market with no
+  projection rather than presenting one built on a coincidental line/placeholder diff.
+
 ## [Unreleased] — Weekly Matchup Game Plan
 
 ### Added

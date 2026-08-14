@@ -315,6 +315,26 @@ public static class DependencyInjection
         services.AddSingleton<IPlayerStatsService, PlayerStatsService>();
         services.AddSingleton<IPlayerGameLogStore>(sp => sp.GetRequiredService<IPlayerStatsService>());
         services.AddSingleton<IPlayerStatisticalContextService, PlayerStatisticalContextService>();
+
+        services.AddSingleton<NullPreseasonPlayerGameLogProvider>();
+        services.AddHttpClient(EspnPreseasonGameLogProvider.HttpClientName, client =>
+        {
+            client.BaseAddress = new Uri("https://site.api.espn.com/apis/site/v2/");
+            client.Timeout = TimeSpan.FromSeconds(30);
+            client.DefaultRequestHeaders.TryAddWithoutValidation(
+                "User-Agent",
+                "Mozilla/5.0 (compatible; Playbook/0.1; +https://github.com/ndoddridge/playbook)");
+            client.DefaultRequestHeaders.TryAddWithoutValidation("Accept", "application/json");
+        });
+        services.AddSingleton<EspnPreseasonGameLogProvider>();
+        services.AddSingleton<IPreseasonPlayerGameLogProvider>(sp =>
+        {
+            var provider = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<PlayerStatsOptions>>()
+                .Value.Provider;
+            return provider == PlayerStatsProviderKind.Mock
+                ? sp.GetRequiredService<NullPreseasonPlayerGameLogProvider>()
+                : sp.GetRequiredService<EspnPreseasonGameLogProvider>();
+        });
     }
 
     private static void RegisterCollegeStats(IServiceCollection services)

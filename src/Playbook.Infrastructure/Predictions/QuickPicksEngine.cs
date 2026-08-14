@@ -51,8 +51,11 @@ public sealed class QuickPicksEngine : IQuickPicksEngine
             return null;
         }
 
-        if (context.PlaybookProjection is null && !isGameMarket)
+        if (context.PlaybookProjection is null)
         {
+            // No legitimate projection input (player or team/game) — never present a pick built on
+            // a coincidental market number alone. See PropStatProjector for why game markets in
+            // particular have no real signal today.
             return null;
         }
 

@@ -345,6 +345,96 @@ public class DropPickupDynastyTests
         Assert.Equal(aRb.KeepValueScore, bRb.KeepValueScore, 3);
     }
 
+    // Reproduces the reported failure mode from real-roster validation: a starting RB on a team
+    // with heavy positional depth (10 RBs, 5 beyond normal allowance) was classified
+    // Drop-Competitive purely because SurplusPenaltyPerExcessPlayer was uncapped and could swamp
+    // the starter role bonus. These lock down the fixed hierarchy: surplus alone can never drop a
+    // legitimate starter, but genuine aging bench depth still can, and a young non-starter asset
+    // is protected on dynasty value even at the same surplus-heavy position.
+    [Fact]
+    public void Heavy_Positional_Surplus_Alone_Never_Drops_A_Legitimate_Starter()
+    {
+        var (report, starter, _, _) = BuildHeavySurplusRbRoster();
+
+        var candidate = report.RosterAssessment.Single(c => c.PlayerId == starter.Id);
+
+        Assert.NotEqual(DropPickupClassification.DropCompetitive, candidate.Classification);
+        Assert.DoesNotContain(report.Suggestions, s => s.Drop.PlayerId == starter.Id);
+    }
+
+    [Fact]
+    public void Genuine_Aging_Bench_Depth_At_The_Same_Surplus_Position_Still_Drops()
+    {
+        var (report, _, agingBench, _) = BuildHeavySurplusRbRoster();
+
+        var candidate = report.RosterAssessment.Single(c => c.PlayerId == agingBench.Id);
+
+        Assert.Equal(DropPickupClassification.DropCompetitive, candidate.Classification);
+    }
+
+    [Fact]
+    public void Young_NonStarter_Asset_At_The_Same_Surplus_Position_Remains_Protected()
+    {
+        var (report, _, _, youngProspect) = BuildHeavySurplusRbRoster();
+
+        var candidate = report.RosterAssessment.Single(c => c.PlayerId == youngProspect.Id);
+
+        Assert.Equal(DropPickupClassification.Protected, candidate.Classification);
+    }
+
+    [Fact]
+    public void Heavy_Surplus_Starter_Protection_Is_Deterministic_And_Not_Player_Specific()
+    {
+        var (reportA, starterA, _, _) = BuildHeavySurplusRbRoster();
+        var (reportB, starterB, _, _) = BuildHeavySurplusRbRoster();
+
+        var a = reportA.RosterAssessment.Single(c => c.PlayerId == starterA.Id);
+        var b = reportB.RosterAssessment.Single(c => c.PlayerId == starterB.Id);
+
+        Assert.Equal(a.KeepValueScore, b.KeepValueScore, 3);
+        Assert.Equal(a.Classification, b.Classification);
+        Assert.Equal(DropPickupClassification.Protected, a.Classification);
+    }
+
+    /// <summary>
+    /// 10 rostered RBs (2 starters + 8 bench) against a normal allowance of 5 — a 5-player surplus,
+    /// matching the real-roster scenario that exposed the uncapped-surplus bug. One starter near
+    /// the position's average age, several older bench veterans, and one young non-starter prospect.
+    /// </summary>
+    private static (DropPickupReport Report, Player Starter, Player AgingBench, Player YoungProspect)
+        BuildHeavySurplusRbRoster()
+    {
+        var starterA = MakePlayer(Position.RB, $"Starter A {Guid.NewGuid():N}", age: 29);
+        var starterB = MakePlayer(Position.RB, $"Starter B {Guid.NewGuid():N}", age: 25);
+        var bench = Enumerable.Range(0, 7)
+            .Select(i => MakePlayer(Position.RB, $"Aging Bench {i} {Guid.NewGuid():N}", age: 32 + (i % 3)))
+            .ToList();
+        var youngProspect = MakePlayer(Position.RB, $"Young Prospect {Guid.NewGuid():N}", age: 22);
+        var freeAgent = MakePlayer(Position.RB, $"FA RB {Guid.NewGuid():N}");
+
+        var rosterIds = new List<Guid> { starterA.Id, starterB.Id, youngProspect.Id };
+        rosterIds.AddRange(bench.Select(p => p.Id));
+        var team = MakeTeam(rosterIds, starterIds: [starterA.Id, starterB.Id]);
+
+        var projections = new Dictionary<Guid, PlayerProjection>
+        {
+            [starterA.Id] = MakeProjection(starterA.Id, points: 9, confidence: 55),
+            [starterB.Id] = MakeProjection(starterB.Id, points: 12, confidence: 60),
+            [youngProspect.Id] = MakeProjection(youngProspect.Id, points: 6, confidence: 55),
+            [freeAgent.Id] = MakeProjection(freeAgent.Id, points: 5, confidence: 50)
+        };
+        foreach (var b in bench)
+        {
+            projections[b.Id] = MakeProjection(b.Id, points: 4, confidence: 45);
+        }
+
+        var allPlayers = new List<Player> { starterA, starterB, youngProspect, freeAgent };
+        allPlayers.AddRange(bench);
+
+        var service = CreateService(allPlayers, projections, team, [], LeagueType.Dynasty);
+        return (service.GetReport(), starterA, bench[0], youngProspect);
+    }
+
     /// <summary>
     /// 1 starting RB + 1 bench RB (within normal RB allowance, no surplus) alongside 3 TEs with
     /// only 1 starter (1 beyond the TE normal allowance of 2 — a genuine surplus), ages spread so

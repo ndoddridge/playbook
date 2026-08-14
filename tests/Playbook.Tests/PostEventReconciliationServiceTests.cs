@@ -47,8 +47,8 @@ public class PostEventReconciliationServiceTests : IDisposable
             }
         ]);
         var service = new PostEventReconciliationService(
-            store, gameLogs, new FakeInjuryService(null), new PredictionOutcomeClassifier(),
-            NullLogger<PostEventReconciliationService>.Instance);
+            store, gameLogs, new FakePreseasonGameLogProvider([]), new FakeInjuryService(null),
+            new PredictionOutcomeClassifier(), NullLogger<PostEventReconciliationService>.Instance);
 
         var graded = service.RunPendingReconciliation();
 
@@ -68,8 +68,8 @@ public class PostEventReconciliationServiceTests : IDisposable
         store.SaveSnapshot(snapshot);
 
         var service = new PostEventReconciliationService(
-            store, new FakeGameLogStore([]), new FakeInjuryService(null), new PredictionOutcomeClassifier(),
-            NullLogger<PostEventReconciliationService>.Instance);
+            store, new FakeGameLogStore([]), new FakePreseasonGameLogProvider([]), new FakeInjuryService(null),
+            new PredictionOutcomeClassifier(), NullLogger<PostEventReconciliationService>.Instance);
 
         service.RunPendingReconciliation();
 
@@ -86,8 +86,8 @@ public class PostEventReconciliationServiceTests : IDisposable
         store.SaveSnapshot(snapshot);
 
         var service = new PostEventReconciliationService(
-            store, new FakeGameLogStore([]), new FakeInjuryService(null), new PredictionOutcomeClassifier(),
-            NullLogger<PostEventReconciliationService>.Instance);
+            store, new FakeGameLogStore([]), new FakePreseasonGameLogProvider([]), new FakeInjuryService(null),
+            new PredictionOutcomeClassifier(), NullLogger<PostEventReconciliationService>.Instance);
 
         var graded = service.RunPendingReconciliation();
 
@@ -111,8 +111,8 @@ public class PostEventReconciliationServiceTests : IDisposable
             }
         ]);
         var service = new PostEventReconciliationService(
-            store, gameLogs, new FakeInjuryService(null), new PredictionOutcomeClassifier(),
-            NullLogger<PostEventReconciliationService>.Instance);
+            store, gameLogs, new FakePreseasonGameLogProvider([]), new FakeInjuryService(null),
+            new PredictionOutcomeClassifier(), NullLogger<PostEventReconciliationService>.Instance);
 
         var firstPass = service.RunPendingReconciliation();
         var secondPass = service.RunPendingReconciliation();
@@ -122,7 +122,102 @@ public class PostEventReconciliationServiceTests : IDisposable
         Assert.Single(store.GetAllAssessments());
     }
 
-    private static PredictionSnapshot MakeSnapshot(Guid playerId, DateTimeOffset commenceTime) => new()
+    [Fact]
+    public void Preseason_Snapshot_Is_Graded_From_The_Preseason_Provider()
+    {
+        var playerId = Guid.NewGuid();
+        var store = new PredictionResearchStore(NullLogger<PredictionResearchStore>.Instance, _root);
+        var snapshot = MakeSnapshot(
+            playerId, commenceTime: DateTimeOffset.UtcNow.AddHours(-10), phase: NflSeasonPhase.Preseason);
+        store.SaveSnapshot(snapshot);
+
+        // Regular-season store deliberately has nothing for this player/week — proves the
+        // preseason path does not depend on it.
+        var regularGameLogs = new FakeGameLogStore([]);
+        var preseasonLogs = new FakePreseasonGameLogProvider(
+        [
+            new PlayerGameStats
+            {
+                PlayerId = playerId,
+                Season = snapshot.Season,
+                Week = 1,
+                SeasonType = "preseason",
+                ReceivingYards = 62
+            }
+        ]);
+        var service = new PostEventReconciliationService(
+            store, regularGameLogs, preseasonLogs, new FakeInjuryService(null),
+            new PredictionOutcomeClassifier(), NullLogger<PostEventReconciliationService>.Instance);
+
+        var graded = service.RunPendingReconciliation();
+
+        Assert.Equal(1, graded);
+        var assessment = Assert.Single(store.GetAllAssessments());
+        Assert.Equal(62m, assessment.ActualValue);
+        Assert.Equal(PredictionOutcomeClassification.Success, assessment.Classification);
+    }
+
+    [Fact]
+    public void Preseason_Grading_Never_Reads_Or_Contaminates_The_Regular_Season_GameLogStore()
+    {
+        var playerId = Guid.NewGuid();
+        var store = new PredictionResearchStore(NullLogger<PredictionResearchStore>.Instance, _root);
+        var snapshot = MakeSnapshot(
+            playerId, commenceTime: DateTimeOffset.UtcNow.AddHours(-10), phase: NflSeasonPhase.Preseason);
+        store.SaveSnapshot(snapshot);
+
+        // Regular store has a colliding (same player/season/week) but very different value —
+        // if preseason grading ever fell back to it, the assertion below would catch it.
+        var regularGameLogs = new FakeGameLogStore(
+        [
+            new PlayerGameStats
+            {
+                PlayerId = playerId, Season = snapshot.Season, Week = snapshot.Week,
+                SeasonType = "REG", ReceivingYards = 999
+            }
+        ]);
+        var preseasonLogs = new FakePreseasonGameLogProvider(
+        [
+            new PlayerGameStats
+            {
+                PlayerId = playerId, Season = snapshot.Season, Week = 1,
+                SeasonType = "preseason", ReceivingYards = 20
+            }
+        ]);
+        var service = new PostEventReconciliationService(
+            store, regularGameLogs, preseasonLogs, new FakeInjuryService(null),
+            new PredictionOutcomeClassifier(), NullLogger<PostEventReconciliationService>.Instance);
+
+        service.RunPendingReconciliation();
+
+        var assessment = Assert.Single(store.GetAllAssessments());
+        Assert.Equal(20m, assessment.ActualValue);
+        // The regular-season store itself is untouched — still exactly the one REG row it started with.
+        Assert.Single(regularGameLogs.GetAllGameLogs());
+        Assert.Equal("REG", regularGameLogs.GetAllGameLogs()[0].SeasonType);
+    }
+
+    [Fact]
+    public void Preseason_Snapshot_With_No_Real_Boxscore_Grades_As_DataGap()
+    {
+        var playerId = Guid.NewGuid();
+        var store = new PredictionResearchStore(NullLogger<PredictionResearchStore>.Instance, _root);
+        var snapshot = MakeSnapshot(
+            playerId, commenceTime: DateTimeOffset.UtcNow.AddHours(-10), phase: NflSeasonPhase.Preseason);
+        store.SaveSnapshot(snapshot);
+
+        var service = new PostEventReconciliationService(
+            store, new FakeGameLogStore([]), new FakePreseasonGameLogProvider([]), new FakeInjuryService(null),
+            new PredictionOutcomeClassifier(), NullLogger<PostEventReconciliationService>.Instance);
+
+        service.RunPendingReconciliation();
+
+        var assessment = Assert.Single(store.GetAllAssessments());
+        Assert.Equal(PredictionOutcomeClassification.DataGap, assessment.Classification);
+    }
+
+    private static PredictionSnapshot MakeSnapshot(
+        Guid playerId, DateTimeOffset commenceTime, NflSeasonPhase phase = NflSeasonPhase.RegularSeason) => new()
     {
         SnapshotId = Guid.NewGuid(),
         PlayerId = playerId,
@@ -131,7 +226,7 @@ public class PostEventReconciliationServiceTests : IDisposable
         CommenceTime = commenceTime,
         Season = 2026,
         Week = 1,
-        SeasonPhase = NflSeasonPhase.RegularSeason,
+        SeasonPhase = phase,
         Market = PredictionMarketType.ReceivingYards,
         Direction = PredictionDirection.Over,
         Line = 55.5m,
@@ -156,6 +251,15 @@ public class PostEventReconciliationServiceTests : IDisposable
         public IReadOnlyList<PlayerGameStats> GetRecentGameLogs(Guid playerId, int maxGames = 8) =>
             GetGameLogsForPlayer(playerId).Take(maxGames).ToList();
         public int GameLogCount => _logs.Count;
+    }
+
+    private sealed class FakePreseasonGameLogProvider : IPreseasonPlayerGameLogProvider
+    {
+        private readonly IReadOnlyList<PlayerGameStats> _logs;
+        public FakePreseasonGameLogProvider(IReadOnlyList<PlayerGameStats> logs) => _logs = logs;
+        public Task<IReadOnlyList<PlayerGameStats>> GetPreseasonGameLogsAsync(
+            int season, DateTimeOffset gameDate, CancellationToken cancellationToken = default) =>
+            Task.FromResult(_logs);
     }
 
     private sealed class FakeInjuryService : IPlayerInjuryService

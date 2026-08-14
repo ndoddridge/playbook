@@ -21,28 +21,17 @@ public static class PropStatProjector
     {
         var usingPrior = false;
 
-        if (production is null && market is PredictionMarketType.GameTotal
-            or PredictionMarketType.TeamTotal or PredictionMarketType.Winner
-            or PredictionMarketType.Spread)
+        if (market is PredictionMarketType.GameTotal or PredictionMarketType.TeamTotal
+            or PredictionMarketType.Winner or PredictionMarketType.Spread)
         {
-            // Game markets: softer priors in preseason (scoring/pace differ; tiny samples).
-            return seasonPhase == NflSeasonPhase.Preseason
-                ? market switch
-                {
-                    PredictionMarketType.GameTotal => (42.5m, 28, 70, false),
-                    PredictionMarketType.TeamTotal => (21.0m, 26, 72, false),
-                    PredictionMarketType.Winner => (0.55m, 30, 68, false),
-                    PredictionMarketType.Spread => (-2.5m, 30, 68, false),
-                    _ => (null, 24, 75, false)
-                }
-                : market switch
-                {
-                    PredictionMarketType.GameTotal => (45.5m, 42, 55, false),
-                    PredictionMarketType.TeamTotal => (22.5m, 40, 58, false),
-                    PredictionMarketType.Winner => (0.55m, 38, 60, false),
-                    PredictionMarketType.Spread => (-2.5m, 38, 60, false),
-                    _ => (null, 30, 70, false)
-                };
+            // Game markets have no real team/game projection input: IMatchupContextProvider and
+            // IGameEnvironmentProvider are both registered as "Unavailable" (see
+            // DependencyInjection.RegisterProjections) — there is no legitimate signal behind a
+            // number here, for any team, in any season phase. A fixed constant compared against a
+            // real sportsbook line would look like genuine intelligence when it is not tied to the
+            // actual matchup at all, so this reports "no projection" (insufficient data) rather
+            // than fabricating one. QuickPicksEngine excludes markets with no projection.
+            return (null, 0, 100, false);
         }
 
         if (production is null)
