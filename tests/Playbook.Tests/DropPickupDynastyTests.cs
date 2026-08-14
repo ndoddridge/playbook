@@ -159,6 +159,113 @@ public class DropPickupDynastyTests
         Assert.Equal(0.0, candidate.DynastyValue!.Value, 3);
     }
 
+    [Fact]
+    public void Hold_Classified_Dynasty_Asset_Never_Appears_As_Suggestion_Or_Trade_Candidate()
+    {
+        // Young fantasy-starter RB having a soft week, with a hotter waiver RB available. Old
+        // (buggy) behavior: KeepValueScore is still among the roster's lowest, so it gets offered
+        // as a drop purely because a better free agent exists this week — even though DynastyValue
+        // clearly makes this a Hold.
+        var target = MakePlayer(Position.RB, "Young Starter Soft Week", age: 22);
+        var filler = MakePlayer(Position.RB, "RB Filler");
+        var freeAgent = MakePlayer(Position.RB, "Hot Waiver RB");
+        var team = MakeTeam([target.Id, filler.Id], starterIds: [target.Id]);
+        var projections = new Dictionary<Guid, PlayerProjection>
+        {
+            [target.Id] = MakeProjection(target.Id, points: 4, confidence: 50),
+            [filler.Id] = MakeProjection(filler.Id, points: 12, confidence: 50),
+            [freeAgent.Id] = MakeProjection(freeAgent.Id, points: 10, confidence: 50)
+        };
+
+        var service = CreateService([target, filler, freeAgent], projections, team, [], LeagueType.Dynasty);
+        var report = service.GetReport();
+        var candidate = report.RosterAssessment.Single(c => c.PlayerId == target.Id);
+
+        Assert.Equal(DropPickupClassification.Hold, candidate.Classification);
+        Assert.DoesNotContain(report.Suggestions, s => s.Drop.PlayerId == target.Id);
+        Assert.DoesNotContain(report.TradeCandidates, c => c.PlayerId == target.Id);
+    }
+
+    [Fact]
+    public void Trade_Classified_Dynasty_Asset_Surfaces_As_Trade_Candidate_Not_Suggestion()
+    {
+        var target = MakePlayer(Position.WR, "Replaceable Dynasty WR", age: 27);
+        var filler = MakePlayer(Position.WR, "WR Filler");
+        var freeAgent = MakePlayer(Position.WR, "Slightly Better FA WR");
+        var team = MakeTeam([target.Id, filler.Id]);
+        var projections = new Dictionary<Guid, PlayerProjection>
+        {
+            [target.Id] = MakeProjection(target.Id, points: 6, confidence: 50),
+            [filler.Id] = MakeProjection(filler.Id, points: 9, confidence: 50),
+            [freeAgent.Id] = MakeProjection(freeAgent.Id, points: 8, confidence: 50)
+        };
+
+        var service = CreateService([target, filler, freeAgent], projections, team, [], LeagueType.Dynasty);
+        var report = service.GetReport();
+        var candidate = report.RosterAssessment.Single(c => c.PlayerId == target.Id);
+
+        Assert.Equal(DropPickupClassification.Trade, candidate.Classification);
+        Assert.DoesNotContain(report.Suggestions, s => s.Drop.PlayerId == target.Id);
+        Assert.Contains(report.TradeCandidates, c => c.PlayerId == target.Id);
+    }
+
+    [Fact]
+    public void Genuine_Dynasty_Drop_Still_Produces_A_Suggestion()
+    {
+        var target = MakePlayer(Position.TE, "Aging Unremarkable TE", age: 34);
+        var filler = MakePlayer(Position.TE, "TE Filler");
+        var freeAgent = MakePlayer(Position.TE, "Better FA TE");
+        var team = MakeTeam([target.Id, filler.Id]);
+        var projections = new Dictionary<Guid, PlayerProjection>
+        {
+            [target.Id] = MakeProjection(target.Id, points: 4, confidence: 50),
+            [filler.Id] = MakeProjection(filler.Id, points: 9, confidence: 50),
+            [freeAgent.Id] = MakeProjection(freeAgent.Id, points: 8, confidence: 50)
+        };
+
+        var service = CreateService([target, filler, freeAgent], projections, team, [], LeagueType.Dynasty);
+        var report = service.GetReport();
+        var candidate = report.RosterAssessment.Single(c => c.PlayerId == target.Id);
+
+        Assert.Equal(DropPickupClassification.Drop, candidate.Classification);
+        Assert.Contains(report.Suggestions, s => s.Drop.PlayerId == target.Id && s.Pickup.PlayerId == freeAgent.Id);
+    }
+
+    [Fact]
+    public void No_Suggestions_Are_Manufactured_When_No_Dynasty_Roster_Player_Is_A_Genuine_Drop()
+    {
+        // A roster made up entirely of Hold/Trade-classified dynasty assets, each with a better
+        // free agent available this week, must never be padded into drop suggestions — the old
+        // "take the bottom N by score" logic would have produced up to MaxSuggestions swaps here.
+        var holdTarget = MakePlayer(Position.RB, "Hold RB", age: 22);
+        var holdFiller = MakePlayer(Position.RB, "Hold RB Filler");
+        var holdFreeAgent = MakePlayer(Position.RB, "Hold RB FA");
+        var tradeTarget = MakePlayer(Position.WR, "Trade WR", age: 27);
+        var tradeFiller = MakePlayer(Position.WR, "Trade WR Filler");
+        var tradeFreeAgent = MakePlayer(Position.WR, "Trade WR FA");
+        var team = MakeTeam(
+            [holdTarget.Id, holdFiller.Id, tradeTarget.Id, tradeFiller.Id],
+            starterIds: [holdTarget.Id]);
+        var projections = new Dictionary<Guid, PlayerProjection>
+        {
+            [holdTarget.Id] = MakeProjection(holdTarget.Id, points: 4, confidence: 50),
+            [holdFiller.Id] = MakeProjection(holdFiller.Id, points: 12, confidence: 50),
+            [holdFreeAgent.Id] = MakeProjection(holdFreeAgent.Id, points: 10, confidence: 50),
+            [tradeTarget.Id] = MakeProjection(tradeTarget.Id, points: 6, confidence: 50),
+            [tradeFiller.Id] = MakeProjection(tradeFiller.Id, points: 20, confidence: 50),
+            [tradeFreeAgent.Id] = MakeProjection(tradeFreeAgent.Id, points: 8, confidence: 50)
+        };
+
+        var service = CreateService(
+            [holdTarget, holdFiller, holdFreeAgent, tradeTarget, tradeFiller, tradeFreeAgent],
+            projections, team, [], LeagueType.Dynasty);
+        var report = service.GetReport();
+
+        Assert.Empty(report.Suggestions);
+        Assert.Single(report.TradeCandidates);
+        Assert.Equal(tradeTarget.Id, report.TradeCandidates[0].PlayerId);
+    }
+
     private static DropPickupService CreateService(
         IReadOnlyList<Player> players,
         IReadOnlyDictionary<Guid, PlayerProjection> projections,

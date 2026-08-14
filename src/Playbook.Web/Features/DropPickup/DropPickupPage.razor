@@ -62,11 +62,16 @@
                                 {
                                     <span class="ti-roster__badge">Starter</span>
                                 }
+                                <span class="ti-roster__badge">@suggestion.Drop.Classification</span>
                             </p>
                             <ul class="ti-list ti-list--compact">
                                 @foreach (var reason in suggestion.Drop.Reasons)
                                 {
                                     <li>@reason</li>
+                                }
+                                @foreach (var line in suggestion.Drop.ScoreBreakdown)
+                                {
+                                    <li>@line</li>
                                 }
                             </ul>
                             <p><strong>Pickup:</strong> @suggestion.Pickup.PlayerName (@suggestion.Pickup.PositionLabel)</p>
@@ -87,6 +92,43 @@
                 <p class="ti-muted">@report.StatusMessage</p>
             }
         </section>
+
+        @if (report.TradeCandidates.Count > 0)
+        {
+            <section class="ti-section" aria-labelledby="dp-trade-title">
+                <h2 id="dp-trade-title" class="ti-section__title">Trade candidates</h2>
+                <p class="ti-muted">
+                    These players carry meaningful dynasty value that a straight waiver swap would
+                    misprice as a drop — better monetized through a trade than cut outright.
+                </p>
+                <ul class="ti-roster">
+                    @foreach (var candidate in report.TradeCandidates)
+                    {
+                        <li class="ti-roster__item">
+                            <div class="ti-roster__top">
+                                <span class="ti-roster__badge">@candidate.Classification</span>
+                            </div>
+                            <p><strong>@candidate.PlayerName</strong> (@candidate.PositionLabel)
+                                @if (candidate.IsStarter)
+                                {
+                                    <span class="ti-roster__badge">Starter</span>
+                                }
+                            </p>
+                            <ul class="ti-list ti-list--compact">
+                                @foreach (var reason in candidate.Reasons)
+                                {
+                                    <li>@reason</li>
+                                }
+                                @foreach (var line in candidate.ScoreBreakdown)
+                                {
+                                    <li>@line</li>
+                                }
+                            </ul>
+                        </li>
+                    }
+                </ul>
+            </section>
+        }
 
         @if (report.UnavailableSignals.Count > 0)
         {

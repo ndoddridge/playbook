@@ -87,6 +87,7 @@ public static class DependencyInjection
         RegisterNews(services);
         RegisterIntelligence(services);
         RegisterProjections(services);
+        RegisterResearch(services);
         RegisterQuickPicks(services);
 
         services.AddSingleton<IPlayerContextService, MockPlayerContextService>();
@@ -195,6 +196,13 @@ public static class DependencyInjection
         services.AddSingleton<IGameEnvironmentProvider, UnavailableGameEnvironmentProvider>();
         services.AddSingleton<IProjectionEngine, ProjectionEngine>();
         services.AddSingleton<IProjectionService, ProjectionService>();
+    }
+
+    private static void RegisterResearch(IServiceCollection services)
+    {
+        services.AddSingleton<Application.Research.IPredictionResearchStore, Research.PredictionResearchStore>();
+        services.AddSingleton<Application.Research.IPredictionOutcomeClassifier, Research.PredictionOutcomeClassifier>();
+        services.AddSingleton<Application.Research.IPostEventReconciliationService, Research.PostEventReconciliationService>();
     }
 
     private static void RegisterQuickPicks(IServiceCollection services)

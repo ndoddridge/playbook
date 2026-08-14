@@ -188,10 +188,20 @@ public sealed class DropPickupService : IDropPickupService
             .OrderBy(c => c.KeepValueScore)
             .ToList();
 
+        // Dynasty leagues: a swap-for-immediate-upgrade suggestion is only appropriate for players
+        // whose KeepValueScore (which already blends DynastyValue) actually classifies as Drop.
+        // Hold/Trade-classified dynasty assets must never be offered as a same-week cut merely
+        // because a hotter waiver option exists this week — that's exactly how a talented young
+        // player with a soft week gets mislabeled as expendable. Redraft/Keeper leagues have no
+        // long-horizon value to protect, so their existing (ungated) behavior is unchanged.
+        var swapCandidatePool = isDynasty
+            ? dropCandidates.Where(c => c.Classification == DropPickupClassification.Drop).ToList()
+            : dropCandidates;
+
         var suggestions = new List<DropPickupSuggestion>();
         var usedPickupIds = new HashSet<Guid>();
 
-        foreach (var drop in dropCandidates.Take(MaxDropCandidatesConsidered))
+        foreach (var drop in swapCandidatePool.Take(MaxDropCandidatesConsidered))
         {
             if (suggestions.Count >= MaxSuggestions)
             {
@@ -229,6 +239,15 @@ public sealed class DropPickupService : IDropPickupService
             });
         }
 
+        // Dynasty leagues: players with meaningful-but-replaceable dynasty value are surfaced as
+        // trade candidates instead of silently disappearing — they are not droppable, but they are
+        // not "just hold forever" either. Never padded to a fixed count.
+        var tradeCandidates = isDynasty
+            ? dropCandidates.Where(c => c.Classification == DropPickupClassification.Trade)
+                .Take(MaxSuggestions)
+                .ToList()
+            : [];
+
         unavailable.AddRange(
         [
             "Waiver priority / FAAB budget is not modeled (not available).",
@@ -251,10 +270,14 @@ public sealed class DropPickupService : IDropPickupService
             AvailablePlayerCount = allPlayers.Count - rosteredElsewhere.Count,
             Suggestions = suggestions,
             RosterAssessment = dropCandidates,
+            TradeCandidates = tradeCandidates,
             UnavailableSignals = unavailable.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
             StatusMessage = suggestions.Count == 0
-                ? $"No improving same-position swap found for {rosterRows.Count} roster players against " +
-                  $"{allPlayers.Count - rosteredElsewhere.Count} available players."
+                ? (tradeCandidates.Count > 0
+                    ? $"No genuine drop candidates for {context.DisplayLabel} — {tradeCandidates.Count} " +
+                      "player(s) carry meaningful dynasty value and are better traded than cut."
+                    : $"No improving same-position swap found for {rosterRows.Count} roster players against " +
+                      $"{allPlayers.Count - rosteredElsewhere.Count} available players.")
                 : $"{suggestions.Count} suggested swap(s) for {context.DisplayLabel}." +
                   (rosterLimitStatus is { IsKnown: true, IsOverLimit: true }
                       ? $" Note: {rosterLimitStatus.Message}"
@@ -471,6 +494,7 @@ public sealed class DropPickupService : IDropPickupService
             AvailablePlayerCount = 0,
             Suggestions = [],
             RosterAssessment = [],
+            TradeCandidates = [],
             UnavailableSignals = [],
             StatusMessage = message,
             GeneratedAt = now

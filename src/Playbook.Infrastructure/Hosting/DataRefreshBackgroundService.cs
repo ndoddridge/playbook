@@ -7,12 +7,14 @@ using Playbook.Application.News;
 using Playbook.Application.Players;
 using Playbook.Application.Predictions.Interfaces;
 using Playbook.Application.Projections.Interfaces;
+using Playbook.Application.Research;
 using Playbook.Application.Stats.Interfaces;
 
 namespace Playbook.Infrastructure.Hosting;
 
 /// <summary>
-/// Periodically refreshes players, stats, news, injuries, intelligence, projections, and Quick Picks.
+/// Periodically refreshes players, stats, news, injuries, intelligence, projections, Quick Picks,
+/// and grades any Quick Pick snapshots whose game has concluded.
 /// </summary>
 public sealed class DataRefreshBackgroundService : BackgroundService
 {
@@ -23,6 +25,7 @@ public sealed class DataRefreshBackgroundService : BackgroundService
     private readonly IIntelligenceService _intelligence;
     private readonly IProjectionService _projections;
     private readonly IQuickPicksService _quickPicks;
+    private readonly IPostEventReconciliationService _reconciliation;
     private readonly BackgroundRefreshOptions _options;
     private readonly ILogger<DataRefreshBackgroundService> _logger;
 
@@ -34,6 +37,7 @@ public sealed class DataRefreshBackgroundService : BackgroundService
         IIntelligenceService intelligence,
         IProjectionService projections,
         IQuickPicksService quickPicks,
+        IPostEventReconciliationService reconciliation,
         IOptions<BackgroundRefreshOptions> options,
         ILogger<DataRefreshBackgroundService> logger)
     {
@@ -44,6 +48,7 @@ public sealed class DataRefreshBackgroundService : BackgroundService
         _intelligence = intelligence;
         _projections = projections;
         _quickPicks = quickPicks;
+        _reconciliation = reconciliation;
         _options = options.Value;
         _logger = logger;
     }
@@ -78,6 +83,7 @@ public sealed class DataRefreshBackgroundService : BackgroundService
             RefreshIntelligence();
             RefreshProjections();
             RefreshQuickPicks();
+            RunPostEventReconciliation();
 
             try
             {
@@ -181,6 +187,23 @@ public sealed class DataRefreshBackgroundService : BackgroundService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Background refresh: Quick Picks update failed");
+        }
+    }
+
+    private void RunPostEventReconciliation()
+    {
+        try
+        {
+            var graded = _reconciliation.RunPendingReconciliation();
+            if (graded > 0)
+            {
+                _logger.LogInformation(
+                    "Background refresh: postgame reconciliation graded {Count} prediction snapshot(s)", graded);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Background refresh: postgame reconciliation failed");
         }
     }
 }

@@ -35,6 +35,7 @@ public sealed class QuickPicksService : IQuickPicksService
     private readonly IPlayerInjuryService _injuries;
     private readonly ISharedKnowledgeModel _sharedKnowledge;
     private readonly IKnowledgeImpactApplicator _knowledgeImpact;
+    private readonly Application.Research.IPredictionResearchStore _research;
     private readonly PropLineOptions _options;
     private readonly QuickPicksSyncStatus _status;
     private readonly ILogger<QuickPicksService> _logger;
@@ -62,6 +63,7 @@ public sealed class QuickPicksService : IQuickPicksService
         IPlayerInjuryService injuries,
         ISharedKnowledgeModel sharedKnowledge,
         IKnowledgeImpactApplicator knowledgeImpact,
+        Application.Research.IPredictionResearchStore research,
         IOptions<PropLineOptions> options,
         QuickPicksSyncStatus status,
         ILogger<QuickPicksService> logger)
@@ -76,6 +78,7 @@ public sealed class QuickPicksService : IQuickPicksService
         _injuries = injuries;
         _sharedKnowledge = sharedKnowledge;
         _knowledgeImpact = knowledgeImpact;
+        _research = research;
         _options = options.Value;
         _status = status;
         _logger = logger;
@@ -458,6 +461,56 @@ public sealed class QuickPicksService : IQuickPicksService
 
         var avgConf = _predictions.Count == 0 ? 0 : _predictions.Average(p => p.Confidence);
         _status.RecordPredictions(_predictions.Count, avgConf);
+
+        CaptureResearchSnapshots(_predictions);
+    }
+
+    /// <summary>
+    /// Permanent pre-event research memory: one immutable snapshot per prediction built on a real
+    /// (non-mock, non-stale) sportsbook line. Never blocks or alters the Quick Picks board itself —
+    /// a persistence failure here is logged and swallowed, matching the isolation of every other
+    /// background-refresh stage.
+    /// </summary>
+    private void CaptureResearchSnapshots(IReadOnlyList<Prediction> predictions)
+    {
+        foreach (var prediction in predictions)
+        {
+            if (prediction.LineFreshness != PropLineFreshness.Live)
+            {
+                continue;
+            }
+
+            try
+            {
+                _research.SaveSnapshot(new Core.Research.PredictionSnapshot
+                {
+                    SnapshotId = prediction.Id,
+                    PlayerId = prediction.PlayerId,
+                    PlayerName = prediction.PlayerName,
+                    EventId = prediction.Event.EventId,
+                    CommenceTime = prediction.Event.CommenceTime,
+                    Season = prediction.Event.Season,
+                    Week = prediction.Event.Week,
+                    SeasonPhase = prediction.Event.Phase,
+                    Market = prediction.Market,
+                    Direction = prediction.Direction,
+                    Line = prediction.Line,
+                    Bookmaker = prediction.Bookmaker ?? "unknown",
+                    LineSource = prediction.Source,
+                    LineUpdatedAt = prediction.LineUpdatedAt ?? prediction.LastUpdated,
+                    PlaybookProjection = prediction.PlaybookProjection,
+                    Probability = prediction.Probability,
+                    Confidence = prediction.Confidence,
+                    Reasoning = prediction.Reasoning,
+                    SupportingIntelligence = prediction.SupportingIntelligence,
+                    CapturedAt = DateTimeOffset.UtcNow
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to capture research snapshot for prediction {Id}", prediction.Id);
+            }
+        }
     }
 
     private IReadOnlyList<PropLine> LoadLines(out bool usedFallback, out string activeName, out string? error)

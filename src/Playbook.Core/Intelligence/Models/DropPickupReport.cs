@@ -42,6 +42,15 @@ public sealed class DropPickupReport
     /// </summary>
     public required IReadOnlyList<DropCandidate> RosterAssessment { get; init; }
 
+    /// <summary>
+    /// Dynasty leagues only: roster players classified <see cref="DropPickupClassification.Trade"/> —
+    /// meaningful dynasty value that a swap-for-immediate-upgrade would misprice as a drop. These are
+    /// deliberately excluded from <see cref="Suggestions"/>; the better path for these players is a
+    /// trade, not a cut. Empty for Redraft/Keeper leagues, where the Trade/Drop distinction doesn't
+    /// carry dynasty-protection meaning.
+    /// </summary>
+    public required IReadOnlyList<DropCandidate> TradeCandidates { get; init; }
+
     public required IReadOnlyList<string> UnavailableSignals { get; init; }
 
     public required string StatusMessage { get; init; }
