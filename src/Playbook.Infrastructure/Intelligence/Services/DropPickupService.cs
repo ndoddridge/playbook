@@ -1,7 +1,9 @@
+using Playbook.Application.Injuries.Interfaces;
 using Playbook.Application.Intelligence.Interfaces;
 using Playbook.Application.Leagues;
 using Playbook.Application.Players;
 using Playbook.Application.Projections.Interfaces;
+using Playbook.Core.Injuries.Models;
 using Playbook.Core.Intelligence.Models;
 using Playbook.Core.Leagues;
 using Playbook.Core.Players;
@@ -12,75 +14,50 @@ namespace Playbook.Infrastructure.Intelligence.Services;
 /// <summary>
 /// Drop/Pickup intelligence composed entirely from existing projection + roster data. Never
 /// reads or writes <c>IDecisionEngine</c>/knowledge state, so it cannot disturb Start/Sit or
-/// Quick Picks. Ranking uses more than raw projected points: replacement value (own projection
-/// vs. the best available same-position free agent), projection confidence, positional depth,
-/// and a pickup role/availability sanity check (NFL team assignment, status, production-backed
-/// projection inputs). In dynasty leagues, Keep Value also applies an explainable age /
-/// early-career / role trade-value adjustment from data already on <see cref="Player"/> so
-/// small weekly projection edges cannot alone justify dropping young, high-upside, or
-/// role-backed roster pieces. Never fabricates ownership, waiver priority, betting lines, news,
-/// draft capital, trade values, or matchup information — absent signals stay absent.
+/// Quick Picks. Ranking separates two concepts: ImmediateValue (this week's replacement margin,
+/// confidence, positional scarcity, starter status — same for every league type) and DynastyValue
+/// (age, role, injury trajectory, scarcity, waiver-replaceability — Dynasty leagues only, and
+/// deliberately excludes raw projected points so a single week can't dominate it). Never
+/// fabricates ownership beyond known league rosters, waiver priority, betting lines, news,
+/// matchup information, draft capital, or trade/market value — those signals are simply absent
+/// from every candidate rather than guessed at.
 /// </summary>
 public sealed class DropPickupService : IDropPickupService
 {
-    // Modest, explainable nudges around the core replacement-value signal (see BuildReasons).
+    // ImmediateValue: modest, explainable nudges around the core replacement-value signal.
     private const double ConfidenceWeightPerPoint = 0.08;
     private const double ThinPositionBonus = 6.0;
     private const double ShallowPositionBonus = 2.0;
-    private const double FantasyStarterKeepBonus = 10.0;
-    private const double EstablishedNflRoleKeepBonus = 8.0;
+    private const double StarterBonus = 2.0;
+
+    // DynastyValue: long-horizon signal, applied only when the league is Dynasty. Deliberately
+    // does not weight raw projected points (see class doc) — only confidence, at a smaller
+    // weight than ImmediateValue's, stands in for short-term role certainty.
+    private const double DynastyImmediateDampening = 0.5;
+    private const double DynastyRoleBonus = 3.5;
+    private const double DynastyThinPositionBonus = 3.0;
+    private const double DynastyShallowPositionBonus = 1.0;
+    private const double DynastyConfidenceWeightPerPoint = 0.04;
+    private const double DynastyWaiverStrongMargin = 5.0;
+    private const double DynastyWaiverStrongBonus = 4.0;
+    private const double DynastyWaiverModerateMargin = 2.0;
+    private const double DynastyWaiverModerateBonus = 2.0;
+    private const double DynastyMinorInjuryPenalty = -1.0;
+    private const double DynastyModerateInjuryPenalty = -2.5;
+    private const double DynastySignificantInjuryPenalty = -5.0;
+    private const double DynastyMajorInjuryPenalty = -8.0;
+    private const double DynastyUnknownSeverityInjuryPenalty = -2.0;
+
+    private const double HoldThreshold = 3.0;
+    private const double DropThreshold = -3.0;
+
     private const int MaxSuggestions = 3;
     private const int MaxDropCandidatesConsidered = 8;
-
-    // Pickup credibility: obscure/inactive/no-production veterans must not outrank real roles.
-    private const double PickupNoProductionVeteranPenalty = 20.0;
-    private const double PickupNoProductionYouthPenalty = 4.0;
-    private const double PickupLowConfidencePenalty = 8.0;
-    private const double PickupSoftLowConfidencePenalty = 3.0;
-    private const int CredibleProductionConfidenceFloor = 40;
-
-    // Dynasty keep-value: large enough that a small weekly projection edge cannot alone surface
-    // a young/early-career/role-backed player as a drop, but not so large that aging low-upside
-    // pieces are frozen on the roster forever.
-    private const double DynastyEarlyCareerYears0 = 14.0;
-    private const double DynastyEarlyCareerYears1 = 11.0;
-    private const double DynastyEarlyCareerYears2 = 7.0;
-    private const double DynastyEarlyCareerYears3 = 3.0;
-    private const double DynastyYoungAgeBonus = 8.0;
-    private const double DynastyNearYoungAgeBonus = 4.0;
-    private const double DynastyAgingPenalty = 3.0;
-    private const double DynastyOlderPenalty = 6.0;
-    private const double DynastyLowConfidenceYouthBonus = 2.0;
-    private const double DynastyInjuredYouthBonus = 10.0;
-    private const double DynastyInjuredOpportunityBonus = 10.0;
-    private const double DynastyStarterTradeValueBonus = 10.0;
-    private const double DynastyProductionTradeValueBonus = 5.0;
-    private const double DynastyHealthyLowRolePenalty = 8.0;
-    /// <summary>Secondary only — never enough alone to sink a role/waiver-valuable piece.</summary>
-    private const double DynastyEasilyReplaceablePenalty = 2.0;
-    private const double DynastyHighWaiverValueBonus = 18.0;
-    /// <summary>How much weekly replacement margin counts toward dynasty Keep Value (0–1).</summary>
-    private const double DynastyMarginWeight = 0.25;
-    /// <summary>Ceiling minus current projection that signals healthy upside / future opportunity.</summary>
-    private const double DynastyCeilingOpportunityGap = 4.0;
-    /// <summary>If at most this many same-position FAs outrank the player as a waiver target, protect.</summary>
-    private const int DynastyHighWaiverMaxFaAhead = 1;
-    /// <summary>Absolute waiver-point floor so thin free-agent pools cannot mark every rostered player "high value".</summary>
-    private const double DynastyHighWaiverMinPoints = 8.0;
-    /// <summary>Dynasty keep bonus at/above this requires a larger value-gain to recommend a drop.</summary>
-    private const double DynastyProtectedKeepThreshold = 8.0;
-    /// <summary>Minimum projected-points gain for any dynasty drop recommendation (+5/+6 is not enough).</summary>
-    private const double DynastyAnyDropMinValueGain = 8.0;
-    /// <summary>Minimum projected-points gain to drop a dynasty-protected player.</summary>
-    private const double DynastyProtectedMinValueGain = 12.0;
-    /// <summary>Minimum projected-points gain to drop a fantasy starter.</summary>
-    private const double StarterProtectedMinValueGain = 6.0;
-    /// <summary>Minimum projected-points gain to drop an established NFL-role player.</summary>
-    private const double EstablishedRoleMinValueGain = 5.0;
 
     private readonly ILeagueState _leagueState;
     private readonly IPlayerService _players;
     private readonly IProjectionService _projections;
+    private readonly IPlayerInjuryService _injuries;
     private readonly object _gate = new();
 
     private DropPickupReport? _cached;
@@ -89,11 +66,13 @@ public sealed class DropPickupService : IDropPickupService
     public DropPickupService(
         ILeagueState leagueState,
         IPlayerService players,
-        IProjectionService projections)
+        IProjectionService projections,
+        IPlayerInjuryService injuries)
     {
         _leagueState = leagueState;
         _players = players;
         _projections = projections;
+        _injuries = injuries;
         _leagueState.Changed += OnLeagueContextChanged;
     }
 
@@ -192,8 +171,8 @@ public sealed class DropPickupService : IDropPickupService
             .GroupBy(p => p.Position)
             .ToDictionary(g => g.Key, g => g
                 .Select(p => (Player: p, Projection: projectionByPlayer.GetValueOrDefault(p.Id)))
-                .Where(x => x.Projection is not null && IsCrediblePickupCandidate(x.Player, x.Projection!))
-                .OrderByDescending(x => RankPickupScore(x.Player, x.Projection!))
+                .Where(x => x.Projection is not null)
+                .OrderByDescending(x => (double)x.Projection!.ProjectedFantasyPoints)
                 .ToList());
 
         var isDynasty = league.LeagueType == LeagueType.Dynasty;
@@ -204,7 +183,8 @@ public sealed class DropPickupService : IDropPickupService
                 projectionByPlayer.GetValueOrDefault(player.Id),
                 depthByPosition.GetValueOrDefault(player.Position),
                 freeAgentsByPosition.GetValueOrDefault(player.Position),
-                isDynasty))
+                isDynasty,
+                _injuries.GetCurrentInjury(player.Id)))
             .OrderBy(c => c.KeepValueScore)
             .ToList();
 
@@ -235,32 +215,6 @@ public sealed class DropPickupService : IDropPickupService
                 continue;
             }
 
-            // Fantasy starters / established NFL roles need a clear upgrade, not a small edge.
-            if (drop.IsStarter && valueGain < StarterProtectedMinValueGain)
-            {
-                continue;
-            }
-
-            if (drop.EstablishedRoleKeep >= EstablishedNflRoleKeepBonus &&
-                valueGain < EstablishedRoleMinValueGain)
-            {
-                continue;
-            }
-
-            // Dynasty: small weekly projection edges must not auto-justify drops. Protected
-            // young/opportunity pieces need an even clearer upgrade.
-            if (isDynasty && valueGain < DynastyAnyDropMinValueGain)
-            {
-                continue;
-            }
-
-            if (isDynasty &&
-                drop.DynastyKeepAdjustment >= DynastyProtectedKeepThreshold &&
-                valueGain < DynastyProtectedMinValueGain)
-            {
-                continue;
-            }
-
             var pickup = BuildPickupCandidate(bestAvailable.Player, bestAvailable.Projection, drop, valueGain);
             usedPickupIds.Add(pickup.PlayerId);
 
@@ -283,37 +237,6 @@ public sealed class DropPickupService : IDropPickupService
         ]);
 
         var rosterLimitStatus = RosterLimitReconciler.Check(team, league);
-        var isOverLimit = rosterLimitStatus is { IsKnown: true, IsOverLimit: true };
-
-        // Over-limit: split genuinely expendable drops from valuable trade candidates.
-        // Never pad drops to MaxSuggestions — valuable keepers must not become drops just to
-        // fill a count of 3.
-        IReadOnlyList<DropCandidate> dropOnlyCandidates = [];
-        IReadOnlyList<TradeCandidate> tradeCandidates = [];
-        if (isOverLimit)
-        {
-            var expendable = dropCandidates
-                .Where(c => IsGenuineDropCandidate(c, isDynasty))
-                .Take(MaxSuggestions)
-                .ToList();
-            var tradable = dropCandidates
-                .Where(c => !IsGenuineDropCandidate(c, isDynasty))
-                .OrderByDescending(c => c.KeepValueScore)
-                .Take(MaxSuggestions)
-                .Select(ToTradeCandidate)
-                .ToList();
-            dropOnlyCandidates = expendable;
-            tradeCandidates = tradable;
-        }
-
-        var statusMessage = suggestions.Count > 0
-            ? $"{suggestions.Count} suggested swap(s) for {context.DisplayLabel}." +
-              (isOverLimit ? $" Note: {rosterLimitStatus.Message}" : string.Empty)
-            : isOverLimit
-                ? BuildOverLimitStatusMessage(
-                    dropOnlyCandidates.Count, tradeCandidates.Count, rosterLimitStatus.Message)
-                : $"No improving same-position swap found for {rosterRows.Count} roster players against " +
-                  $"{allPlayers.Count - rosteredElsewhere.Count} available players.";
 
         return new DropPickupReport
         {
@@ -327,88 +250,17 @@ public sealed class DropPickupService : IDropPickupService
             RosterCount = team.CountedPlayerIds.Count,
             AvailablePlayerCount = allPlayers.Count - rosteredElsewhere.Count,
             Suggestions = suggestions,
-            DropCandidates = dropOnlyCandidates,
-            TradeCandidates = tradeCandidates,
-            IsOverRosterLimit = isOverLimit,
+            RosterAssessment = dropCandidates,
             UnavailableSignals = unavailable.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
-            StatusMessage = statusMessage,
+            StatusMessage = suggestions.Count == 0
+                ? $"No improving same-position swap found for {rosterRows.Count} roster players against " +
+                  $"{allPlayers.Count - rosteredElsewhere.Count} available players."
+                : $"{suggestions.Count} suggested swap(s) for {context.DisplayLabel}." +
+                  (rosterLimitStatus is { IsKnown: true, IsOverLimit: true }
+                      ? $" Note: {rosterLimitStatus.Message}"
+                      : string.Empty),
             GeneratedAt = now
         };
-    }
-
-    /// <summary>
-    /// Genuine drops only: not a fantasy starter, not dynasty-protected keep, and not an
-    /// established production-backed role worth trading instead of cutting.
-    /// </summary>
-    private static bool IsGenuineDropCandidate(DropCandidate candidate, bool isDynasty)
-    {
-        if (candidate.IsStarter)
-        {
-            return false;
-        }
-
-        if (candidate.DynastyKeepAdjustment >= DynastyProtectedKeepThreshold)
-        {
-            return false;
-        }
-
-        if (candidate.EstablishedRoleKeep >= EstablishedNflRoleKeepBonus)
-        {
-            return false;
-        }
-
-        // Dynasty: require keep value to look expendable, not merely "least bad" among keepers.
-        if (isDynasty && candidate.KeepValueScore >= DynastyProtectedKeepThreshold)
-        {
-            return false;
-        }
-
-        return true;
-    }
-
-    private static TradeCandidate ToTradeCandidate(DropCandidate drop) =>
-        new()
-        {
-            PlayerId = drop.PlayerId,
-            PlayerName = drop.PlayerName,
-            PositionLabel = drop.PositionLabel,
-            IsStarter = drop.IsStarter,
-            ProjectedPoints = drop.ProjectedPoints,
-            KeepValueScore = drop.KeepValueScore,
-            Reasons =
-            [
-                "Meaningful keep / trade value — prefer trading to free a roster spot rather than dropping.",
-                .. drop.Reasons
-            ]
-        };
-
-    private static string BuildOverLimitStatusMessage(
-        int dropCount,
-        int tradeCount,
-        string rosterLimitMessage)
-    {
-        if (dropCount == 0 && tradeCount > 0)
-        {
-            return $"Roster is over the configured limit with no legitimate drop candidates — " +
-                   $"prefer trading ({tradeCount} trade candidate(s)). {rosterLimitMessage}";
-        }
-
-        if (dropCount > 0 && dropCount < MaxSuggestions)
-        {
-            return $"Roster is over the configured limit — {dropCount} legitimate drop candidate(s); " +
-                   $"fewer than {MaxSuggestions} because valuable keepers should be traded, not cut" +
-                   (tradeCount > 0 ? $" ({tradeCount} trade candidate(s)). " : ". ") +
-                   rosterLimitMessage;
-        }
-
-        if (dropCount > 0)
-        {
-            return $"Roster is over the configured limit — {dropCount} drop candidate(s) ranked by keep value" +
-                   (tradeCount > 0 ? $"; {tradeCount} trade candidate(s). " : ". ") +
-                   rosterLimitMessage;
-        }
-
-        return $"Roster is over the configured limit. {rosterLimitMessage}";
     }
 
     private static DropCandidate BuildDropCandidate(
@@ -417,7 +269,8 @@ public sealed class DropPickupService : IDropPickupService
         PlayerProjection? projection,
         int positionDepth,
         List<(Player Player, PlayerProjection? Projection)>? freeAgentsAtPosition,
-        bool isDynasty)
+        bool isDynasty,
+        PlayerInjuryRecord? currentInjury)
     {
         var ownPoints = projection is null ? (double?)null : (double)projection.ProjectedFantasyPoints;
         var confidence = projection?.Confidence;
@@ -427,30 +280,50 @@ public sealed class DropPickupService : IDropPickupService
 
         var scarcityBonus = positionDepth <= 1 ? ThinPositionBonus : positionDepth == 2 ? ShallowPositionBonus : 0.0;
         var confidenceAdjustment = confidence is int c ? (c - 50) * ConfidenceWeightPerPoint : 0.0;
-        var roleReasons = new List<string>();
-        var establishedRoleKeep = ComputeEstablishedRoleKeep(player, projection, isStarter, roleReasons);
-        var isHighWaiverValue = isDynasty &&
-            IsHighValueWaiverTargetIfReleased(player, projection, freeAgentsAtPosition);
-        var dynastyReasons = new List<string>();
-        var dynastyKeep = isDynasty
-            ? ComputeDynastyKeepAdjustment(
-                player,
-                projection,
-                isStarter,
-                positionDepth,
-                replacementMargin,
-                isHighWaiverValue,
-                dynastyReasons)
-            : 0.0;
-        // Dynasty Keep Value down-weights weekly replacement margin so short-term projection
-        // swings (including injury-depressed weeks) do not dominate long-term ranking.
-        var marginContribution = (replacementMargin ?? -100) * (isDynasty ? DynastyMarginWeight : 1.0);
-        var keepValue =
-            marginContribution +
+        var immediateValue =
+            (replacementMargin ?? -100) + // unknown projection is treated as maximally expendable
             confidenceAdjustment +
             scarcityBonus +
-            establishedRoleKeep +
-            dynastyKeep;
+            (isStarter ? StarterBonus : 0.0);
+
+        double? dynastyValue = null;
+        var scoreBreakdown = new List<string>
+        {
+            $"Immediate value {immediateValue:0.00}: replacement {(replacementMargin ?? -100):0.0;-0.0;0.0}, " +
+            $"confidence {confidenceAdjustment:0.00;-0.00;0.00}, scarcity {scarcityBonus:0.0}, " +
+            $"starter {(isStarter ? StarterBonus : 0.0):0.0}."
+        };
+
+        if (isDynasty)
+        {
+            var ageComponent = DynastyAgeComponent(player.Age);
+            var roleComponent = isStarter ? DynastyRoleBonus : 0.0;
+            var injuryComponent = DynastyInjuryComponent(currentInjury);
+            var dynastyScarcityBonus =
+                positionDepth <= 1 ? DynastyThinPositionBonus : positionDepth == 2 ? DynastyShallowPositionBonus : 0.0;
+            var dynastyConfidenceAdjustment =
+                confidence is int dc ? (dc - 50) * DynastyConfidenceWeightPerPoint : 0.0;
+            var waiverComponent = DynastyWaiverComponent(replacementMargin);
+
+            dynastyValue = ageComponent + roleComponent + injuryComponent +
+                dynastyScarcityBonus + dynastyConfidenceAdjustment + waiverComponent;
+
+            scoreBreakdown.Add(
+                $"Dynasty value {dynastyValue:0.00}: age {ageComponent:0.0;-0.0;0.0}, role {roleComponent:0.0}, " +
+                $"injury {injuryComponent:0.0;-0.0;0.0}, scarcity {dynastyScarcityBonus:0.0}, " +
+                $"confidence {dynastyConfidenceAdjustment:0.00;-0.00;0.00}, waiver {waiverComponent:0.0}.");
+        }
+
+        var keepValue = isDynasty
+            ? (immediateValue * DynastyImmediateDampening) + dynastyValue!.Value
+            : immediateValue;
+
+        var classification = keepValue switch
+        {
+            >= HoldThreshold => DropPickupClassification.Hold,
+            <= DropThreshold => DropPickupClassification.Drop,
+            _ => DropPickupClassification.Trade
+        };
 
         var reasons = new List<string>();
         if (replacementMargin is { } margin)
@@ -471,15 +344,17 @@ public sealed class DropPickupService : IDropPickupService
 
         if (positionDepth > 2)
         {
-            reasons.Add($"{positionDepth} {player.Position}s already on the roster — depth is secondary to role/trade value.");
+            reasons.Add($"{positionDepth} {player.Position}s already on the roster — depth is not a concern here.");
         }
         else if (positionDepth <= 1)
         {
             reasons.Add($"Only {player.Position} on the roster — dropping leaves a positional hole.");
         }
 
-        reasons.AddRange(roleReasons);
-        reasons.AddRange(dynastyReasons);
+        if (isStarter)
+        {
+            reasons.Add("Currently a starter.");
+        }
 
         return new DropCandidate
         {
@@ -490,8 +365,10 @@ public sealed class DropPickupService : IDropPickupService
             ProjectedPoints = ownPoints,
             Confidence = confidence,
             KeepValueScore = Math.Round(keepValue, 2),
-            DynastyKeepAdjustment = Math.Round(dynastyKeep, 2),
-            EstablishedRoleKeep = Math.Round(establishedRoleKeep, 2),
+            ImmediateValue = Math.Round(immediateValue, 2),
+            DynastyValue = dynastyValue is null ? null : Math.Round(dynastyValue.Value, 2),
+            Classification = classification,
+            ScoreBreakdown = scoreBreakdown,
             ReplacementMargin = replacementMargin is null ? null : Math.Round(replacementMargin.Value, 1),
             PositionDepthOnRoster = positionDepth,
             Reasons = reasons
@@ -499,366 +376,52 @@ public sealed class DropPickupService : IDropPickupService
     }
 
     /// <summary>
-    /// Role/availability sanity check for pickup candidates using only existing player +
-    /// projection provenance. Excludes practice-squad/suspended/unrostered players and
-    /// veterans with no production-backed projection unless early-career/young upside data
-    /// is present. Never invents roles or draft capital.
+    /// Coarse dynasty age curve. Bucketed rather than continuous so a single year of age never
+    /// swings value sharply; missing age contributes 0 (neutral), never a penalty.
     /// </summary>
-    private static bool IsCrediblePickupCandidate(Player player, PlayerProjection projection)
+    private static double DynastyAgeComponent(int? age) => age switch
     {
-        if (!HasNflTeam(player.Team))
-        {
-            return false;
-        }
+        null => 0.0,
+        <= 23 => 6.0,
+        <= 26 => 3.0,
+        <= 29 => 0.0,
+        <= 32 => -3.0,
+        _ => -6.0
+    };
 
-        if (player.Status is PlayerStatus.PracticeSquad
-            or PlayerStatus.Suspended
-            or PlayerStatus.InjuredReserve)
-        {
-            return false;
-        }
-
-        var hasProduction = HasProductionBackedProjection(projection);
-        if (hasProduction)
-        {
-            return true;
-        }
-
-        // No meaningful NFL production in projection inputs: only allow when other available
-        // data supports upside (early career / young age). Do not invent draft capital.
-        return HasYouthUpsideSignal(player);
-    }
-
-    private static double RankPickupScore(Player player, PlayerProjection projection)
+    /// <summary>
+    /// Bounded so a temporary/minor injury never comes close to erasing the other DynastyValue
+    /// components. No current injury on file contributes 0, not a penalty.
+    /// </summary>
+    private static double DynastyInjuryComponent(PlayerInjuryRecord? currentInjury)
     {
-        var points = (double)projection.ProjectedFantasyPoints;
-        var confidenceAdjustment = (projection.Confidence - 50) * ConfidenceWeightPerPoint;
-        var penalty = 0.0;
-
-        if (!HasProductionBackedProjection(projection))
+        if (currentInjury is null)
         {
-            penalty += HasYouthUpsideSignal(player)
-                ? PickupNoProductionYouthPenalty
-                : PickupNoProductionVeteranPenalty;
+            return 0.0;
         }
 
-        if (projection.Confidence < CredibleProductionConfidenceFloor)
+        return currentInjury.Severity switch
         {
-            penalty += PickupLowConfidencePenalty;
-        }
-        else if (projection.Confidence < 50)
-        {
-            penalty += PickupSoftLowConfidencePenalty;
-        }
-
-        if (player.Status is PlayerStatus.Doubtful or PlayerStatus.Out)
-        {
-            penalty += 3.0;
-        }
-
-        return points + confidenceAdjustment - penalty;
-    }
-
-    private static double ComputeEstablishedRoleKeep(
-        Player player,
-        PlayerProjection? projection,
-        bool isStarter,
-        List<string> reasons)
-    {
-        var bonus = 0.0;
-        if (isStarter)
-        {
-            bonus += FantasyStarterKeepBonus;
-            reasons.Add("Fantasy starter — keep unless a clear upgrade.");
-        }
-
-        var confidence = projection?.Confidence ?? 0;
-        var hasProduction = projection is not null && HasProductionBackedProjection(projection);
-        // Production-backed NFL roster role still counts when temporarily unavailable — injury
-        // depresses the weekly number, not the underlying role/trade value.
-        if (HasNflTeam(player.Team) &&
-            hasProduction &&
-            confidence >= 55 &&
-            player.Status is not (PlayerStatus.PracticeSquad or PlayerStatus.Suspended))
-        {
-            bonus += EstablishedNflRoleKeepBonus;
-            reasons.Add(
-                IsTemporarilyUnavailable(player.Status)
-                    ? "Established NFL role (production-backed; current status treated as temporary)."
-                    : "Established NFL role (active, production-backed projection).");
-        }
-
-        return bonus;
+            InjurySeverity.Minor => DynastyMinorInjuryPenalty,
+            InjurySeverity.Moderate => DynastyModerateInjuryPenalty,
+            InjurySeverity.Significant => DynastySignificantInjuryPenalty,
+            InjurySeverity.Major => DynastyMajorInjuryPenalty,
+            _ => DynastyUnknownSeverityInjuryPenalty
+        };
     }
 
     /// <summary>
-    /// True when releasing this player would make them a top same-position waiver target versus
-    /// currently available players, using injury-aware waiver points (ceiling when injured).
+    /// Packet's decision principle: a player who'd be a strong waiver target if released is
+    /// evidence against dropping them. Bounded (unlike ImmediateValue's raw replacement margin)
+    /// so it nudges rather than dominates DynastyValue.
     /// </summary>
-    private static bool IsHighValueWaiverTargetIfReleased(
-        Player player,
-        PlayerProjection? projection,
-        List<(Player Player, PlayerProjection? Projection)>? freeAgentsAtPosition)
+    private static double DynastyWaiverComponent(double? replacementMargin) => replacementMargin switch
     {
-        if (projection is null || !HasProductionBackedProjection(projection))
-        {
-            return false;
-        }
-
-        var ownPoints = WaiverValuePoints(player, projection);
-        if (ownPoints < DynastyHighWaiverMinPoints)
-        {
-            return false;
-        }
-
-        var ownScore = RankWaiverTargetScore(player, projection);
-        var faAhead = 0;
-        if (freeAgentsAtPosition is not null)
-        {
-            foreach (var (fa, faProjection) in freeAgentsAtPosition)
-            {
-                if (faProjection is null)
-                {
-                    continue;
-                }
-
-                if (RankWaiverTargetScore(fa, faProjection) > ownScore)
-                {
-                    faAhead++;
-                    if (faAhead > DynastyHighWaiverMaxFaAhead)
-                    {
-                        return false;
-                    }
-                }
-            }
-        }
-
-        return faAhead <= DynastyHighWaiverMaxFaAhead;
-    }
-
-    /// <summary>
-    /// Waiver-target ranking score. Injury status does not apply the pickup injury penalty —
-    /// temporarily unavailable players are scored on healthy upside (ceiling) when elevated.
-    /// </summary>
-    private static double RankWaiverTargetScore(Player player, PlayerProjection projection)
-    {
-        var points = WaiverValuePoints(player, projection);
-        var confidenceAdjustment = (projection.Confidence - 50) * ConfidenceWeightPerPoint;
-        var penalty = 0.0;
-
-        if (!HasProductionBackedProjection(projection))
-        {
-            penalty += HasYouthUpsideSignal(player)
-                ? PickupNoProductionYouthPenalty
-                : PickupNoProductionVeteranPenalty;
-        }
-
-        if (projection.Confidence < CredibleProductionConfidenceFloor)
-        {
-            penalty += PickupLowConfidencePenalty;
-        }
-        else if (projection.Confidence < 50)
-        {
-            penalty += PickupSoftLowConfidencePenalty;
-        }
-
-        return points + confidenceAdjustment - penalty;
-    }
-
-    private static double WaiverValuePoints(Player player, PlayerProjection projection)
-    {
-        var current = (double)projection.ProjectedFantasyPoints;
-        if (!IsTemporarilyUnavailable(player.Status))
-        {
-            return current;
-        }
-
-        // Injury may depress the weekly median; ceiling retains the return/role path signal.
-        var ceiling = (double)projection.Ceiling;
-        return Math.Max(current, ceiling);
-    }
-
-    /// <summary>
-    /// Dynasty trade-value Keep Value adjustment from data already present on
-    /// <see cref="Player"/> / the projection (age, years-pro as career-capital proxy, role,
-    /// production-backed inputs, confidence, ceiling-vs-current as healthy upside, roster
-    /// depth as a secondary factor, and same-position waiver value if released). Draft
-    /// round/pick are not on the player model and are never invented. Injury on a piece with
-    /// a credible return/role path is temporary context — not a keep penalty.
-    /// </summary>
-    private static double ComputeDynastyKeepAdjustment(
-        Player player,
-        PlayerProjection? projection,
-        bool isStarter,
-        int positionDepth,
-        double? replacementMargin,
-        bool isHighWaiverValue,
-        List<string> reasons)
-    {
-        var adjustment = 0.0;
-        var youthSignal = false;
-        var confidence = projection?.Confidence;
-        var hasProduction = projection is not null && HasProductionBackedProjection(projection);
-        var injured = IsTemporarilyUnavailable(player.Status);
-        var ceilingUpside = projection is null
-            ? 0.0
-            : (double)(projection.Ceiling - projection.ProjectedFantasyPoints);
-
-        if (player.YearsPro is int yearsPro)
-        {
-            var yearsBonus = yearsPro switch
-            {
-                <= 0 => DynastyEarlyCareerYears0,
-                1 => DynastyEarlyCareerYears1,
-                2 => DynastyEarlyCareerYears2,
-                3 => DynastyEarlyCareerYears3,
-                _ => 0.0
-            };
-            if (yearsBonus > 0)
-            {
-                adjustment += yearsBonus;
-                youthSignal = true;
-                reasons.Add($"Dynasty early-career trade value ({yearsPro} years pro).");
-            }
-        }
-
-        if (player.Age is int age)
-        {
-            var (youngCutoff, agingStart) = player.Position switch
-            {
-                Position.QB => (26, 32),
-                Position.TE => (25, 30),
-                Position.RB => (24, 27),
-                _ => (24, 29)
-            };
-
-            if (age <= youngCutoff - 2)
-            {
-                adjustment += DynastyYoungAgeBonus;
-                youthSignal = true;
-                reasons.Add($"Dynasty young-player trade value (age {age}).");
-            }
-            else if (age <= youngCutoff)
-            {
-                adjustment += DynastyNearYoungAgeBonus;
-                youthSignal = true;
-                reasons.Add($"Dynasty near-prime trade value (age {age}).");
-            }
-            else if (age >= agingStart + 3)
-            {
-                adjustment -= DynastyOlderPenalty;
-                reasons.Add($"Dynasty aging risk (age {age}) — lower long-term trade value.");
-            }
-            else if (age >= agingStart)
-            {
-                adjustment -= DynastyAgingPenalty;
-                reasons.Add($"Dynasty aging risk (age {age}) — modest trade-value discount.");
-            }
-        }
-
-        // Role-backed trade value: a starting, production-backed piece still has dynasty value
-        // even when age alone would discount them.
-        if (isStarter && hasProduction)
-        {
-            adjustment += DynastyStarterTradeValueBonus;
-            reasons.Add("Dynasty role trade value (fantasy starter with production-backed projection).");
-        }
-        else if (hasProduction &&
-                 confidence is >= 55 &&
-                 player.Status is not (PlayerStatus.PracticeSquad or PlayerStatus.Suspended))
-        {
-            adjustment += DynastyProductionTradeValueBonus;
-            reasons.Add("Dynasty production trade value (production-backed projection).");
-        }
-
-        // Low confidence on a youth piece: weekly projection is a weak reason to abandon upside.
-        if (youthSignal && confidence is int conf && conf < 45)
-        {
-            adjustment += DynastyLowConfidenceYouthBonus;
-            reasons.Add($"Dynasty: low weekly confidence ({conf}%) does not erase early-career upside.");
-        }
-
-        // Injury is not a dynasty negative when there is a credible return/role path
-        // (youth/early-career and/or elevated production-backed ceiling).
-        if (injured && (youthSignal || (hasProduction && ceilingUpside >= DynastyCeilingOpportunityGap)))
-        {
-            adjustment += DynastyInjuredYouthBonus;
-            reasons.Add($"Dynasty: {player.Status} status treated as temporary — not a trade-value penalty.");
-
-            if (hasProduction &&
-                (ceilingUpside >= DynastyCeilingOpportunityGap ||
-                 projection!.InputsUsed.InjurySignal))
-            {
-                adjustment += DynastyInjuredOpportunityBonus;
-                reasons.Add(
-                    "Dynasty future-role opportunity: production-backed ceiling remains elevated " +
-                    "while current projection looks injury-depressed.");
-            }
-        }
-        else if (youthSignal &&
-                 player.Status == PlayerStatus.Active &&
-                 replacementMargin is < -1 &&
-                 ceilingUpside < DynastyCeilingOpportunityGap &&
-                 !isHighWaiverValue &&
-                 (confidence is < 55 || positionDepth > 2))
-        {
-            // Healthy early-career piece already projecting poorly with limited ceiling upside —
-            // youth alone should not freeze a low long-term role on the roster.
-            adjustment -= DynastyHealthyLowRolePenalty;
-            reasons.Add(
-                "Dynasty: healthy but limited current role/ceiling — early-career shield reduced.");
-        }
-
-        if (isHighWaiverValue)
-        {
-            adjustment += DynastyHighWaiverValueBonus;
-            reasons.Add(
-                "Would rank as a high-value same-position waiver target if released — protect trade/waiver value.");
-        }
-
-        // Positional depth is secondary: skip when starter, high waiver value, or injured
-        // opportunity path already justifies keeping the player.
-        if (positionDepth > 2 &&
-            !isStarter &&
-            !isHighWaiverValue &&
-            !(injured && (youthSignal || ceilingUpside >= DynastyCeilingOpportunityGap)))
-        {
-            adjustment -= DynastyEasilyReplaceablePenalty;
-            reasons.Add(
-                $"Dynasty: {positionDepth} {player.Position}s on roster — minor depth factor only.");
-        }
-
-        return adjustment;
-    }
-
-    private static bool HasYouthUpsideSignal(Player player) =>
-        player.YearsPro is <= 2 || player.Age is <= 24;
-
-    private static bool HasNflTeam(string? team) =>
-        !string.IsNullOrWhiteSpace(team) &&
-        !team.Equals("FA", StringComparison.OrdinalIgnoreCase) &&
-        !team.Equals("None", StringComparison.OrdinalIgnoreCase);
-
-    private static bool HasProductionBackedProjection(PlayerProjection projection)
-    {
-        if (projection.InputsUsed.HistoricalStatistics ||
-            projection.InputsUsed.RecentUsage ||
-            projection.InputsUsed.CareerBaseline)
-        {
-            return true;
-        }
-
-        var source = projection.InputsUsed.ProductionSource;
-        return source.Equals(nameof(ProductionDataSource.StatsService), StringComparison.OrdinalIgnoreCase) ||
-               source.Equals(nameof(ProductionDataSource.CuratedSeason), StringComparison.OrdinalIgnoreCase) ||
-               source.Equals(nameof(ProductionDataSource.ProfileSeason), StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static bool IsTemporarilyUnavailable(PlayerStatus status) =>
-        status is PlayerStatus.Out
-            or PlayerStatus.Doubtful
-            or PlayerStatus.Questionable
-            or PlayerStatus.InjuredReserve;
+        null => 0.0,
+        > DynastyWaiverStrongMargin => DynastyWaiverStrongBonus,
+        > DynastyWaiverModerateMargin => DynastyWaiverModerateBonus,
+        _ => 0.0
+    };
 
     private static PickupCandidate BuildPickupCandidate(
         Player player,
@@ -867,7 +430,8 @@ public sealed class DropPickupService : IDropPickupService
         double valueGain)
     {
         var points = (double)projection.ProjectedFantasyPoints;
-        var pickupValue = RankPickupScore(player, projection);
+        var confidenceAdjustment = (projection.Confidence - 50) * ConfidenceWeightPerPoint;
+        var pickupValue = points + confidenceAdjustment;
 
         var reasons = new List<string>
         {
@@ -875,15 +439,6 @@ public sealed class DropPickupService : IDropPickupService
             $"Projection confidence {projection.Confidence}%.",
             $"Same position ({PlayerPresentation.PositionLabel(player.Position)}) — direct roster-spot swap, no lineup restructuring."
         };
-
-        if (HasProductionBackedProjection(projection))
-        {
-            reasons.Add("Production-backed projection inputs support a credible NFL role.");
-        }
-        else if (HasYouthUpsideSignal(player))
-        {
-            reasons.Add("Limited NFL production sample, but early-career/young upside data supports consideration.");
-        }
 
         return new PickupCandidate
         {
@@ -915,6 +470,7 @@ public sealed class DropPickupService : IDropPickupService
             RosterCount = team?.CountedPlayerIds.Count ?? 0,
             AvailablePlayerCount = 0,
             Suggestions = [],
+            RosterAssessment = [],
             UnavailableSignals = [],
             StatusMessage = message,
             GeneratedAt = now

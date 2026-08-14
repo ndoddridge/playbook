@@ -1,6 +1,9 @@
+using Playbook.Application.Injuries;
+using Playbook.Application.Injuries.Interfaces;
 using Playbook.Application.Leagues;
 using Playbook.Application.Players;
 using Playbook.Application.Projections.Interfaces;
+using Playbook.Core.Injuries.Models;
 using Playbook.Core.Leagues;
 using Playbook.Core.Players;
 using Playbook.Core.Projections.Models;
@@ -174,502 +177,13 @@ public class DropPickupServiceTests
         Assert.False(report.HasRosterPlayers);
     }
 
-    [Fact]
-    public void Dynasty_Protects_Young_EarlyCareer_Player_From_Small_Projection_Edge()
-    {
-        // Young RB with early-career years: a modest FA projection edge must not auto-drop them.
-        var youngRb = MakePlayer(Position.RB, "Young Upside RB", age: 23, yearsPro: 1);
-        var olderFa = MakePlayer(Position.RB, "Older FA RB", age: 29, yearsPro: 7);
-        var team = MakeTeam([youngRb.Id]);
-        var projections = new Dictionary<Guid, PlayerProjection>
-        {
-            [youngRb.Id] = MakeProjection(youngRb.Id, points: 8, confidence: 40),
-            [olderFa.Id] = MakeProjection(olderFa.Id, points: 12, confidence: 55)
-        };
-        var service = CreateService(
-            [youngRb, olderFa], projections, team, otherTeams: [], leagueType: LeagueType.Dynasty);
-
-        var report = service.GetReport();
-
-        Assert.Empty(report.Suggestions);
-    }
-
-    [Fact]
-    public void Dynasty_Still_Recommends_Dropping_Older_LowUpside_Player()
-    {
-        var agingRb = MakePlayer(Position.RB, "Aging RB", age: 30, yearsPro: 8);
-        var betterFa = MakePlayer(Position.RB, "Better Available RB", age: 26, yearsPro: 4);
-        var team = MakeTeam([agingRb.Id]);
-        var projections = new Dictionary<Guid, PlayerProjection>
-        {
-            [agingRb.Id] = MakeProjection(agingRb.Id, points: 5, confidence: 50),
-            [betterFa.Id] = MakeProjection(betterFa.Id, points: 14, confidence: 60)
-        };
-        var service = CreateService(
-            [agingRb, betterFa], projections, team, otherTeams: [], leagueType: LeagueType.Dynasty);
-
-        var report = service.GetReport();
-
-        var suggestion = Assert.Single(report.Suggestions);
-        Assert.Equal(agingRb.Id, suggestion.Drop.PlayerId);
-        Assert.Equal(betterFa.Id, suggestion.Pickup.PlayerId);
-        Assert.True(suggestion.Drop.DynastyKeepAdjustment < 0);
-        Assert.Contains(suggestion.Drop.Reasons, r => r.Contains("aging", StringComparison.OrdinalIgnoreCase));
-    }
-
-    [Fact]
-    public void Dynasty_Missing_Age_And_YearsPro_Does_Not_Break_Recommendations()
-    {
-        var unknownWr = MakePlayer(Position.WR, "Unknown Meta WR"); // age/yearsPro null
-        var faWr = MakePlayer(Position.WR, "Available WR");
-        var team = MakeTeam([unknownWr.Id]);
-        var projections = new Dictionary<Guid, PlayerProjection>
-        {
-            [unknownWr.Id] = MakeProjection(unknownWr.Id, points: 4, confidence: 50),
-            [faWr.Id] = MakeProjection(faWr.Id, points: 13, confidence: 55)
-        };
-        var service = CreateService(
-            [unknownWr, faWr], projections, team, otherTeams: [], leagueType: LeagueType.Dynasty);
-
-        var report = service.GetReport();
-
-        var suggestion = Assert.Single(report.Suggestions);
-        Assert.Equal(unknownWr.Id, suggestion.Drop.PlayerId);
-        Assert.Equal(0, suggestion.Drop.DynastyKeepAdjustment);
-        Assert.DoesNotContain(
-            suggestion.Drop.Reasons,
-            r => r.Contains("Dynasty", StringComparison.OrdinalIgnoreCase));
-    }
-
-    [Fact]
-    public void Redraft_Ignores_Dynasty_Keep_Adjustment()
-    {
-        var youngRb = MakePlayer(Position.RB, "Young Upside RB", age: 23, yearsPro: 1, team: "CAR");
-        var olderFa = MakePlayer(Position.RB, "Older FA RB", age: 29, yearsPro: 7, team: "CHI");
-        var team = MakeTeam([youngRb.Id]);
-        var projections = new Dictionary<Guid, PlayerProjection>
-        {
-            [youngRb.Id] = MakeProjection(youngRb.Id, points: 8, confidence: 40),
-            [olderFa.Id] = MakeProjection(olderFa.Id, points: 12, confidence: 55, productionBacked: true)
-        };
-        var service = CreateService(
-            [youngRb, olderFa], projections, team, otherTeams: [], leagueType: LeagueType.Redraft);
-
-        var report = service.GetReport();
-
-        var suggestion = Assert.Single(report.Suggestions);
-        Assert.Equal(youngRb.Id, suggestion.Drop.PlayerId);
-        Assert.Equal(0, suggestion.Drop.DynastyKeepAdjustment);
-    }
-
-    [Fact]
-    public void Established_Starter_Is_Not_Dropped_For_Obscure_NoProduction_Backup()
-    {
-        // Starting QB with production-backed projection vs. veteran backup with inflated
-        // AttributeFallback projection and no historical inputs — must not recommend the swap.
-        var starterQb = MakePlayer(Position.QB, "Established Starter QB", age: 34, yearsPro: 10, team: "SEA");
-        var obscureBackup = MakePlayer(Position.QB, "Obscure Backup QB", age: 29, yearsPro: 7, team: "LAC");
-        var team = MakeTeam([starterQb.Id], starterIds: [starterQb.Id]);
-        var projections = new Dictionary<Guid, PlayerProjection>
-        {
-            [starterQb.Id] = MakeProjection(starterQb.Id, points: 14, confidence: 70, productionBacked: true),
-            [obscureBackup.Id] = MakeProjection(
-                obscureBackup.Id, points: 18, confidence: 35, productionBacked: false)
-        };
-        var service = CreateService([starterQb, obscureBackup], projections, team, otherTeams: []);
-
-        var report = service.GetReport();
-
-        Assert.Empty(report.Suggestions);
-        Assert.DoesNotContain("Geno", string.Join(' ', report.Suggestions.Select(s => s.Drop.PlayerName)));
-        Assert.DoesNotContain("Stick", string.Join(' ', report.Suggestions.Select(s => s.Pickup.PlayerName)));
-    }
-
-    [Fact]
-    public void Credible_ProductionBacked_Pickup_Still_Beats_Weak_Bench_Piece()
-    {
-        var weakBench = MakePlayer(Position.WR, "Weak Bench WR", age: 28, yearsPro: 6, team: "NYG");
-        var strongFa = MakePlayer(Position.WR, "Strong Available WR", age: 26, yearsPro: 4, team: "TB");
-        var team = MakeTeam([weakBench.Id]);
-        var projections = new Dictionary<Guid, PlayerProjection>
-        {
-            [weakBench.Id] = MakeProjection(weakBench.Id, points: 4, confidence: 50, productionBacked: true),
-            [strongFa.Id] = MakeProjection(strongFa.Id, points: 12, confidence: 65, productionBacked: true)
-        };
-        var service = CreateService([weakBench, strongFa], projections, team, otherTeams: []);
-
-        var report = service.GetReport();
-
-        var suggestion = Assert.Single(report.Suggestions);
-        Assert.Equal(weakBench.Id, suggestion.Drop.PlayerId);
-        Assert.Equal(strongFa.Id, suggestion.Pickup.PlayerId);
-    }
-
-    [Fact]
-    public void Dynasty_TradeValue_Protects_RoleBacked_Starter_From_Small_Edge()
-    {
-        var starterQb = MakePlayer(Position.QB, "Role Backed QB", age: 34, yearsPro: 10, team: "SEA");
-        var betterFa = MakePlayer(Position.QB, "Slightly Higher FA QB", age: 28, yearsPro: 5, team: "DEN");
-        var team = MakeTeam([starterQb.Id], starterIds: [starterQb.Id]);
-        var projections = new Dictionary<Guid, PlayerProjection>
-        {
-            [starterQb.Id] = MakeProjection(starterQb.Id, points: 15, confidence: 68, productionBacked: true),
-            [betterFa.Id] = MakeProjection(betterFa.Id, points: 18, confidence: 60, productionBacked: true)
-        };
-        var service = CreateService(
-            [starterQb, betterFa], projections, team, otherTeams: [], leagueType: LeagueType.Dynasty);
-
-        var report = service.GetReport();
-
-        Assert.Empty(report.Suggestions);
-        Assert.True(
-            report.StatusMessage.Contains("No improving", StringComparison.OrdinalIgnoreCase) ||
-            report.Suggestions.Count == 0);
-    }
-
-    [Fact]
-    public void Legitimate_HighUpside_Young_Player_Can_Still_Be_A_Pickup()
-    {
-        // Early-career/young player without NFL production sample remains eligible when upside
-        // signals exist; weak bench piece can still be swapped for them.
-        var weakBench = MakePlayer(Position.RB, "Expendable Bench RB", age: 29, yearsPro: 6, team: "ATL");
-        var youngUpside = MakePlayer(Position.RB, "High Upside Rookie RB", age: 22, yearsPro: 0, team: "IND");
-        var team = MakeTeam([weakBench.Id]);
-        var projections = new Dictionary<Guid, PlayerProjection>
-        {
-            [weakBench.Id] = MakeProjection(weakBench.Id, points: 3, confidence: 50, productionBacked: true),
-            [youngUpside.Id] = MakeProjection(
-                youngUpside.Id, points: 11, confidence: 42, productionBacked: false)
-        };
-        var service = CreateService(
-            [weakBench, youngUpside], projections, team, otherTeams: [], leagueType: LeagueType.Dynasty);
-
-        var report = service.GetReport();
-
-        var suggestion = Assert.Single(report.Suggestions);
-        Assert.Equal(weakBench.Id, suggestion.Drop.PlayerId);
-        Assert.Equal(youngUpside.Id, suggestion.Pickup.PlayerId);
-    }
-
-    [Fact]
-    public void Recommendations_Do_Not_Depend_On_Hardcoded_Player_Names()
-    {
-        // Same structural scenario with arbitrary names — proves logic is role/data driven.
-        var a = MakePlayer(Position.QB, "Alpha Starter", age: 33, yearsPro: 9, team: "MIN");
-        var b = MakePlayer(Position.QB, "Beta NoSample Vet", age: 28, yearsPro: 6, team: "WAS");
-        var team = MakeTeam([a.Id], starterIds: [a.Id]);
-        var projections = new Dictionary<Guid, PlayerProjection>
-        {
-            [a.Id] = MakeProjection(a.Id, points: 13, confidence: 66, productionBacked: true),
-            [b.Id] = MakeProjection(b.Id, points: 17, confidence: 30, productionBacked: false)
-        };
-        var service = CreateService([a, b], projections, team, otherTeams: []);
-
-        Assert.Empty(service.GetReport().Suggestions);
-        Assert.DoesNotContain("Charbonnet", a.FullName);
-        Assert.DoesNotContain("Roschon", b.FullName);
-    }
-
-    [Fact]
-    public void Dynasty_Protects_Young_Injured_Player_With_Future_Role_Opportunity()
-    {
-        // Young RB, currently injured, production-backed ceiling still high vs depressed weekly
-        // median — modest and even double-digit waiver edges must not force the drop.
-        var youngInjured = MakePlayer(
-            Position.RB, "Young Injured Path RB", age: 23, yearsPro: 2, team: "SEA",
-            status: PlayerStatus.Out);
-        var waiverRb = MakePlayer(Position.RB, "Waiver Edge RB", age: 27, yearsPro: 5, team: "DEN");
-        var team = MakeTeam([youngInjured.Id]);
-        var projections = new Dictionary<Guid, PlayerProjection>
-        {
-            [youngInjured.Id] = MakeProjection(
-                youngInjured.Id, points: 4, confidence: 40, productionBacked: true,
-                ceiling: 14, floor: 1, injurySignal: true),
-            [waiverRb.Id] = MakeProjection(waiverRb.Id, points: 15, confidence: 60)
-        };
-        var service = CreateService(
-            [youngInjured, waiverRb], projections, team, otherTeams: [], leagueType: LeagueType.Dynasty);
-
-        // +11 projected points still below protected dynasty threshold.
-        Assert.Empty(service.GetReport().Suggestions);
-    }
-
-    [Fact]
-    public void Dynasty_LowValue_Redundant_Player_Can_Be_Top_Drop_Over_Young_Injured_Upside()
-    {
-        var youngInjured = MakePlayer(
-            Position.RB, "Young Injured Path RB", age: 23, yearsPro: 2, team: "SEA",
-            status: PlayerStatus.Out);
-        var rb1 = MakePlayer(Position.RB, "RB1 Locked", age: 26, yearsPro: 5, team: "SEA");
-        var rb2 = MakePlayer(Position.RB, "RB2 Locked", age: 25, yearsPro: 4, team: "SEA");
-        var lowValue = MakePlayer(
-            Position.RB, "Low Value Healthy Depth RB", age: 24, yearsPro: 2, team: "CHI");
-        var waiverRb = MakePlayer(Position.RB, "Clear Upgrade RB", age: 27, yearsPro: 5, team: "DEN");
-        var team = MakeTeam([youngInjured.Id, rb1.Id, rb2.Id, lowValue.Id]);
-        var projections = new Dictionary<Guid, PlayerProjection>
-        {
-            [youngInjured.Id] = MakeProjection(
-                youngInjured.Id, points: 3, confidence: 38, productionBacked: true,
-                ceiling: 13, floor: 0, injurySignal: true),
-            [rb1.Id] = MakeProjection(rb1.Id, points: 17, confidence: 72),
-            [rb2.Id] = MakeProjection(rb2.Id, points: 13, confidence: 66),
-            [lowValue.Id] = MakeProjection(
-                lowValue.Id, points: 4, confidence: 42, productionBacked: true,
-                ceiling: 5, floor: 2),
-            [waiverRb.Id] = MakeProjection(waiverRb.Id, points: 13, confidence: 62)
-        };
-        var service = CreateService(
-            [youngInjured, rb1, rb2, lowValue, waiverRb],
-            projections,
-            team,
-            otherTeams: [],
-            leagueType: LeagueType.Dynasty);
-
-        var report = service.GetReport();
-
-        var suggestion = Assert.Single(report.Suggestions);
-        Assert.Equal(lowValue.Id, suggestion.Drop.PlayerId);
-        Assert.Equal(waiverRb.Id, suggestion.Pickup.PlayerId);
-        Assert.DoesNotContain(report.Suggestions, s => s.Drop.PlayerId == youngInjured.Id);
-        Assert.True(suggestion.Drop.DynastyKeepAdjustment < 8);
-        Assert.Contains(
-            suggestion.Drop.Reasons,
-            r => r.Contains("limited current role", StringComparison.OrdinalIgnoreCase) ||
-                 r.Contains("easier to replace", StringComparison.OrdinalIgnoreCase));
-        Assert.DoesNotContain("Roschon", suggestion.Drop.PlayerName);
-        Assert.DoesNotContain("Charbonnet", youngInjured.FullName);
-    }
-
-    [Fact]
-    public void Dynasty_Small_Projection_Edge_Does_Not_Override_Dynasty_Value()
-    {
-        var young = MakePlayer(Position.WR, "Young Dynasty WR", age: 22, yearsPro: 1, team: "DET");
-        var fa = MakePlayer(Position.WR, "Plus Six FA WR", age: 28, yearsPro: 6, team: "LV");
-        var team = MakeTeam([young.Id]);
-        var projections = new Dictionary<Guid, PlayerProjection>
-        {
-            [young.Id] = MakeProjection(young.Id, points: 8, confidence: 48, productionBacked: true),
-            [fa.Id] = MakeProjection(fa.Id, points: 14, confidence: 58, productionBacked: true)
-        };
-        var service = CreateService(
-            [young, fa], projections, team, otherTeams: [], leagueType: LeagueType.Dynasty);
-
-        // +6 projected points is explicitly not enough to force a dynasty drop.
-        Assert.Equal(6.0, 14.0 - 8.0, 3);
-        Assert.Empty(service.GetReport().Suggestions);
-    }
-
-    [Fact]
-    public void Dynasty_Starting_Role_Not_Dropped_For_Roster_Depth_Alone()
-    {
-        // Production-backed starting QB with three QBs on roster — depth must not by itself
-        // make him the drop when he would be a top same-position waiver target if released.
-        var starterQb = MakePlayer(Position.QB, "Starting Role QB", age: 34, yearsPro: 10, team: "SEA");
-        var qb2 = MakePlayer(Position.QB, "Backup QB Two", age: 28, yearsPro: 5, team: "SEA");
-        var qb3 = MakePlayer(Position.QB, "Backup QB Three", age: 26, yearsPro: 3, team: "SEA");
-        var lowWr = MakePlayer(Position.WR, "Expendable WR", age: 29, yearsPro: 7, team: "NYG");
-        var faQb = MakePlayer(Position.QB, "Mediocre FA QB", age: 30, yearsPro: 8, team: "CLE");
-        var faWr = MakePlayer(Position.WR, "Upgrade FA WR", age: 26, yearsPro: 4, team: "TB");
-        var team = MakeTeam(
-            [starterQb.Id, qb2.Id, qb3.Id, lowWr.Id],
-            starterIds: [starterQb.Id]);
-        var projections = new Dictionary<Guid, PlayerProjection>
-        {
-            [starterQb.Id] = MakeProjection(starterQb.Id, points: 16, confidence: 68, productionBacked: true),
-            [qb2.Id] = MakeProjection(qb2.Id, points: 4, confidence: 40, productionBacked: true),
-            [qb3.Id] = MakeProjection(qb3.Id, points: 2, confidence: 35, productionBacked: false),
-            [lowWr.Id] = MakeProjection(lowWr.Id, points: 3, confidence: 45, productionBacked: true, ceiling: 4),
-            [faQb.Id] = MakeProjection(faQb.Id, points: 9, confidence: 50, productionBacked: true),
-            [faWr.Id] = MakeProjection(faWr.Id, points: 12, confidence: 60, productionBacked: true)
-        };
-        var service = CreateService(
-            [starterQb, qb2, qb3, lowWr, faQb, faWr],
-            projections,
-            team,
-            otherTeams: [],
-            leagueType: LeagueType.Dynasty,
-            rosterLimitSlots: 3);
-
-        var report = service.GetReport();
-
-        Assert.DoesNotContain(report.Suggestions, s => s.Drop.PlayerId == starterQb.Id);
-        Assert.DoesNotContain(report.DropCandidates, d => d.PlayerId == starterQb.Id);
-        Assert.DoesNotContain("Geno", starterQb.FullName);
-    }
-
-    [Fact]
-    public void Dynasty_Young_Injured_High_Waiver_Value_Not_A_Drop_Candidate()
-    {
-        var youngInjured = MakePlayer(
-            Position.RB, "Young Injured Upside RB", age: 23, yearsPro: 2, team: "SEA",
-            status: PlayerStatus.Out);
-        var rb1 = MakePlayer(Position.RB, "RB1 Locked", age: 26, yearsPro: 5, team: "SEA");
-        var rb2 = MakePlayer(Position.RB, "RB2 Locked", age: 25, yearsPro: 4, team: "SEA");
-        var lowValue = MakePlayer(
-            Position.RB, "Low Value Depth RB", age: 24, yearsPro: 2, team: "CHI");
-        var waiverRb = MakePlayer(Position.RB, "Ordinary FA RB", age: 27, yearsPro: 5, team: "DEN");
-        var team = MakeTeam([youngInjured.Id, rb1.Id, rb2.Id, lowValue.Id]);
-        var projections = new Dictionary<Guid, PlayerProjection>
-        {
-            [youngInjured.Id] = MakeProjection(
-                youngInjured.Id, points: 3, confidence: 40, productionBacked: true,
-                ceiling: 14, floor: 0, injurySignal: true),
-            [rb1.Id] = MakeProjection(rb1.Id, points: 17, confidence: 72),
-            [rb2.Id] = MakeProjection(rb2.Id, points: 13, confidence: 66),
-            [lowValue.Id] = MakeProjection(
-                lowValue.Id, points: 4, confidence: 42, productionBacked: true,
-                ceiling: 5, floor: 2),
-            [waiverRb.Id] = MakeProjection(waiverRb.Id, points: 9, confidence: 55)
-        };
-        var service = CreateService(
-            [youngInjured, rb1, rb2, lowValue, waiverRb],
-            projections,
-            team,
-            otherTeams: [],
-            leagueType: LeagueType.Dynasty,
-            rosterLimitSlots: 3);
-
-        var report = service.GetReport();
-
-        Assert.DoesNotContain(report.Suggestions, s => s.Drop.PlayerId == youngInjured.Id);
-        Assert.DoesNotContain(report.DropCandidates, d => d.PlayerId == youngInjured.Id);
-        Assert.Contains(report.DropCandidates, d => d.PlayerId == lowValue.Id);
-        Assert.DoesNotContain("Charbonnet", youngInjured.FullName);
-    }
-
-    [Fact]
-    public void Dynasty_High_Waiver_Value_Player_Survives_Small_SamePosition_Edge()
-    {
-        var valuable = MakePlayer(Position.QB, "Valuable Starter QB", age: 33, yearsPro: 9, team: "MIN");
-        var slightlyBetterFa = MakePlayer(Position.QB, "Plus Five FA QB", age: 29, yearsPro: 6, team: "WAS");
-        var team = MakeTeam([valuable.Id], starterIds: [valuable.Id]);
-        var projections = new Dictionary<Guid, PlayerProjection>
-        {
-            [valuable.Id] = MakeProjection(valuable.Id, points: 15, confidence: 66, productionBacked: true),
-            [slightlyBetterFa.Id] = MakeProjection(
-                slightlyBetterFa.Id, points: 20, confidence: 60, productionBacked: true)
-        };
-        var service = CreateService(
-            [valuable, slightlyBetterFa],
-            projections,
-            team,
-            otherTeams: [],
-            leagueType: LeagueType.Dynasty);
-
-        Assert.Equal(5.0, 20.0 - 15.0, 3);
-        Assert.Empty(service.GetReport().Suggestions);
-    }
-
-    [Fact]
-    public void Over_Roster_Limit_Does_Not_Manufacture_Drops_For_Valuable_Keepers()
-    {
-        // Four rostered players, limit 3, no improving pickups. Only genuinely expendable
-        // keepers become drops; production-backed higher-value pieces are trade candidates.
-        var weak = MakePlayer(Position.WR, "Weakest Keep WR");
-        var mid = MakePlayer(Position.WR, "Mid Keep WR");
-        var strong = MakePlayer(Position.WR, "Strong Keep WR");
-        var best = MakePlayer(Position.RB, "Best Keep RB");
-        var weakFa = MakePlayer(Position.WR, "Weaker Available WR");
-        var weakFaRb = MakePlayer(Position.RB, "Weaker Available RB");
-        var team = MakeTeam([weak.Id, mid.Id, strong.Id, best.Id]);
-        var projections = new Dictionary<Guid, PlayerProjection>
-        {
-            [weak.Id] = MakeProjection(weak.Id, points: 8, confidence: 50),
-            [mid.Id] = MakeProjection(mid.Id, points: 12, confidence: 55),
-            [strong.Id] = MakeProjection(strong.Id, points: 16, confidence: 60),
-            [best.Id] = MakeProjection(best.Id, points: 18, confidence: 65),
-            [weakFa.Id] = MakeProjection(weakFa.Id, points: 3, confidence: 40),
-            [weakFaRb.Id] = MakeProjection(weakFaRb.Id, points: 4, confidence: 40)
-        };
-        var service = CreateService(
-            [weak, mid, strong, best, weakFa, weakFaRb],
-            projections,
-            team,
-            otherTeams: [],
-            rosterLimitSlots: 3);
-
-        var report = service.GetReport();
-
-        Assert.True(report.IsOverRosterLimit);
-        Assert.Empty(report.Suggestions);
-        Assert.Equal(weak.Id, Assert.Single(report.DropCandidates).PlayerId);
-        Assert.True(report.DropCandidates.Count < 3);
-        Assert.Contains(report.TradeCandidates, t => t.PlayerId == mid.Id);
-        Assert.Contains(report.TradeCandidates, t => t.PlayerId == strong.Id);
-        Assert.Contains(report.TradeCandidates, t => t.PlayerId == best.Id);
-        Assert.Contains("legitimate drop", report.StatusMessage, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("trad", report.StatusMessage, StringComparison.OrdinalIgnoreCase);
-    }
-
-    [Fact]
-    public void Dynasty_Valuable_Young_Injured_Is_Trade_Not_Forced_Drop_When_Over_Limit()
-    {
-        var youngInjured = MakePlayer(
-            Position.RB, "Young Injured Upside RB", age: 23, yearsPro: 2, team: "SEA",
-            status: PlayerStatus.Out);
-        var rb1 = MakePlayer(Position.RB, "RB1 Locked", age: 26, yearsPro: 5, team: "SEA");
-        var expendable = MakePlayer(
-            Position.WR, "Expendable Depth WR", age: 29, yearsPro: 7, team: "NYG");
-        var waiverWr = MakePlayer(Position.WR, "Weak FA WR", age: 28, yearsPro: 6, team: "LV");
-        var waiverRb = MakePlayer(Position.RB, "Ordinary FA RB", age: 27, yearsPro: 5, team: "DEN");
-        var team = MakeTeam([youngInjured.Id, rb1.Id, expendable.Id]);
-        var projections = new Dictionary<Guid, PlayerProjection>
-        {
-            [youngInjured.Id] = MakeProjection(
-                youngInjured.Id, points: 3, confidence: 40, productionBacked: true,
-                ceiling: 14, floor: 0, injurySignal: true),
-            [rb1.Id] = MakeProjection(rb1.Id, points: 17, confidence: 72),
-            [expendable.Id] = MakeProjection(
-                expendable.Id, points: 4, confidence: 45, productionBacked: true, ceiling: 5),
-            [waiverWr.Id] = MakeProjection(waiverWr.Id, points: 2, confidence: 40),
-            [waiverRb.Id] = MakeProjection(waiverRb.Id, points: 8, confidence: 55)
-        };
-        var service = CreateService(
-            [youngInjured, rb1, expendable, waiverWr, waiverRb],
-            projections,
-            team,
-            otherTeams: [],
-            leagueType: LeagueType.Dynasty,
-            rosterLimitSlots: 2);
-
-        var report = service.GetReport();
-
-        Assert.True(report.IsOverRosterLimit);
-        Assert.DoesNotContain(report.DropCandidates, d => d.PlayerId == youngInjured.Id);
-        Assert.Contains(report.TradeCandidates, t => t.PlayerId == youngInjured.Id);
-        Assert.Contains(report.DropCandidates, d => d.PlayerId == expendable.Id);
-        Assert.DoesNotContain("Charbonnet", youngInjured.FullName);
-    }
-
-    [Fact]
-    public void Within_Roster_Limit_Does_Not_Populate_Drop_Only_Candidates()
-    {
-        var bestWr = MakePlayer(Position.WR, "Best WR");
-        var worseWr = MakePlayer(Position.WR, "Worse Available WR");
-        var team = MakeTeam([bestWr.Id]);
-        var projections = new Dictionary<Guid, PlayerProjection>
-        {
-            [bestWr.Id] = MakeProjection(bestWr.Id, points: 15, confidence: 70),
-            [worseWr.Id] = MakeProjection(worseWr.Id, points: 4, confidence: 40)
-        };
-        var service = CreateService(
-            [bestWr, worseWr], projections, team, otherTeams: [], rosterLimitSlots: 10);
-
-        var report = service.GetReport();
-
-        Assert.False(report.IsOverRosterLimit);
-        Assert.Empty(report.Suggestions);
-        Assert.Empty(report.DropCandidates);
-        Assert.Empty(report.TradeCandidates);
-    }
-
     private static DropPickupService CreateService(
         IReadOnlyList<Player> players,
         IReadOnlyDictionary<Guid, PlayerProjection> projections,
         FantasyTeam? team,
         IReadOnlyList<FantasyTeam> otherTeams,
         LeagueType leagueType = LeagueType.Redraft,
-        int? rosterLimitSlots = null)
+        IReadOnlyDictionary<Guid, PlayerInjuryRecord>? injuries = null)
     {
         var league = new League
         {
@@ -683,10 +197,7 @@ public class DropPickupServiceTests
             Season = 2026,
             IsActive = true,
             DataSource = LeagueDataSource.Sleeper,
-            SelectedRosterId = team?.RosterId,
-            RosterPositions = rosterLimitSlots is int n
-                ? Enumerable.Repeat("BN", n).ToList()
-                : []
+            SelectedRosterId = team?.RosterId
         };
 
         var leagueState = new FakeLeagueState(
@@ -695,71 +206,47 @@ public class DropPickupServiceTests
             team is null ? otherTeams : [team, .. otherTeams]);
         var playerService = new FakePlayerService(players);
         var projectionService = new FakeProjectionService(projections);
+        var injuryService = new FakePlayerInjuryService(injuries ?? new Dictionary<Guid, PlayerInjuryRecord>());
 
-        return new DropPickupService(leagueState, playerService, projectionService);
+        return new DropPickupService(leagueState, playerService, projectionService, injuryService);
     }
 
-    private static Player MakePlayer(
-        Position position,
-        string name,
-        int? age = null,
-        int? yearsPro = null,
-        PlayerStatus status = PlayerStatus.Active,
-        string team = "KC") => new()
+    private static Player MakePlayer(Position position, string name) => new()
     {
         Id = Guid.NewGuid(),
         FullName = name,
         FirstName = name,
         LastName = name,
         Position = position,
-        Team = team,
-        Status = status,
-        Age = age,
-        YearsPro = yearsPro
+        Team = "FA",
+        Status = PlayerStatus.Active
     };
 
-    private static PlayerProjection MakeProjection(
-        Guid playerId,
-        decimal points,
-        int confidence,
-        bool productionBacked = true,
-        decimal? ceiling = null,
-        decimal? floor = null,
-        bool injurySignal = false) => new()
+    private static PlayerProjection MakeProjection(Guid playerId, decimal points, int confidence) => new()
     {
         PlayerId = playerId,
         Week = 1,
         ScoringFormat = ScoringType.Ppr,
         ProjectedFantasyPoints = points,
-        Floor = floor ?? points,
+        Floor = points,
         Median = points,
-        Ceiling = ceiling ?? points,
+        Ceiling = points,
         Confidence = confidence,
         Volatility = 30,
         ProjectionReasoning = [],
         SupportingIntelligence = [],
         ProjectionTimestamp = DateTimeOffset.UtcNow,
         ProjectionVersion = "test",
-        InputsUsed = new ProjectionInputsUsed
-        {
-            HistoricalStatistics = productionBacked,
-            CareerBaseline = productionBacked,
-            InjurySignal = injurySignal,
-            ProductionSource = productionBacked
-                ? nameof(ProductionDataSource.StatsService)
-                : nameof(ProductionDataSource.AttributeFallback)
-        }
+        InputsUsed = new ProjectionInputsUsed()
     };
 
-    private static FantasyTeam MakeTeam(
-        IReadOnlyList<Guid> playerIds,
-        IReadOnlyList<Guid>? starterIds = null) => new()
+    private static FantasyTeam MakeTeam(IReadOnlyList<Guid> playerIds) => new()
     {
         LeagueId = LeagueId,
         RosterId = 1,
         DisplayName = "My Team",
         PlayerIds = playerIds,
-        StarterIds = starterIds ?? []
+        StarterIds = []
     };
 
     private sealed class FakeLeagueState : ILeagueState
@@ -830,5 +317,27 @@ public class DropPickupServiceTests
         public void Invalidate()
         {
         }
+    }
+
+    private sealed class FakePlayerInjuryService : IPlayerInjuryService
+    {
+        private readonly IReadOnlyDictionary<Guid, PlayerInjuryRecord> _currentInjuries;
+
+        public FakePlayerInjuryService(IReadOnlyDictionary<Guid, PlayerInjuryRecord> currentInjuries) =>
+            _currentInjuries = currentInjuries;
+
+        public InjuryProviderCapabilities ActiveCapabilities => InjuryProviderCapabilities.MockCurrentOnly;
+        public HistoricalDataStatus GlobalHistoricalDataStatus => HistoricalDataStatus.NotSupportedByProvider;
+        public IReadOnlyList<PlayerInjuryRecord> GetAllInjuries() => _currentInjuries.Values.ToList();
+        public IReadOnlyList<PlayerInjuryRecord> GetInjuriesForPlayer(Guid playerId) =>
+            _currentInjuries.TryGetValue(playerId, out var record) ? [record] : [];
+        public PlayerInjuryRecord? GetCurrentInjury(Guid playerId) => _currentInjuries.GetValueOrDefault(playerId);
+        public IReadOnlyList<PlayerInjuryRecord> GetHistoricalInjuries(Guid playerId) => [];
+        public PlayerInjuryProfile GetPlayerInjuryProfile(Guid playerId) => new() { PlayerId = playerId };
+        public void Refresh()
+        {
+        }
+
+        public Task RefreshAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 }

@@ -36,20 +36,11 @@ public sealed class DropPickupReport
     public required IReadOnlyList<DropPickupSuggestion> Suggestions { get; init; }
 
     /// <summary>
-    /// Ranked drop-only candidates (lowest Keep Value first) who are genuinely expendable.
-    /// Populated when over the roster limit. Never padded to a fixed count — valuable keepers
-    /// are listed under <see cref="TradeCandidates"/> instead.
+    /// Every roster player evaluated as a keep/drop candidate (not just those with a same-position
+    /// swap in <see cref="Suggestions"/>), ranked most-expendable last. Carries the
+    /// ImmediateValue/DynastyValue breakdown so a classification can be inspected, not just trusted.
     /// </summary>
-    public IReadOnlyList<DropCandidate> DropCandidates { get; init; } = [];
-
-    /// <summary>
-    /// Players with meaningful keep / dynasty / waiver value who can solve an over-limit roster
-    /// via trade rather than a straight drop. Never invents trade partners or values.
-    /// </summary>
-    public IReadOnlyList<TradeCandidate> TradeCandidates { get; init; } = [];
-
-    /// <summary>True when counted roster size exceeds the league's configured roster limit.</summary>
-    public bool IsOverRosterLimit { get; init; }
+    public required IReadOnlyList<DropCandidate> RosterAssessment { get; init; }
 
     public required IReadOnlyList<string> UnavailableSignals { get; init; }
 
@@ -71,6 +62,19 @@ public sealed class DropPickupSuggestion
     public required string Reasoning { get; init; }
 }
 
+/// <summary>
+/// Rough keep/drop lean for a roster player. Derived only from ImmediateValue/DynastyValue
+/// thresholds on existing data — NOT a real trade-market assessment (no trade value is modeled
+/// yet), so "Trade" here means "meaningful value but positionally replaceable," not an appraised
+/// asset price.
+/// </summary>
+public enum DropPickupClassification
+{
+    Hold,
+    Trade,
+    Drop
+}
+
 /// <summary>A current roster player evaluated as a candidate to drop.</summary>
 public sealed class DropCandidate
 {
@@ -87,49 +91,42 @@ public sealed class DropCandidate
     public required int? Confidence { get; init; }
 
     /// <summary>
-    /// Composite roster-keep score (projection + confidence + replacement margin + positional
-    /// depth, plus dynasty age/early-career adjustment when applicable). Lower = more
-    /// expendable. Used only to rank drop candidates, never shown as a bare number to avoid
-    /// implying false precision — see <see cref="Reasons"/> instead.
+    /// Final ranking score used to sort drop candidates. Equal to <see cref="ImmediateValue"/>
+    /// for Redraft/Keeper leagues; for Dynasty leagues it blends a dampened ImmediateValue with
+    /// the full <see cref="DynastyValue"/> so a single week's projection swing cannot by itself
+    /// overwhelm long-horizon value. Lower = more expendable. Never shown as a bare number to
+    /// avoid implying false precision — see <see cref="ScoreBreakdown"/> and <see cref="Reasons"/>.
     /// </summary>
     public required double KeepValueScore { get; init; }
 
     /// <summary>
-    /// Dynasty-only Keep Value adjustment from age / years-pro / role / production signals
-    /// (0 in redraft or when those fields are absent). Used to gate small weekly upgrades.
+    /// Short-horizon roster-construction value: this week's replacement margin, projection
+    /// confidence, positional scarcity, and current starter status. Same formula regardless of
+    /// league type.
     /// </summary>
-    public double DynastyKeepAdjustment { get; init; }
+    public required double ImmediateValue { get; init; }
 
     /// <summary>
-    /// Keep bonus from fantasy-starter / production-backed NFL role signals (all league types).
+    /// Long-horizon value from age, current role, injury trajectory, positional scarcity, and
+    /// waiver-replaceability — deliberately excludes raw projected points so a single week's
+    /// production cannot dominate it. Null for Redraft/Keeper leagues (dynasty weighting is
+    /// Dynasty-only). Missing inputs (no known age, no injury on file) contribute 0, not a penalty.
     /// </summary>
-    public double EstablishedRoleKeep { get; init; }
+    public required double? DynastyValue { get; init; }
+
+    /// <summary>
+    /// Heuristic lean derived from <see cref="KeepValueScore"/> — see <see cref="DropPickupClassification"/>
+    /// for what "Trade" does and doesn't mean here.
+    /// </summary>
+    public required DropPickupClassification Classification { get; init; }
+
+    /// <summary>Human-readable line(s) showing how ImmediateValue/DynastyValue were composed.</summary>
+    public required IReadOnlyList<string> ScoreBreakdown { get; init; }
 
     /// <summary>Own projection minus the best available same-position free agent's projection.</summary>
     public required double? ReplacementMargin { get; init; }
 
     public required int PositionDepthOnRoster { get; init; }
-
-    public required IReadOnlyList<string> Reasons { get; init; }
-}
-
-/// <summary>
-/// A roster player with meaningful keep value who should be traded (not dropped) to resolve
-/// an over-limit roster.
-/// </summary>
-public sealed class TradeCandidate
-{
-    public required Guid PlayerId { get; init; }
-
-    public required string PlayerName { get; init; }
-
-    public required string PositionLabel { get; init; }
-
-    public required bool IsStarter { get; init; }
-
-    public required double? ProjectedPoints { get; init; }
-
-    public required double KeepValueScore { get; init; }
 
     public required IReadOnlyList<string> Reasons { get; init; }
 }
