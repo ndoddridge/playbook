@@ -2,11 +2,16 @@ using Playbook.Application.Injuries;
 using Playbook.Application.Injuries.Interfaces;
 using Playbook.Application.Leagues;
 using Playbook.Application.Players;
+using Playbook.Application.Predictions;
+using Playbook.Application.Predictions.Interfaces;
 using Playbook.Application.Projections.Interfaces;
+using Playbook.Application.Research;
 using Playbook.Core.Injuries.Models;
 using Playbook.Core.Leagues;
 using Playbook.Core.Players;
+using Playbook.Core.Predictions;
 using Playbook.Core.Projections.Models;
+using Playbook.Core.Research;
 using Playbook.Infrastructure.Intelligence.Services;
 
 namespace Playbook.Tests;
@@ -207,8 +212,10 @@ public class DropPickupServiceTests
         var playerService = new FakePlayerService(players);
         var projectionService = new FakeProjectionService(projections);
         var injuryService = new FakePlayerInjuryService(injuries ?? new Dictionary<Guid, PlayerInjuryRecord>());
+        var calendar = new FakeNflCalendarService(NflSeasonPhase.RegularSeason);
+        var evidence = new FakeSharedEvidenceService();
 
-        return new DropPickupService(leagueState, playerService, projectionService, injuryService);
+        return new DropPickupService(leagueState, playerService, projectionService, injuryService, calendar, evidence);
     }
 
     private static Player MakePlayer(Position position, string name) => new()
@@ -248,6 +255,43 @@ public class DropPickupServiceTests
         PlayerIds = playerIds,
         StarterIds = []
     };
+
+    private sealed class FakeSharedEvidenceService : ISharedEvidenceService
+    {
+        public PlayerEvidenceSummary GetEvidenceForPlayer(Guid playerId) => new()
+        {
+            PlayerId = playerId,
+            Items = [],
+            Headline = null
+        };
+    }
+
+    private sealed class FakeNflCalendarService(NflSeasonPhase phase) : INflCalendarService
+    {
+        public NflSeasonContext GetCurrentContext() => new()
+        {
+            Season = 2026,
+            Phase = phase,
+            Week = 1
+        };
+
+        public IReadOnlyList<FootballEvent> EnrichEvents(
+            IReadOnlyList<FootballEvent> events, NflSeasonContext current) =>
+            throw new NotSupportedException();
+
+        public IReadOnlyList<NflSlate> BuildSlates(IReadOnlyList<FootballEvent> enrichedEvents) =>
+            throw new NotSupportedException();
+
+        public IReadOnlyList<NflWeekRef> GetAvailableWeeks(IReadOnlyList<FootballEvent> events) =>
+            throw new NotSupportedException();
+
+        public NflWeekRef SelectActiveWeek(
+            IReadOnlyList<NflSlate> available,
+            NflSeasonContext current,
+            NflWeekRef? preferred = null,
+            DateTimeOffset? utcNow = null) =>
+            throw new NotSupportedException();
+    }
 
     private sealed class FakeLeagueState : ILeagueState
     {

@@ -203,6 +203,7 @@ public static class DependencyInjection
         services.AddSingleton<Application.Research.IPredictionResearchStore, Research.PredictionResearchStore>();
         services.AddSingleton<Application.Research.IPredictionOutcomeClassifier, Research.PredictionOutcomeClassifier>();
         services.AddSingleton<Application.Research.IPostEventReconciliationService, Research.PostEventReconciliationService>();
+        services.AddSingleton<Application.Research.ISharedEvidenceService, Research.SharedEvidenceService>();
     }
 
     private static void RegisterQuickPicks(IServiceCollection services)

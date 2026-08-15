@@ -3,11 +3,13 @@ using Playbook.Application.Injuries.Interfaces;
 using Playbook.Application.Intelligence.Interfaces;
 using Playbook.Application.News;
 using Playbook.Application.Projections.Interfaces;
+using Playbook.Application.Research;
 using Playbook.Application.Stats.Interfaces;
 using Playbook.Core.Injuries.Models;
 using Playbook.Core.Intelligence.Models;
 using Playbook.Core.News;
 using Playbook.Core.Projections.Models;
+using Playbook.Core.Research;
 using Playbook.Core.Stats.Models;
 
 namespace Playbook.Infrastructure.Intelligence.Services;
@@ -23,19 +25,22 @@ public sealed class PlayerIntelligenceAssessmentService : IPlayerIntelligenceAss
     private readonly IProjectionService _projections;
     private readonly IPlayerStatisticalContextService _stats;
     private readonly INewsProvider _news;
+    private readonly ISharedEvidenceService _evidence;
 
     public PlayerIntelligenceAssessmentService(
         IIntelligenceService intelligence,
         IPlayerInjuryService injuries,
         IProjectionService projections,
         IPlayerStatisticalContextService stats,
-        INewsProvider news)
+        INewsProvider news,
+        ISharedEvidenceService evidence)
     {
         _intelligence = intelligence;
         _injuries = injuries;
         _projections = projections;
         _stats = stats;
         _news = news;
+        _evidence = evidence;
     }
 
     public PlayerIntelligenceAssessment GetAssessment(Guid playerId)
@@ -46,6 +51,7 @@ public sealed class PlayerIntelligenceAssessmentService : IPlayerIntelligenceAss
         var stats = _stats.GetContext(playerId);
         var facts = _intelligence.GetFactsForPlayer(playerId);
         var news = _news.GetForPlayer(playerId, 8);
+        var evidence = _evidence.GetEvidenceForPlayer(playerId);
 
         var unavailable = new List<string>();
         if (profile is null)
@@ -111,7 +117,7 @@ public sealed class PlayerIntelligenceAssessmentService : IPlayerIntelligenceAss
             KeyFactors = SelectKeyFactors(outlook, positive, negative),
             RecentIntelligence = recent,
             UnavailableSignals = unavailable.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
-            DetailSections = BuildDetailSections(profile, injury, projection, stats, unavailable, confidence),
+            DetailSections = BuildDetailSections(profile, injury, projection, stats, unavailable, confidence, evidence),
             Profile = profile,
             InjuryProfile = injury,
             Projection = projection,
@@ -400,7 +406,8 @@ public sealed class PlayerIntelligenceAssessmentService : IPlayerIntelligenceAss
         PlayerProjection? projection,
         PlayerStatisticalContext? stats,
         IReadOnlyList<string> unavailable,
-        int intelligenceConfidence)
+        int intelligenceConfidence,
+        PlayerEvidenceSummary evidence)
     {
         var sections = new List<AssessmentDetailSection>();
 
@@ -473,6 +480,17 @@ public sealed class PlayerIntelligenceAssessmentService : IPlayerIntelligenceAss
                     usage?.CarriesPerGame is decimal c ? $"Carries/g: {c:0.0}" : "Carries/g: unavailable",
                     stats.PrimarySourceProvider is null ? "Source: unavailable" : $"Source: {stats.PrimarySourceProvider}"
                 ]));
+        }
+
+        if (evidence.HasEvidence)
+        {
+            sections.Add(new AssessmentDetailSection(
+                "Recent research evidence",
+                evidence.Items
+                    .OrderByDescending(i => i.Weight)
+                    .Take(5)
+                    .Select(i => $"{i.Summary} (evidentiary weight {i.Weight:0.00})")
+                    .ToList()));
         }
 
         if (unavailable.Count > 0)

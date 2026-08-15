@@ -2,6 +2,37 @@
 
 All notable project changes are recorded here.
 
+## [Unreleased] — Shared Football Intelligence layer + Drop/Pickup role-vs-projection fix
+
+### Added
+
+- **Shared Evidence layer**: `ISharedEvidenceService` (Playbook.Infrastructure.Research) turns
+  permanent research memory (immutable pre-event snapshot + post-event assessment pairs) into
+  structured, attributable `PlayerEvidenceItem`s — computed on demand from the existing single
+  `IPredictionResearchStore`, no new persistent storage, no per-feature evidence stores. Each
+  item's `Weight` folds in classification reliability, a preseason-phase discount, and recency
+  decay (21-day half-life), so a single noisy preseason observation can never carry the same
+  force as a confirmed pattern, and evidence naturally fades/normalizes as the season progresses
+  with no code change needed for the preseason→regular-season transition. Never mutates
+  Projection V2, Confidence V2, or the Decision Policy.
+- Wired into two safe, informational-only consumers: `PlayerIntelligenceAssessmentService` (new
+  "Recent research evidence" detail section) and `DropPickupService` (one evidence-derived reason
+  string, above a weight floor). Both are purely additive context — no scoring/classification
+  math reads evidence. Start/Sit was deliberately not touched (frozen Decision Policy); Quick
+  Picks and a future Draft Assistant are natural next consumers, deferred this pass.
+
+### Fixed
+
+- **Drop/Pickup conflated weekly projection noise with established real-world role**: a real
+  starting QB was recommended as a drop for a fringe backup whose current-week projection
+  happened to be higher. Root causes, fixed generally (no player-specific rule): `DynastyAgeComponent`
+  and relative-age pressure used an RB/WR-shaped decline curve for QBs too (QBs retain real value
+  much later); `NormalBenchAllowance(QB)` was 1, flagging normal 2–3-QB rooms as "surplus"; and
+  `ImmediateValue` (100% weekly-projection-driven) kept its normal weight even during the real NFL
+  preseason, when backups routinely out-snap rested starters. Verified on a real roster: the
+  affected player's KeepValueScore improved from -15.34 to -4.23 and the harmful suggestion no
+  longer appears.
+
 ## [Unreleased] — Drop/Pickup IR/reserve handling
 
 ### Fixed

@@ -1,11 +1,16 @@
 using Playbook.Application.Leagues;
 using Playbook.Application.Players;
+using Playbook.Application.Predictions;
+using Playbook.Application.Predictions.Interfaces;
 using Playbook.Application.Projections.Interfaces;
+using Playbook.Application.Research;
 using Playbook.Core.Injuries.Models;
 using Playbook.Core.Intelligence.Models;
 using Playbook.Core.Leagues;
 using Playbook.Core.Players;
+using Playbook.Core.Predictions;
 using Playbook.Core.Projections.Models;
+using Playbook.Core.Research;
 using Playbook.Infrastructure.Intelligence.Services;
 
 namespace Playbook.Tests;
@@ -272,6 +277,154 @@ public class DropPickupDynastyTests
         Assert.Empty(report.Suggestions);
         Assert.Single(report.TradeCandidates);
         Assert.Equal(tradeTarget.Id, report.TradeCandidates[0].PlayerId);
+    }
+
+    // Reproduces a second real-roster finding: an established, high-confidence real starting QB
+    // was recommended as a drop for a fringe backup QB whose current-week projection happened to
+    // be higher — conflating a single week's raw projection with actual roster/dynasty value.
+    // Root causes fixed generally (no player-specific rule): DynastyAgeComponent and relative
+    // age pressure previously used an RB/WR-shaped decline curve for QBs too (QBs retain real
+    // value much later); NormalBenchAllowance(QB) was 1, flagging completely normal 2-3-QB rooms
+    // as "surplus"; and ImmediateValue (100% weekly-projection-driven) carried its normal (high)
+    // weight even during the real NFL preseason, when backups routinely out-snap rested starters.
+    [Fact]
+    public void Established_High_Confidence_Starter_Is_Not_DropCompetitive_Despite_Fringe_Backups_Higher_Projection()
+    {
+        var established = MakePlayer(Position.QB, "Established Starter QB", age: 34);
+        var fringeBackup = MakePlayer(Position.QB, "Fringe Backup QB", age: 26);
+        var starter1 = MakePlayer(Position.QB, "Fantasy Starter QB 1", age: 24);
+        var starter2 = MakePlayer(Position.QB, "Fantasy Starter QB 2", age: 23);
+        var freeAgentQb = MakePlayer(Position.QB, "FA QB");
+        var team = MakeTeam(
+            [established.Id, fringeBackup.Id, starter1.Id, starter2.Id],
+            starterIds: [starter1.Id, starter2.Id]);
+        var projections = new Dictionary<Guid, PlayerProjection>
+        {
+            // Fringe backup's raw weekly number is HIGHER, but low-confidence/speculative —
+            // exactly the "low-information player" scenario the model must not treat as superior.
+            [established.Id] = MakeProjection(established.Id, points: 10, confidence: 80),
+            [fringeBackup.Id] = MakeProjection(fringeBackup.Id, points: 16, confidence: 40),
+            [starter1.Id] = MakeProjection(starter1.Id, points: 14, confidence: 55),
+            [starter2.Id] = MakeProjection(starter2.Id, points: 13, confidence: 60),
+            [freeAgentQb.Id] = MakeProjection(freeAgentQb.Id, points: 9, confidence: 50)
+        };
+
+        var service = CreateService(
+            [established, fringeBackup, starter1, starter2, freeAgentQb],
+            projections, team, [], LeagueType.Dynasty, phase: NflSeasonPhase.RegularSeason);
+        var report = service.GetReport();
+        var candidate = report.RosterAssessment.Single(c => c.PlayerId == established.Id);
+
+        Assert.NotEqual(DropPickupClassification.DropCompetitive, candidate.Classification);
+        Assert.DoesNotContain(report.Suggestions, s => s.Drop.PlayerId == established.Id);
+    }
+
+    [Fact]
+    public void Preseason_Weekly_Projection_Noise_Does_Not_Overwhelm_An_Established_Starter()
+    {
+        // Same roster shape, but the real NFL season is currently in preseason — where the raw
+        // weekly projection gap is least trustworthy (backups often play more preseason snaps
+        // than rested starters). The preseason-specific ImmediateValue dampening should make the
+        // established starter's protection even stronger than in a normal regular-season week.
+        var established = MakePlayer(Position.QB, "Established Starter QB", age: 34);
+        var fringeBackup = MakePlayer(Position.QB, "Fringe Backup QB", age: 26);
+        var starter1 = MakePlayer(Position.QB, "Fantasy Starter QB 1", age: 24);
+        var starter2 = MakePlayer(Position.QB, "Fantasy Starter QB 2", age: 23);
+        var freeAgentQb = MakePlayer(Position.QB, "FA QB");
+        var team = MakeTeam(
+            [established.Id, fringeBackup.Id, starter1.Id, starter2.Id],
+            starterIds: [starter1.Id, starter2.Id]);
+        var projections = new Dictionary<Guid, PlayerProjection>
+        {
+            // FA pool also projects higher than the established starter (mirrors the real
+            // scenario: other backups are hot too) so his replacement margin is negative and the
+            // preseason dampening has something real to protect him from.
+            [established.Id] = MakeProjection(established.Id, points: 10, confidence: 80),
+            [fringeBackup.Id] = MakeProjection(fringeBackup.Id, points: 16, confidence: 40),
+            [starter1.Id] = MakeProjection(starter1.Id, points: 14, confidence: 55),
+            [starter2.Id] = MakeProjection(starter2.Id, points: 13, confidence: 60),
+            [freeAgentQb.Id] = MakeProjection(freeAgentQb.Id, points: 13, confidence: 50)
+        };
+
+        var regularSeasonService = CreateService(
+            [established, fringeBackup, starter1, starter2, freeAgentQb],
+            projections, team, [], LeagueType.Dynasty, phase: NflSeasonPhase.RegularSeason);
+        var preseasonService = CreateService(
+            [established, fringeBackup, starter1, starter2, freeAgentQb],
+            projections, team, [], LeagueType.Dynasty, phase: NflSeasonPhase.Preseason);
+
+        var regularCandidate = regularSeasonService.GetReport().RosterAssessment
+            .Single(c => c.PlayerId == established.Id);
+        var preseasonCandidate = preseasonService.GetReport().RosterAssessment
+            .Single(c => c.PlayerId == established.Id);
+
+        Assert.NotEqual(DropPickupClassification.DropCompetitive, preseasonCandidate.Classification);
+        // Preseason leans harder on DynastyValue (less on the noisy weekly number), so the
+        // established starter's score should be at least as strong preseason as in-season.
+        Assert.True(preseasonCandidate.KeepValueScore >= regularCandidate.KeepValueScore);
+    }
+
+    [Fact]
+    public void Genuinely_Expendable_Backup_Still_Loses_To_A_Real_Waiver_Upgrade()
+    {
+        // Proves the fixes above didn't neuter the model: a truly washed-up, low-confidence
+        // backup QB (well past even the flatter QB age curve) with no real role, no starter
+        // bonus, and a clearly better free agent available is still a legitimate drop. A third
+        // roster QB keeps positional scarcity from artificially propping his score up.
+        var expendable = MakePlayer(Position.QB, "Washed Up Backup QB", age: 39);
+        var starter1 = MakePlayer(Position.QB, "Fantasy Starter QB 1", age: 24);
+        var filler = MakePlayer(Position.QB, "Filler QB", age: 25);
+        var freeAgentQb = MakePlayer(Position.QB, "Much Better FA QB");
+        var team = MakeTeam([expendable.Id, starter1.Id, filler.Id], starterIds: [starter1.Id]);
+        var projections = new Dictionary<Guid, PlayerProjection>
+        {
+            [expendable.Id] = MakeProjection(expendable.Id, points: 4, confidence: 30),
+            [starter1.Id] = MakeProjection(starter1.Id, points: 14, confidence: 60),
+            [filler.Id] = MakeProjection(filler.Id, points: 9, confidence: 55),
+            [freeAgentQb.Id] = MakeProjection(freeAgentQb.Id, points: 13, confidence: 65)
+        };
+
+        var service = CreateService(
+            [expendable, starter1, filler, freeAgentQb], projections, team, [], LeagueType.Dynasty,
+            phase: NflSeasonPhase.RegularSeason);
+        var report = service.GetReport();
+        var candidate = report.RosterAssessment.Single(c => c.PlayerId == expendable.Id);
+
+        Assert.Equal(DropPickupClassification.DropCompetitive, candidate.Classification);
+        Assert.Contains(report.Suggestions, s => s.Drop.PlayerId == expendable.Id && s.Pickup.PlayerId == freeAgentQb.Id);
+    }
+
+    [Fact]
+    public void QB_On_IR_With_Stash_Eligibility_Is_Not_DropCompetitive()
+    {
+        // Ties the IR/reserve fix (previous milestone) together with the QB-specific fixes: an
+        // established QB placed on IR must not be pushed into Drop-Competitive by either signal.
+        var onIr = MakePlayer(Position.QB, "Injured Established QB", age: 33);
+        var starter1 = MakePlayer(Position.QB, "Fantasy Starter QB 1", age: 24);
+        var backup = MakePlayer(Position.QB, "Backup QB", age: 25);
+        var freeAgentQb = MakePlayer(Position.QB, "FA QB");
+        var team = MakeTeam(
+            [onIr.Id, starter1.Id, backup.Id], starterIds: [starter1.Id], reserveIds: [onIr.Id]);
+        var projections = new Dictionary<Guid, PlayerProjection>
+        {
+            [onIr.Id] = MakeProjection(onIr.Id, points: 3, confidence: 70),
+            [starter1.Id] = MakeProjection(starter1.Id, points: 14, confidence: 60),
+            [backup.Id] = MakeProjection(backup.Id, points: 8, confidence: 45),
+            [freeAgentQb.Id] = MakeProjection(freeAgentQb.Id, points: 6, confidence: 50)
+        };
+        var injuries = new Dictionary<Guid, PlayerInjuryRecord>
+        {
+            [onIr.Id] = MakeInjury(onIr.Id, InjurySeverity.Significant)
+        };
+
+        var service = CreateService(
+            [onIr, starter1, backup, freeAgentQb], projections, team, [], LeagueType.Dynasty,
+            injuries, phase: NflSeasonPhase.RegularSeason);
+        var report = service.GetReport();
+        var candidate = report.RosterAssessment.Single(c => c.PlayerId == onIr.Id);
+
+        Assert.NotEqual(DropPickupClassification.DropCompetitive, candidate.Classification);
+        Assert.DoesNotContain(report.Suggestions, s => s.Drop.PlayerId == onIr.Id);
     }
 
     // Reproduces the reported failure mode: a roster with a clear TE surplus (including aging TEs)
@@ -592,7 +745,8 @@ public class DropPickupDynastyTests
         FantasyTeam? team,
         IReadOnlyList<FantasyTeam> otherTeams,
         LeagueType leagueType,
-        IReadOnlyDictionary<Guid, PlayerInjuryRecord>? injuries = null)
+        IReadOnlyDictionary<Guid, PlayerInjuryRecord>? injuries = null,
+        NflSeasonPhase phase = NflSeasonPhase.RegularSeason)
     {
         var league = new League
         {
@@ -616,8 +770,10 @@ public class DropPickupDynastyTests
         var playerService = new FakePlayerService(players);
         var projectionService = new FakeProjectionService(projections);
         var injuryService = new FakePlayerInjuryService(injuries ?? new Dictionary<Guid, PlayerInjuryRecord>());
+        var calendar = new FakeNflCalendarService(phase);
+        var evidence = new FakeSharedEvidenceService();
 
-        return new DropPickupService(leagueState, playerService, projectionService, injuryService);
+        return new DropPickupService(leagueState, playerService, projectionService, injuryService, calendar, evidence);
     }
 
     private static Player MakePlayer(Position position, string name, int? age = null) => new()
@@ -671,6 +827,43 @@ public class DropPickupDynastyTests
         StarterIds = starterIds ?? [],
         ReservePlayerIds = reserveIds ?? []
     };
+
+    private sealed class FakeSharedEvidenceService : ISharedEvidenceService
+    {
+        public PlayerEvidenceSummary GetEvidenceForPlayer(Guid playerId) => new()
+        {
+            PlayerId = playerId,
+            Items = [],
+            Headline = null
+        };
+    }
+
+    private sealed class FakeNflCalendarService(NflSeasonPhase phase) : INflCalendarService
+    {
+        public NflSeasonContext GetCurrentContext() => new()
+        {
+            Season = 2026,
+            Phase = phase,
+            Week = 1
+        };
+
+        public IReadOnlyList<FootballEvent> EnrichEvents(
+            IReadOnlyList<FootballEvent> events, NflSeasonContext current) =>
+            throw new NotSupportedException();
+
+        public IReadOnlyList<NflSlate> BuildSlates(IReadOnlyList<FootballEvent> enrichedEvents) =>
+            throw new NotSupportedException();
+
+        public IReadOnlyList<NflWeekRef> GetAvailableWeeks(IReadOnlyList<FootballEvent> events) =>
+            throw new NotSupportedException();
+
+        public NflWeekRef SelectActiveWeek(
+            IReadOnlyList<NflSlate> available,
+            NflSeasonContext current,
+            NflWeekRef? preferred = null,
+            DateTimeOffset? utcNow = null) =>
+            throw new NotSupportedException();
+    }
 
     private sealed class FakeLeagueState : ILeagueState
     {

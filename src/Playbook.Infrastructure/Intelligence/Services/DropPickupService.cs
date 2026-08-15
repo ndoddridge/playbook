@@ -2,12 +2,16 @@ using Playbook.Application.Injuries.Interfaces;
 using Playbook.Application.Intelligence.Interfaces;
 using Playbook.Application.Leagues;
 using Playbook.Application.Players;
+using Playbook.Application.Predictions.Interfaces;
 using Playbook.Application.Projections.Interfaces;
+using Playbook.Application.Research;
 using Playbook.Core.Injuries.Models;
 using Playbook.Core.Intelligence.Models;
 using Playbook.Core.Leagues;
 using Playbook.Core.Players;
+using Playbook.Core.Predictions;
 using Playbook.Core.Projections.Models;
+using Playbook.Core.Research;
 
 namespace Playbook.Infrastructure.Intelligence.Services;
 
@@ -34,6 +38,18 @@ public sealed class DropPickupService : IDropPickupService
     // does not weight raw projected points (see class doc) — only confidence, at a smaller
     // weight than ImmediateValue's, stands in for short-term role certainty.
     private const double DynastyImmediateDampening = 0.5;
+
+    /// <summary>
+    /// A weekly projection captured during the real NFL preseason is a much weaker signal of true
+    /// value than a normal in-season week — established starters are frequently rested while
+    /// fringe roster players see extended reps, so a single preseason week's projection gap can
+    /// invert real roster value if weighted the same as any other week. Dynasty leagues therefore
+    /// lean even harder on DynastyValue (which excludes raw projected points, see class doc) while
+    /// it's actually preseason; this reverts to the normal <see cref="DynastyImmediateDampening"/>
+    /// automatically once the real NFL season transitions to regular season.
+    /// </summary>
+    private const double PreseasonDynastyImmediateDampening = 0.2;
+
     private const double DynastyRoleBonus = 3.5;
     private const double DynastyThinPositionBonus = 3.0;
     private const double DynastyShallowPositionBonus = 1.0;
@@ -86,16 +102,30 @@ public sealed class DropPickupService : IDropPickupService
     private const double RelativeAgePressurePerYear = -0.5;
     private const double RelativeAgePressureCap = 6.0;
 
+    /// <summary>
+    /// QBs age far more gracefully than RB/WR in real dynasty value — a proven starting QB in his
+    /// mid-30s routinely retains multi-year starting value, unlike a skill-position player at the
+    /// same age. Applied to both the absolute age curve (<see cref="DynastyAgeComponent"/>) and
+    /// relative-to-roster age pressure below, so "older" isn't double-punished for a position where
+    /// age simply doesn't erode value the same way.
+    /// </summary>
+    private const double QbRelativeAgePressureDampening = 0.3;
+
     private const double HoldThreshold = 3.0;
     private const double DropThreshold = -3.0;
 
     private const int MaxSuggestions = 3;
     private const int MaxDropCandidatesConsidered = 8;
 
+    /// <summary>Below this evidentiary weight, an evidence item is too weak/stale to surface as a reason.</summary>
+    private const double MinEvidenceWeightToSurface = 0.3;
+
     private readonly ILeagueState _leagueState;
     private readonly IPlayerService _players;
     private readonly IProjectionService _projections;
     private readonly IPlayerInjuryService _injuries;
+    private readonly INflCalendarService _calendar;
+    private readonly ISharedEvidenceService _evidence;
     private readonly object _gate = new();
 
     private DropPickupReport? _cached;
@@ -105,12 +135,16 @@ public sealed class DropPickupService : IDropPickupService
         ILeagueState leagueState,
         IPlayerService players,
         IProjectionService projections,
-        IPlayerInjuryService injuries)
+        IPlayerInjuryService injuries,
+        INflCalendarService calendar,
+        ISharedEvidenceService evidence)
     {
         _leagueState = leagueState;
         _players = players;
         _projections = projections;
         _injuries = injuries;
+        _calendar = calendar;
+        _evidence = evidence;
         _leagueState.Changed += OnLeagueContextChanged;
     }
 
@@ -236,6 +270,10 @@ public sealed class DropPickupService : IDropPickupService
                 .ToList());
 
         var isDynasty = league.LeagueType == LeagueType.Dynasty;
+        // Real NFL calendar phase (event-driven, no fantasy-league coupling — the same source
+        // Quick Picks uses) — not this fantasy league's own week number, which says nothing about
+        // whether the real season is currently in preseason.
+        var isPreseason = _calendar.GetCurrentContext().Phase == NflSeasonPhase.Preseason;
         var dropCandidates = rosterRows
             .Select(player =>
             {
@@ -255,9 +293,11 @@ public sealed class DropPickupService : IDropPickupService
                     positionDepth,
                     freeAgentsByPosition.GetValueOrDefault(player.Position),
                     isDynasty,
+                    isPreseason,
                     _injuries.GetCurrentInjury(player.Id),
                     positionSurplus,
-                    ageDelta);
+                    ageDelta,
+                    _evidence.GetEvidenceForPlayer(player.Id));
             })
             .OrderBy(c => c.KeepValueScore)
             .ToList();
@@ -374,9 +414,11 @@ public sealed class DropPickupService : IDropPickupService
         int positionDepth,
         List<(Player Player, PlayerProjection? Projection)>? freeAgentsAtPosition,
         bool isDynasty,
+        bool isPreseason,
         PlayerInjuryRecord? currentInjury,
         int positionSurplus,
-        double? ageDeltaFromPositionAverage)
+        double? ageDeltaFromPositionAverage,
+        PlayerEvidenceSummary evidence)
     {
         var ownPoints = projection is null ? (double?)null : (double)projection.ProjectedFantasyPoints;
         var confidence = projection?.Confidence;
@@ -403,7 +445,7 @@ public sealed class DropPickupService : IDropPickupService
 
         if (isDynasty)
         {
-            var ageComponent = DynastyAgeComponent(player.Age);
+            var ageComponent = DynastyAgeComponent(player.Age, player.Position);
             var roleComponent = isStarter ? DynastyRoleBonus : 0.0;
             var injuryComponent = DynastyInjuryComponent(currentInjury);
             var dynastyScarcityBonus =
@@ -425,8 +467,11 @@ public sealed class DropPickupService : IDropPickupService
             var surplusPressure = isReserve ? 0.0
                 : isStarter ? rawSurplusPressure * StarterSurplusProtectionFactor
                 : rawSurplusPressure;
+            // Same age signal as DynastyAgeComponent, same position exception: a QB "older than
+            // this roster's other QBs" isn't the aging-curve concern it is at RB/WR.
+            var ageDampening = player.Position == Position.QB ? QbRelativeAgePressureDampening : 1.0;
             var relativeAgePressure = ageDeltaFromPositionAverage is { } delta
-                ? Math.Clamp(delta * RelativeAgePressurePerYear, -RelativeAgePressureCap, RelativeAgePressureCap)
+                ? Math.Clamp(delta * RelativeAgePressurePerYear, -RelativeAgePressureCap, RelativeAgePressureCap) * ageDampening
                 : 0.0;
             rosterPressure = surplusPressure + relativeAgePressure;
 
@@ -441,8 +486,9 @@ public sealed class DropPickupService : IDropPickupService
                 $"age {(ageDeltaFromPositionAverage is { } d ? $"{d:+0.0;-0.0;0.0} yrs vs position avg" : "unknown")}).");
         }
 
+        var immediateDampening = isPreseason ? PreseasonDynastyImmediateDampening : DynastyImmediateDampening;
         var keepValue = isDynasty
-            ? (immediateValue * DynastyImmediateDampening) + dynastyValue!.Value
+            ? (immediateValue * immediateDampening) + dynastyValue!.Value
             : immediateValue;
 
         var classification = keepValue switch
@@ -496,6 +542,18 @@ public sealed class DropPickupService : IDropPickupService
             reasons.Add("Currently a starter.");
         }
 
+        // Shared research-memory evidence — purely additive context, never a scoring input. Only
+        // the single strongest item is surfaced, and only when its weight (classification
+        // reliability × phase discount × recency decay) clears the noise floor.
+        var topEvidence = evidence.Items
+            .Where(i => i.Weight >= MinEvidenceWeightToSurface)
+            .OrderByDescending(i => i.Weight)
+            .FirstOrDefault();
+        if (topEvidence is not null)
+        {
+            reasons.Add($"Research evidence: {topEvidence.Summary}");
+        }
+
         return new DropCandidate
         {
             PlayerId = player.Id,
@@ -519,30 +577,52 @@ public sealed class DropPickupService : IDropPickupService
     /// <summary>
     /// Generic bench-depth allowance per starting slot at a position, used only to detect surplus
     /// on THIS roster (combined with this team's own current starter count) — not a league setting.
-    /// RB/WR get more because FLEX makes deeper rosters normal there; QB/TE need little bench.
+    /// RB/WR get more because FLEX makes deeper rosters normal there. QB gets 2 (not 1): carrying
+    /// an established backup/insurance QB alongside your starters is normal roster construction,
+    /// not surplus — QB rooms are rarely genuinely "deep" the way RB/WR benches are. TE still needs
+    /// little bench.
     /// </summary>
     private static int NormalBenchAllowance(Position position) => position switch
     {
         Position.RB => 3,
         Position.WR => 3,
-        Position.QB => 1,
+        Position.QB => 2,
         Position.TE => 1,
         _ => 2
     };
 
     /// <summary>
     /// Coarse dynasty age curve. Bucketed rather than continuous so a single year of age never
-    /// swings value sharply; missing age contributes 0 (neutral), never a penalty.
+    /// swings value sharply; missing age contributes 0 (neutral), never a penalty. Position-aware:
+    /// QBs retain real starting/dynasty value much later than RB/WR (a proven starter in his
+    /// mid-to-late 30s is routine), so the same chronological age means something different for a
+    /// QB than for a skill-position player and is scored on a flatter, later-peaking curve.
     /// </summary>
-    private static double DynastyAgeComponent(int? age) => age switch
+    private static double DynastyAgeComponent(int? age, Position position)
     {
-        null => 0.0,
-        <= 23 => 6.0,
-        <= 26 => 3.0,
-        <= 29 => 0.0,
-        <= 32 => -3.0,
-        _ => -6.0
-    };
+        if (age is null)
+        {
+            return 0.0;
+        }
+
+        return position == Position.QB
+            ? age switch
+            {
+                <= 25 => 4.0,
+                <= 29 => 2.0,
+                <= 34 => 0.0,
+                <= 38 => -1.5,
+                _ => -4.0
+            }
+            : age switch
+            {
+                <= 23 => 6.0,
+                <= 26 => 3.0,
+                <= 29 => 0.0,
+                <= 32 => -3.0,
+                _ => -6.0
+            };
+    }
 
     /// <summary>
     /// Bounded (DynastyInjuryPenaltyCap) so a temporary injury — even a severe one — never comes
