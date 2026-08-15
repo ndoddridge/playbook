@@ -435,6 +435,118 @@ public class DropPickupDynastyTests
         return (service.GetReport(), starterA, bench[0], youngProspect);
     }
 
+    // Reproduces a second real-roster finding: a valuable young dynasty asset already correctly
+    // placed on IR/reserve by the manager (real Sleeper data — team.ReservePlayerIds) was still
+    // classified Drop-Competitive, driven by (a) being counted toward positional surplus like an
+    // active bench player and (b) an uncapped severity-based injury penalty large enough to erase
+    // his other DynastyValue components by itself. Neither should happen: IR isn't a normal bench
+    // spot competing for depth, and a temporary injury shouldn't by itself make a valuable young
+    // asset look expendable — ImmediateValue already reflects the short-term production hit.
+    [Fact]
+    public void Reserve_IR_Player_With_Significant_Injury_Is_Not_DropCompetitive()
+    {
+        var (report, reservePlayer, _) = BuildReserveEligibleRbRoster();
+
+        var candidate = report.RosterAssessment.Single(c => c.PlayerId == reservePlayer.Id);
+
+        Assert.NotEqual(DropPickupClassification.DropCompetitive, candidate.Classification);
+    }
+
+    [Fact]
+    public void Reserve_IR_Player_Is_Never_Offered_As_A_Drop_Suggestion()
+    {
+        var (report, reservePlayer, _) = BuildReserveEligibleRbRoster();
+
+        Assert.DoesNotContain(report.Suggestions, s => s.Drop.PlayerId == reservePlayer.Id);
+    }
+
+    [Fact]
+    public void Reserve_IR_Player_Is_Excluded_From_Active_Positional_Depth_For_Everyone()
+    {
+        var (report, reservePlayer, activePeer) = BuildReserveEligibleRbRoster();
+
+        var reserveCandidate = report.RosterAssessment.Single(c => c.PlayerId == reservePlayer.Id);
+        var peerCandidate = report.RosterAssessment.Single(c => c.PlayerId == activePeer.Id);
+
+        // 6 RBs total but 1 is on IR — active depth is 5, so surplus is computed off 5, not 6.
+        Assert.Equal(5, reserveCandidate.PositionDepthOnRoster);
+        Assert.Equal(5, peerCandidate.PositionDepthOnRoster);
+    }
+
+    [Fact]
+    public void Major_Injury_Alone_Does_Not_Overwhelm_An_Otherwise_Neutral_Dynasty_Asset()
+    {
+        // Isolates the injury-cap fix from every other signal: normal (non-thin, non-surplus)
+        // depth, no starter bonus, neutral age/confidence/replacement margin. Under the old
+        // uncapped penalty (-8.0) this scores -8.0 and lands squarely on Drop-Competitive; the
+        // cap (-2.0) keeps a temporary injury from being decisive by itself.
+        var target = MakePlayer(Position.RB, "Injured Neutral RB", age: 27);
+        var filler1 = MakePlayer(Position.RB, "Filler RB 1", age: 27);
+        var filler2 = MakePlayer(Position.RB, "Filler RB 2", age: 27);
+        var freeAgent = MakePlayer(Position.RB, "FA RB");
+        var team = MakeTeam([target.Id, filler1.Id, filler2.Id]);
+        var projections = new Dictionary<Guid, PlayerProjection>
+        {
+            [target.Id] = MakeProjection(target.Id, points: 8, confidence: 50),
+            [filler1.Id] = MakeProjection(filler1.Id, points: 8, confidence: 50),
+            [filler2.Id] = MakeProjection(filler2.Id, points: 8, confidence: 50),
+            [freeAgent.Id] = MakeProjection(freeAgent.Id, points: 8, confidence: 50)
+        };
+        var injuries = new Dictionary<Guid, PlayerInjuryRecord>
+        {
+            [target.Id] = MakeInjury(target.Id, InjurySeverity.Major)
+        };
+
+        var service = CreateService(
+            [target, filler1, filler2, freeAgent], projections, team, [], LeagueType.Dynasty, injuries);
+        var candidate = service.GetReport().RosterAssessment.Single(c => c.PlayerId == target.Id);
+
+        Assert.Equal(-2.0, candidate.DynastyValue!.Value, 3);
+        Assert.NotEqual(DropPickupClassification.DropCompetitive, candidate.Classification);
+    }
+
+    /// <summary>
+    /// 6 rostered RBs: 1 starter, 4 active bench (surplus beyond the normal allowance of 5 would
+    /// require 6+ active, so 5 active keeps this at the boundary — the reserve player pushes the
+    /// raw count to 6, which is exactly the surplus this test proves gets recomputed once he's
+    /// excluded), and 1 on IR/reserve with a real Significant injury.
+    /// </summary>
+    private static (DropPickupReport Report, Player ReservePlayer, Player ActivePeer) BuildReserveEligibleRbRoster()
+    {
+        var starter = MakePlayer(Position.RB, $"Starter RB {Guid.NewGuid():N}", age: 26);
+        var bench = Enumerable.Range(0, 4)
+            .Select(i => MakePlayer(Position.RB, $"Bench RB {i} {Guid.NewGuid():N}", age: 26))
+            .ToList();
+        var reservePlayer = MakePlayer(Position.RB, $"Reserve RB {Guid.NewGuid():N}", age: 24);
+        var freeAgent = MakePlayer(Position.RB, $"FA RB {Guid.NewGuid():N}");
+
+        var rosterIds = new List<Guid> { starter.Id, reservePlayer.Id };
+        rosterIds.AddRange(bench.Select(p => p.Id));
+        var team = MakeTeam(rosterIds, starterIds: [starter.Id], reserveIds: [reservePlayer.Id]);
+
+        var projections = new Dictionary<Guid, PlayerProjection>
+        {
+            [starter.Id] = MakeProjection(starter.Id, points: 10, confidence: 55),
+            [reservePlayer.Id] = MakeProjection(reservePlayer.Id, points: 1, confidence: 60),
+            [freeAgent.Id] = MakeProjection(freeAgent.Id, points: 6, confidence: 50)
+        };
+        foreach (var b in bench)
+        {
+            projections[b.Id] = MakeProjection(b.Id, points: 5, confidence: 50);
+        }
+
+        var injuries = new Dictionary<Guid, PlayerInjuryRecord>
+        {
+            [reservePlayer.Id] = MakeInjury(reservePlayer.Id, InjurySeverity.Significant)
+        };
+
+        var allPlayers = new List<Player> { starter, reservePlayer, freeAgent };
+        allPlayers.AddRange(bench);
+
+        var service = CreateService(allPlayers, projections, team, [], LeagueType.Dynasty, injuries);
+        return (service.GetReport(), reservePlayer, bench[0]);
+    }
+
     /// <summary>
     /// 1 starting RB + 1 bench RB (within normal RB allowance, no surplus) alongside 3 TEs with
     /// only 1 starter (1 beyond the TE normal allowance of 2 — a genuine surplus), ages spread so
@@ -547,13 +659,17 @@ public class DropPickupDynastyTests
         IsCurrent = true
     };
 
-    private static FantasyTeam MakeTeam(IReadOnlyList<Guid> playerIds, IReadOnlyList<Guid>? starterIds = null) => new()
+    private static FantasyTeam MakeTeam(
+        IReadOnlyList<Guid> playerIds,
+        IReadOnlyList<Guid>? starterIds = null,
+        IReadOnlyList<Guid>? reserveIds = null) => new()
     {
         LeagueId = LeagueId,
         RosterId = 1,
         DisplayName = "My Team",
         PlayerIds = playerIds,
-        StarterIds = starterIds ?? []
+        StarterIds = starterIds ?? [],
+        ReservePlayerIds = reserveIds ?? []
     };
 
     private sealed class FakeLeagueState : ILeagueState

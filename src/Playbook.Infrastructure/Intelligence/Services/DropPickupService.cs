@@ -48,6 +48,16 @@ public sealed class DropPickupService : IDropPickupService
     private const double DynastyMajorInjuryPenalty = -8.0;
     private const double DynastyUnknownSeverityInjuryPenalty = -2.0;
 
+    /// <summary>
+    /// Bounds the raw per-severity injury penalty above. A current injury is exactly what makes a
+    /// player's real-world platform status (Out/IR/PUP) and this week's projection collapse —
+    /// ImmediateValue already reflects that. Stacking an uncapped severity penalty on top in
+    /// DynastyValue as well double-counts the same temporary absence and can by itself erase a
+    /// valuable young asset's long-horizon value, contradicting this class's own design intent
+    /// (a single week/injury should never dominate DynastyValue).
+    /// </summary>
+    private const double DynastyInjuryPenaltyCap = -2.0;
+
     // Roster context: positional surplus/deficit and this-roster age distribution, Dynasty only.
     // "Normal" depth = this team's own current starters at the position (real roster data) plus a
     // generic bench-depth allowance by position — RB/WR commonly roster deeper than their raw
@@ -178,6 +188,7 @@ public sealed class DropPickupService : IDropPickupService
             .ToHashSet();
 
         var starterSet = team.StarterIds.ToHashSet();
+        var reserveSet = team.ReservePlayerIds.ToHashSet();
         var rosterRows = team.PlayerIds
             .Select(id => allPlayers.TryGetValue(id, out var player) ? player : null)
             .Where(p => p is not null)
@@ -190,7 +201,14 @@ public sealed class DropPickupService : IDropPickupService
             unavailable.Add("Some roster players were not found in the player catalog.");
         }
 
-        var depthByPosition = rosterRows
+        // Players already placed in an IR/reserve slot (real platform data — team.ReservePlayerIds)
+        // occupy a separate roster mechanism, not a normal bench spot, so they don't compete for
+        // positional depth the way an active bench player does. Excluding them here means the
+        // depth/surplus/age-average signals reflect the ACTIVE roster only — matching how taxi
+        // squad is already excluded from the roster-limit count.
+        var activeRosterRows = rosterRows.Where(p => !reserveSet.Contains(p.Id)).ToList();
+
+        var depthByPosition = activeRosterRows
             .GroupBy(p => p.Position)
             .ToDictionary(g => g.Key, g => g.Count());
 
@@ -198,12 +216,12 @@ public sealed class DropPickupService : IDropPickupService
         // league's actual lineup) and the position's average known age on THIS roster — both
         // derived only from real roster data, never an invented league setting or player-specific
         // exception.
-        var startersByPosition = rosterRows
+        var startersByPosition = activeRosterRows
             .Where(p => starterSet.Contains(p.Id))
             .GroupBy(p => p.Position)
             .ToDictionary(g => g.Key, g => g.Count());
 
-        var averageAgeByPosition = rosterRows
+        var averageAgeByPosition = activeRosterRows
             .Where(p => p.Age is not null)
             .GroupBy(p => p.Position)
             .ToDictionary(g => g.Key, g => g.Average(p => p.Age!.Value));
@@ -232,6 +250,7 @@ public sealed class DropPickupService : IDropPickupService
                 return BuildDropCandidate(
                     player,
                     starterSet.Contains(player.Id),
+                    reserveSet.Contains(player.Id),
                     projectionByPlayer.GetValueOrDefault(player.Id),
                     positionDepth,
                     freeAgentsByPosition.GetValueOrDefault(player.Position),
@@ -250,9 +269,14 @@ public sealed class DropPickupService : IDropPickupService
         // exists this week — that's exactly how a talented young player with a soft week gets
         // mislabeled as expendable. Redraft/Keeper leagues have no long-horizon value to protect,
         // so their existing (ungated) behavior is unchanged.
-        var swapCandidatePool = isDynasty
-            ? dropCandidates.Where(c => c.Classification == DropPickupClassification.DropCompetitive).ToList()
-            : dropCandidates;
+        // A player already on IR/reserve is never offered as a drop-for-swap in any league type —
+        // that roster spot isn't a normal bench slot competing for depth, so "drop him for a waiver
+        // upgrade" doesn't reflect what actually happens on the platform.
+        var swapCandidatePool = (isDynasty
+            ? dropCandidates.Where(c => c.Classification == DropPickupClassification.DropCompetitive)
+            : dropCandidates)
+            .Where(c => !reserveSet.Contains(c.PlayerId))
+            .ToList();
 
         var suggestions = new List<DropPickupSuggestion>();
         var usedPickupIds = new HashSet<Guid>();
@@ -345,6 +369,7 @@ public sealed class DropPickupService : IDropPickupService
     private static DropCandidate BuildDropCandidate(
         Player player,
         bool isStarter,
+        bool isReserve,
         PlayerProjection? projection,
         int positionDepth,
         List<(Player Player, PlayerProjection? Projection)>? freeAgentsAtPosition,
@@ -393,9 +418,13 @@ public sealed class DropPickupService : IDropPickupService
             // Purely roster-derived — no player-specific exception, no invented league setting.
             // The surplus term is bounded (SurplusPenaltyCap) and further dampened for a current
             // starter (StarterSurplusProtectionFactor) so positional depth alone — however deep —
-            // can never by itself overwhelm a legitimate starter's role/confidence baseline.
+            // can never by itself overwhelm a legitimate starter's role/confidence baseline. A
+            // player already on IR/reserve (real platform data, see reserveSet in BuildReport)
+            // isn't competing for bench room at all, so surplus pressure doesn't apply to them.
             var rawSurplusPressure = Math.Max(SurplusPenaltyCap, positionSurplus * SurplusPenaltyPerExcessPlayer);
-            var surplusPressure = isStarter ? rawSurplusPressure * StarterSurplusProtectionFactor : rawSurplusPressure;
+            var surplusPressure = isReserve ? 0.0
+                : isStarter ? rawSurplusPressure * StarterSurplusProtectionFactor
+                : rawSurplusPressure;
             var relativeAgePressure = ageDeltaFromPositionAverage is { } delta
                 ? Math.Clamp(delta * RelativeAgePressurePerYear, -RelativeAgePressureCap, RelativeAgePressureCap)
                 : 0.0;
@@ -516,8 +545,9 @@ public sealed class DropPickupService : IDropPickupService
     };
 
     /// <summary>
-    /// Bounded so a temporary/minor injury never comes close to erasing the other DynastyValue
-    /// components. No current injury on file contributes 0, not a penalty.
+    /// Bounded (DynastyInjuryPenaltyCap) so a temporary injury — even a severe one — never comes
+    /// close to erasing the other DynastyValue components by itself; ImmediateValue already carries
+    /// the short-term production hit. No current injury on file contributes 0, not a penalty.
     /// </summary>
     private static double DynastyInjuryComponent(PlayerInjuryRecord? currentInjury)
     {
@@ -526,7 +556,7 @@ public sealed class DropPickupService : IDropPickupService
             return 0.0;
         }
 
-        return currentInjury.Severity switch
+        var raw = currentInjury.Severity switch
         {
             InjurySeverity.Minor => DynastyMinorInjuryPenalty,
             InjurySeverity.Moderate => DynastyModerateInjuryPenalty,
@@ -534,6 +564,8 @@ public sealed class DropPickupService : IDropPickupService
             InjurySeverity.Major => DynastyMajorInjuryPenalty,
             _ => DynastyUnknownSeverityInjuryPenalty
         };
+
+        return Math.Max(DynastyInjuryPenaltyCap, raw);
     }
 
     /// <summary>

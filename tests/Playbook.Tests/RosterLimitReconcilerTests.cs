@@ -47,6 +47,39 @@ public class RosterLimitReconcilerTests
     }
 
     [Fact]
+    public void Reserve_IR_Players_Are_Excluded_From_The_Counted_Roster()
+    {
+        // League.RosterLimit comes from Sleeper's roster_positions array, which never includes
+        // reserve/IR slots (those are a separate platform setting) — so a player parked on IR
+        // must not count against it, the same way taxi squad already doesn't.
+        var league = MakeLeague(rosterPositions: Positions(15));
+        var team = MakeTeam(playerCount: 18, reserveCount: 3);
+
+        var status = RosterLimitReconciler.Check(team, league);
+
+        Assert.True(status.IsKnown);
+        Assert.False(status.IsOverLimit);
+        Assert.Equal(15, status.CountedCount);
+    }
+
+    [Fact]
+    public void Taxi_And_Reserve_Exclusions_Combine_Correctly()
+    {
+        // Reproduces a real reported false-positive: 30 rostered players, 3 taxi, 1 IR against a
+        // 26-slot limit. Counting only taxi out (as before this fix) leaves 27 — one over the
+        // limit — even though the platform itself considers this roster legal once IR is also
+        // excluded (30 - 3 - 1 = 26, exactly at the limit).
+        var league = MakeLeague(rosterPositions: Positions(26));
+        var team = MakeTeam(playerCount: 30, taxiCount: 3, reserveCount: 1);
+
+        var status = RosterLimitReconciler.Check(team, league);
+
+        Assert.True(status.IsKnown);
+        Assert.False(status.IsOverLimit);
+        Assert.Equal(26, status.CountedCount);
+    }
+
+    [Fact]
     public void Over_Limit_After_Excluding_Taxi_Is_Surfaced_Not_Silently_Fixed()
     {
         var league = MakeLeague(rosterPositions: Positions(15));
@@ -92,17 +125,19 @@ public class RosterLimitReconcilerTests
         RosterPositions = rosterPositions
     };
 
-    private static FantasyTeam MakeTeam(int playerCount, int taxiCount = 0)
+    private static FantasyTeam MakeTeam(int playerCount, int taxiCount = 0, int reserveCount = 0)
     {
         var players = Enumerable.Range(0, playerCount).Select(_ => Guid.NewGuid()).ToList();
         var taxi = players.Take(taxiCount).ToList();
+        var reserve = players.Skip(taxiCount).Take(reserveCount).ToList();
         return new FantasyTeam
         {
             LeagueId = Guid.NewGuid(),
             RosterId = 1,
             DisplayName = "Owner",
             PlayerIds = players,
-            TaxiPlayerIds = taxi
+            TaxiPlayerIds = taxi,
+            ReservePlayerIds = reserve
         };
     }
 }

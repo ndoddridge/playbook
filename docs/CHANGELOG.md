@@ -2,6 +2,24 @@
 
 All notable project changes are recorded here.
 
+## [Unreleased] — Drop/Pickup IR/reserve handling
+
+### Fixed
+
+- **Drop/Pickup ignored IR/reserve status entirely.** Verified on a real dynasty roster: a young
+  RB already correctly placed on IR (real Sleeper `reserve` slot, ACL/PUP) was still counted toward
+  positional surplus like an active bench player and classified Drop-Competitive, driven partly by
+  an uncapped severity-based injury penalty (`DynastyMajorInjuryPenalty`/`SignificantInjuryPenalty`)
+  large enough to erase the rest of DynastyValue by itself — contradicting the component's own
+  documented intent. Fixed: IR/reserve players are now excluded from positional-depth/surplus
+  calculations (mirroring how taxi squad already is), never offered as a same-position drop
+  suggestion, and the injury-severity penalty is capped so a temporary injury alone can't decide a
+  valuable young asset's classification. Also fixed `FantasyTeam.CountedPlayerIds` to exclude
+  reserve players (not just taxi) from the roster-limit count, matching `League.RosterLimit`'s own
+  source (Sleeper `roster_positions`, which never includes IR/taxi slots) — this was producing
+  false "over limit" warnings. Verified against the real roster: the affected player's
+  classification moved from Drop-Competitive to Trade.
+
 ## [Unreleased] — Preseason validation fixes (research memory, Drop/Pickup, Quick Picks)
 
 ### Fixed

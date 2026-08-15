@@ -33,11 +33,14 @@ public sealed class FantasyTeam
     public IReadOnlyList<string> ExternalPlayerIds { get; init; } = [];
 
     /// <summary>
-    /// Roster spots that count against <see cref="League.RosterLimit"/> — every player except
-    /// taxi squad (see <see cref="TaxiPlayerIds"/>).
+    /// Roster spots that count against <see cref="League.RosterLimit"/>. <see cref="League.RosterLimit"/>
+    /// is derived from Sleeper's <c>roster_positions</c> array, which does not include IR/reserve or
+    /// taxi squad — those are separate platform slot counts (<c>reserve_slots</c> / <c>taxi_slots</c>)
+    /// — so both are excluded here too, or the over-limit check would flag a roster that the
+    /// platform itself considers legal.
     /// </summary>
     public IReadOnlyList<Guid> CountedPlayerIds =>
-        TaxiPlayerIds.Count == 0
+        TaxiPlayerIds.Count == 0 && ReservePlayerIds.Count == 0
             ? PlayerIds
-            : PlayerIds.Where(id => !TaxiPlayerIds.Contains(id)).ToList();
+            : PlayerIds.Where(id => !TaxiPlayerIds.Contains(id) && !ReservePlayerIds.Contains(id)).ToList();
 }
