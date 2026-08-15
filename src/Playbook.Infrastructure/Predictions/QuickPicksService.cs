@@ -15,6 +15,7 @@ using Playbook.Core.Injuries.Models;
 using Playbook.Core.Intelligence.Models;
 using Playbook.Core.Knowledge;
 using Playbook.Core.Predictions;
+using Playbook.Core.Predictions.Models;
 using Playbook.Core.Projections.Models;
 
 namespace Playbook.Infrastructure.Predictions;
@@ -38,6 +39,7 @@ public sealed class QuickPicksService : IQuickPicksService
     private readonly IKnowledgeImpactApplicator _knowledgeImpact;
     private readonly Application.Research.IPredictionResearchStore _research;
     private readonly ISharedEvidenceService _evidence;
+    private readonly ITeamGameProjectionService _teamProjection;
     private readonly PropLineOptions _options;
     private readonly QuickPicksSyncStatus _status;
     private readonly ILogger<QuickPicksService> _logger;
@@ -67,6 +69,7 @@ public sealed class QuickPicksService : IQuickPicksService
         IKnowledgeImpactApplicator knowledgeImpact,
         Application.Research.IPredictionResearchStore research,
         ISharedEvidenceService evidence,
+        ITeamGameProjectionService teamProjection,
         IOptions<PropLineOptions> options,
         QuickPicksSyncStatus status,
         ILogger<QuickPicksService> logger)
@@ -83,6 +86,7 @@ public sealed class QuickPicksService : IQuickPicksService
         _knowledgeImpact = knowledgeImpact;
         _research = research;
         _evidence = evidence;
+        _teamProjection = teamProjection;
         _options = options.Value;
         _status = status;
         _logger = logger;
@@ -373,34 +377,63 @@ public sealed class QuickPicksService : IQuickPicksService
             IReadOnlyList<IntelligenceFact> facts = [];
             Core.Players.PlayerStatus? rosterStatus = null;
 
-            if (line.PlayerId is Guid playerId)
+            // Determine whether this is a game market or player prop.
+            var isGameMarket = line.Market is PredictionMarketType.GameTotal
+                or PredictionMarketType.TeamTotal
+                or PredictionMarketType.Winner
+                or PredictionMarketType.Spread;
+
+            decimal? projection = null;
+            int projConfidence = 0;
+            int volatility = 100;
+            bool usingPrior = false;
+
+            if (isGameMarket)
             {
-                var player = _players.GetPlayer(playerId);
-                if (player is not null)
+                // Game market: use team-level aggregation.
+                var gameMarketProj = GameMarketProjector.ProjectGameMarket(
+                    line.Market, line.Event, line, _teamProjection, line.Event.Phase);
+                projection = gameMarketProj.Projection;
+                projConfidence = gameMarketProj.Confidence;
+                volatility = gameMarketProj.Volatility;
+                // Game markets don't use prior production; set usingPrior = false.
+            }
+            else
+            {
+                // Player prop: use player-level projection.
+                if (line.PlayerId is Guid playerId)
                 {
-                    production = _production.GetProduction(player);
-                    rosterStatus = player.Status;
+                    var player = _players.GetPlayer(playerId);
+                    if (player is not null)
+                    {
+                        production = _production.GetProduction(player);
+                        rosterStatus = player.Status;
+                    }
+
+                    intel = _intelligence.GetPlayerProfile(playerId);
+                    statsCtx = _stats.GetContext(playerId);
+                    injuryProfile = _injuries.GetPlayerInjuryProfile(playerId);
+                    facts = _intelligence.GetFactsForPlayer(playerId);
                 }
 
-                intel = _intelligence.GetPlayerProfile(playerId);
-                statsCtx = _stats.GetContext(playerId);
-                injuryProfile = _injuries.GetPlayerInjuryProfile(playerId);
-                facts = _intelligence.GetFactsForPlayer(playerId);
+                var projected = PropStatProjector.Project(
+                    line.Market, production, statsCtx, intel, line.Event.Phase);
+                projection = projected.Projection;
+                projConfidence = projected.Confidence;
+                volatility = projected.Volatility;
+                usingPrior = projected.UsingPriorRegularSeasonProduction;
             }
 
-            var projected = PropStatProjector.Project(
-                line.Market, production, statsCtx, intel, line.Event.Phase);
-            var projection = projected.Projection;
-            var projConfidence = projected.Confidence;
-            var volatility = projected.Volatility;
-            var usingPrior = projected.UsingPriorRegularSeasonProduction;
-
-            var injuryMult = InjuryIntelligenceMapping.ProjectionHealthMultiplier(injuryProfile?.CurrentInjury);
-            if (projection is not null && injuryMult is not null)
+            // Injury adjustments only apply to player props (not game markets).
+            if (!isGameMarket)
             {
-                projection = Math.Round(projection.Value * injuryMult.Value, 1, MidpointRounding.AwayFromZero);
-                projConfidence = Math.Clamp(projConfidence - (injuryMult < 0.5m ? 14 : 6), 10, 95);
-                volatility = Math.Clamp(volatility + (injuryMult < 0.5m ? 12 : 6), 10, 95);
+                var injuryMult = InjuryIntelligenceMapping.ProjectionHealthMultiplier(injuryProfile?.CurrentInjury);
+                if (projection is not null && injuryMult is not null)
+                {
+                    projection = Math.Round(projection.Value * injuryMult.Value, 1, MidpointRounding.AwayFromZero);
+                    projConfidence = Math.Clamp(projConfidence - (injuryMult < 0.5m ? 14 : 6), 10, 95);
+                    volatility = Math.Clamp(volatility + (injuryMult < 0.5m ? 12 : 6), 10, 95);
+                }
             }
 
             var evaluation = new QuickPickEvaluationContext
