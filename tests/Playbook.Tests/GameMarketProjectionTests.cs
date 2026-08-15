@@ -257,6 +257,55 @@ public class GameMarketProjectionTests
         };
     }
 
+    [Fact]
+    public void TeamGameProjectionService_ShouldNotUseSportsbookLineAsProjection()
+    {
+        // Verifies we do NOT use the sportsbook line as the Playbook projection.
+        // The sportsbook line is the MARKET we evaluate, not our projection input.
+        var gameEvent = MakeGameEvent("BUF@MIA", NflSeasonPhase.RegularSeason);
+        var line = new PropLine
+        {
+            Id = "1",
+            Event = gameEvent,
+            Market = PredictionMarketType.GameTotal,
+            Line = 45.5m, // This is the market line, NOT our projection
+            Bookmaker = "Caesar's",
+            Source = "odds-api",
+            UpdatedAt = DateTimeOffset.UtcNow,
+            Freshness = PropLineFreshness.Live
+        };
+
+        // Real projection from player aggregation (different from sportsbook line)
+        var homeProj = new TeamGameProjection
+        {
+            TeamAbbreviation = "BUF",
+            EstimatedTeamScore = 26.0m,
+            Confidence = 65,
+            Volatility = 40,
+            Reasoning = "Player aggregation"
+        };
+
+        var awayProj = new TeamGameProjection
+        {
+            TeamAbbreviation = "MIA",
+            EstimatedTeamScore = 20.5m,
+            Confidence = 60,
+            Volatility = 42,
+            Reasoning = "Player aggregation"
+        };
+
+        var teamProjService = new MockTeamProjectionService(homeProj, awayProj);
+
+        // Act
+        var (projection, conf, vol) = GameMarketProjector.ProjectGameMarket(
+            PredictionMarketType.GameTotal, gameEvent, line, teamProjService, NflSeasonPhase.RegularSeason);
+
+        // Assert - projection should be our estimate (46.5), NOT the sportsbook line (45.5)
+        Assert.NotNull(projection);
+        Assert.InRange(projection.Value, 46.4m, 46.6m);
+        Assert.NotEqual(45.5m, projection.Value);
+    }
+
     /// <summary>Mock team projection service for testing game-market logic without real aggregation.</summary>
     private sealed class MockTeamProjectionService(TeamGameProjection? home, TeamGameProjection? away)
         : ITeamGameProjectionService
