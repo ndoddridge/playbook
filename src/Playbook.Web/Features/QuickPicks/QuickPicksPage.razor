@@ -1,6 +1,7 @@
 @page "/quick-picks"
 @using Playbook.Application.Predictions
 @using Playbook.Core.Predictions
+@using Playbook.Core.Predictions.Models
 @using Playbook.Web.Features.QuickPicks.Components
 @using Playbook.Web.Features.QuickPicks.Interfaces
 @using Playbook.Web.Features.QuickPicks.Models
@@ -231,8 +232,16 @@
     private string EmptyBoardMessage()
     {
         var (gameLines, propLines) = Board.GetSlateMarketCounts();
-        var reason = QuickPicksEmptyState.Classify(gameLines, propLines, slatePredictions.Count);
-        return QuickPicksEmptyState.Describe(reason, gameLines);
+
+        // The betting gate is read from the model itself, not guessed from an empty list, so
+        // "betting is switched off" and "nothing cleared the thresholds" stay distinguishable.
+        var reason = QuickPicksEmptyState.Classify(
+            gameLines,
+            propLines,
+            slatePredictions.Count,
+            TeamPointsModel.GameMarketBettingEnabled);
+
+        return QuickPicksEmptyState.Describe(reason, gameLines, propLines);
     }
 
     private void ApplyFilters()
