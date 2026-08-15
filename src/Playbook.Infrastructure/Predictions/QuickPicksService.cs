@@ -9,6 +9,7 @@ using Playbook.Application.Players;
 using Playbook.Application.Predictions;
 using Playbook.Application.Predictions.Interfaces;
 using Playbook.Application.Projections.Interfaces;
+using Playbook.Application.Research;
 using Playbook.Application.Stats.Interfaces;
 using Playbook.Core.Injuries.Models;
 using Playbook.Core.Intelligence.Models;
@@ -36,6 +37,7 @@ public sealed class QuickPicksService : IQuickPicksService
     private readonly ISharedKnowledgeModel _sharedKnowledge;
     private readonly IKnowledgeImpactApplicator _knowledgeImpact;
     private readonly Application.Research.IPredictionResearchStore _research;
+    private readonly ISharedEvidenceService _evidence;
     private readonly PropLineOptions _options;
     private readonly QuickPicksSyncStatus _status;
     private readonly ILogger<QuickPicksService> _logger;
@@ -64,6 +66,7 @@ public sealed class QuickPicksService : IQuickPicksService
         ISharedKnowledgeModel sharedKnowledge,
         IKnowledgeImpactApplicator knowledgeImpact,
         Application.Research.IPredictionResearchStore research,
+        ISharedEvidenceService evidence,
         IOptions<PropLineOptions> options,
         QuickPicksSyncStatus status,
         ILogger<QuickPicksService> logger)
@@ -79,6 +82,7 @@ public sealed class QuickPicksService : IQuickPicksService
         _sharedKnowledge = sharedKnowledge;
         _knowledgeImpact = knowledgeImpact;
         _research = research;
+        _evidence = evidence;
         _options = options.Value;
         _status = status;
         _logger = logger;
@@ -441,9 +445,20 @@ public sealed class QuickPicksService : IQuickPicksService
             if (prediction is not null)
             {
                 // Knowledge Impact: bounded ranking adjustment (Baseline = no-op).
-                predictions.Add(_knowledgeImpact.ApplyToQuickPickPrediction(
+                prediction = _knowledgeImpact.ApplyToQuickPickPrediction(
                     prediction,
-                    evaluation.PredictionContext));
+                    evaluation.PredictionContext);
+
+                // Shared research-memory evidence: informational only — see QuickPickEvidenceEnricher.
+                // Only Confidence/Edge/Probability/OpportunityScore already set above ever drive the
+                // pick's ranking; this can only add supporting-intelligence text.
+                if (prediction.PlayerId is Guid evidencePlayerId)
+                {
+                    prediction = QuickPickEvidenceEnricher.Apply(
+                        prediction, _evidence.GetEvidenceForPlayer(evidencePlayerId));
+                }
+
+                predictions.Add(prediction);
             }
         }
 

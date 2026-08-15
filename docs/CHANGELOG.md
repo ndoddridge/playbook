@@ -2,6 +2,39 @@
 
 All notable project changes are recorded here.
 
+## [Unreleased] — Quick Picks consumes Shared Evidence; Drop/Pickup contingent value
+
+### Added
+
+- **Quick Picks now consumes Shared Evidence**, informationally: `QuickPickEvidenceEnricher`
+  runs after the (unchanged) engine and knowledge-impact step and can only append one line to
+  `Prediction.SupportingIntelligence`. Confidence, Edge, Probability, and OpportunityScore are
+  always copied through byte-for-byte — evidence can never double-count into a pick's score.
+  Reuses `SharedEvidenceService`'s existing reliability/phase/recency weighting outright (a
+  0.3 weight floor keeps a single preseason result from ever surfacing as "strong evidence");
+  repeated/corroborating evidence of the same kind is called out ("confirmed across N recent
+  results") so accumulated confirmation reads as more informative than one result, with no
+  separate accumulation logic to maintain.
+- **Drop/Pickup "next man up" contingent value**: the single best-projected non-starter at a
+  position, only when meaningfully younger (≤26) than an active starter at that position who is
+  ≥5 years older, now gets a small DynastyValue bonus (`ContingentRoleBonus`, roughly half of
+  the starter role bonus) reflecting real future-opportunity value a raw weekly projection can't
+  see. Deliberately narrow — only the top non-starter, never every backup — so a genuinely
+  expendable deep-bench player is still correctly Drop-Competitive.
+
+### Verified
+
+- Quick Picks fake/placeholder audit: no new fabrication found; prior fixes (real-line-only
+  capture, honest empty state on 0 markets, no placeholder game-market projections) hold.
+- Automatic postgame loop re-checked against real production data via `flyctl` — background
+  service confirmed running (sync timestamp advancing); no games had yet crossed the grading
+  buffer at check time (real timing, not a defect — end-to-end mechanics already verified with
+  real ESPN data in a prior milestone).
+- Real-roster check: Nicholas Singleton was already protected (Trade, not Drop-Competitive) by
+  prior fixes; the next-man-up threshold correctly did not fire for Tony Pollard (real age 29 —
+  not yet in a "declining" age bucket by Playbook's own existing age-curve semantics), which is
+  an honest, non-overfit result rather than a miss.
+
 ## [Unreleased] — Shared Football Intelligence layer + Drop/Pickup role-vs-projection fix
 
 ### Added

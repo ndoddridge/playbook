@@ -700,6 +700,142 @@ public class DropPickupDynastyTests
         return (service.GetReport(), reservePlayer, bench[0]);
     }
 
+    // "Next man up" contingent value: reproduces the reported concern that a young backup behind
+    // an aging starter at the same position (e.g. a young RB behind an aging starting RB) was
+    // treated as ordinary replaceable depth purely because a waiver player projects better this
+    // week. Deliberately narrow — only the single best-projected non-starter at a position, only
+    // when meaningfully younger than an active starter there — so it can't become blanket
+    // protection for every young backup.
+    [Fact]
+    public void BestProjected_Young_Backup_Behind_An_Aging_Starter_Gets_Contingent_Value()
+    {
+        var agingStarter = MakePlayer(Position.RB, $"Aging Starter RB {Guid.NewGuid():N}", age: 33);
+        var nextManUp = MakePlayer(Position.RB, $"Young Backup RB {Guid.NewGuid():N}", age: 22);
+        var freeAgent = MakePlayer(Position.RB, $"FA RB {Guid.NewGuid():N}");
+        var team = MakeTeam([agingStarter.Id, nextManUp.Id], starterIds: [agingStarter.Id]);
+        var projections = new Dictionary<Guid, PlayerProjection>
+        {
+            [agingStarter.Id] = MakeProjection(agingStarter.Id, points: 9, confidence: 55),
+            [nextManUp.Id] = MakeProjection(nextManUp.Id, points: 4, confidence: 50),
+            [freeAgent.Id] = MakeProjection(freeAgent.Id, points: 6, confidence: 50)
+        };
+
+        var service = CreateService(
+            [agingStarter, nextManUp, freeAgent], projections, team, [], LeagueType.Dynasty);
+        var candidate = service.GetReport().RosterAssessment.Single(c => c.PlayerId == nextManUp.Id);
+
+        Assert.Contains(candidate.Reasons, r => r.Contains("next man up", StringComparison.OrdinalIgnoreCase));
+        Assert.NotEqual(DropPickupClassification.DropCompetitive, candidate.Classification);
+    }
+
+    [Fact]
+    public void Second_Best_Backup_At_The_Same_Position_Gets_No_Contingent_Value()
+    {
+        // Only the single best-projected non-starter counts as "next man up" — a deeper backup at
+        // the same position is still ordinary replaceable depth.
+        var agingStarter = MakePlayer(Position.RB, $"Aging Starter RB {Guid.NewGuid():N}", age: 33);
+        var nextManUp = MakePlayer(Position.RB, $"Top Backup RB {Guid.NewGuid():N}", age: 22);
+        var deeperBackup = MakePlayer(Position.RB, $"Deeper Backup RB {Guid.NewGuid():N}", age: 23);
+        var freeAgent = MakePlayer(Position.RB, $"FA RB {Guid.NewGuid():N}");
+        var team = MakeTeam(
+            [agingStarter.Id, nextManUp.Id, deeperBackup.Id], starterIds: [agingStarter.Id]);
+        var projections = new Dictionary<Guid, PlayerProjection>
+        {
+            [agingStarter.Id] = MakeProjection(agingStarter.Id, points: 9, confidence: 55),
+            [nextManUp.Id] = MakeProjection(nextManUp.Id, points: 5, confidence: 50),
+            [deeperBackup.Id] = MakeProjection(deeperBackup.Id, points: 3, confidence: 45),
+            [freeAgent.Id] = MakeProjection(freeAgent.Id, points: 6, confidence: 50)
+        };
+
+        var service = CreateService(
+            [agingStarter, nextManUp, deeperBackup, freeAgent], projections, team, [], LeagueType.Dynasty);
+        var report = service.GetReport();
+        var topCandidate = report.RosterAssessment.Single(c => c.PlayerId == nextManUp.Id);
+        var deeperCandidate = report.RosterAssessment.Single(c => c.PlayerId == deeperBackup.Id);
+
+        Assert.Contains(topCandidate.Reasons, r => r.Contains("next man up", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(deeperCandidate.Reasons, r => r.Contains("next man up", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Top_Backup_Past_The_Young_Age_Window_Gets_No_Contingent_Value()
+    {
+        // Best-projected non-starter, but not young — this is a real veteran backup, not a
+        // prospect with contingent upside, so no bonus applies even behind an aging starter.
+        var agingStarter = MakePlayer(Position.RB, $"Aging Starter RB {Guid.NewGuid():N}", age: 33);
+        var veteranBackup = MakePlayer(Position.RB, $"Veteran Backup RB {Guid.NewGuid():N}", age: 29);
+        var freeAgent = MakePlayer(Position.RB, $"FA RB {Guid.NewGuid():N}");
+        var team = MakeTeam([agingStarter.Id, veteranBackup.Id], starterIds: [agingStarter.Id]);
+        var projections = new Dictionary<Guid, PlayerProjection>
+        {
+            [agingStarter.Id] = MakeProjection(agingStarter.Id, points: 9, confidence: 55),
+            [veteranBackup.Id] = MakeProjection(veteranBackup.Id, points: 4, confidence: 50),
+            [freeAgent.Id] = MakeProjection(freeAgent.Id, points: 6, confidence: 50)
+        };
+
+        var service = CreateService(
+            [agingStarter, veteranBackup, freeAgent], projections, team, [], LeagueType.Dynasty);
+        var candidate = service.GetReport().RosterAssessment.Single(c => c.PlayerId == veteranBackup.Id);
+
+        Assert.DoesNotContain(candidate.Reasons, r => r.Contains("next man up", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Young_Backup_Behind_A_Similarly_Aged_Starter_Gets_No_Contingent_Value()
+    {
+        // Best-projected, young non-starter, but the starter ahead of him isn't meaningfully
+        // older — no real "aging starter" signal, so no contingent bonus.
+        var youngStarter = MakePlayer(Position.RB, $"Young Starter RB {Guid.NewGuid():N}", age: 25);
+        var youngBackup = MakePlayer(Position.RB, $"Young Backup RB {Guid.NewGuid():N}", age: 23);
+        var freeAgent = MakePlayer(Position.RB, $"FA RB {Guid.NewGuid():N}");
+        var team = MakeTeam([youngStarter.Id, youngBackup.Id], starterIds: [youngStarter.Id]);
+        var projections = new Dictionary<Guid, PlayerProjection>
+        {
+            [youngStarter.Id] = MakeProjection(youngStarter.Id, points: 9, confidence: 55),
+            [youngBackup.Id] = MakeProjection(youngBackup.Id, points: 4, confidence: 50),
+            [freeAgent.Id] = MakeProjection(freeAgent.Id, points: 6, confidence: 50)
+        };
+
+        var service = CreateService(
+            [youngStarter, youngBackup, freeAgent], projections, team, [], LeagueType.Dynasty);
+        var candidate = service.GetReport().RosterAssessment.Single(c => c.PlayerId == youngBackup.Id);
+
+        Assert.DoesNotContain(candidate.Reasons, r => r.Contains("next man up", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Genuinely_Expendable_Deep_Surplus_Backup_Remains_DropCompetitive_Despite_Refinement()
+    {
+        // Proves the refinement didn't neuter genuine surplus detection: a low-value, non-top
+        // backup buried on a deep bench behind an aging starter is still a legitimate drop.
+        var agingStarter = MakePlayer(Position.RB, $"Aging Starter RB {Guid.NewGuid():N}", age: 33);
+        var nextManUp = MakePlayer(Position.RB, $"Top Backup RB {Guid.NewGuid():N}", age: 22);
+        var chaff1 = MakePlayer(Position.RB, $"Chaff RB 1 {Guid.NewGuid():N}", age: 27);
+        var chaff2 = MakePlayer(Position.RB, $"Chaff RB 2 {Guid.NewGuid():N}", age: 28);
+        var chaff3 = MakePlayer(Position.RB, $"Chaff RB 3 {Guid.NewGuid():N}", age: 29);
+        var freeAgent = MakePlayer(Position.RB, $"FA RB {Guid.NewGuid():N}");
+        var team = MakeTeam(
+            [agingStarter.Id, nextManUp.Id, chaff1.Id, chaff2.Id, chaff3.Id],
+            starterIds: [agingStarter.Id]);
+        var projections = new Dictionary<Guid, PlayerProjection>
+        {
+            [agingStarter.Id] = MakeProjection(agingStarter.Id, points: 9, confidence: 55),
+            [nextManUp.Id] = MakeProjection(nextManUp.Id, points: 6, confidence: 50),
+            [chaff1.Id] = MakeProjection(chaff1.Id, points: 2, confidence: 40),
+            [chaff2.Id] = MakeProjection(chaff2.Id, points: 2, confidence: 40),
+            [chaff3.Id] = MakeProjection(chaff3.Id, points: 2, confidence: 40),
+            [freeAgent.Id] = MakeProjection(freeAgent.Id, points: 9, confidence: 50)
+        };
+
+        var service = CreateService(
+            [agingStarter, nextManUp, chaff1, chaff2, chaff3, freeAgent],
+            projections, team, [], LeagueType.Dynasty);
+        var report = service.GetReport();
+        var chaffCandidate = report.RosterAssessment.Single(c => c.PlayerId == chaff3.Id);
+
+        Assert.Equal(DropPickupClassification.DropCompetitive, chaffCandidate.Classification);
+    }
+
     /// <summary>
     /// 1 starting RB + 1 bench RB (within normal RB allowance, no surplus) alongside 3 TEs with
     /// only 1 starter (1 beyond the TE normal allowance of 2 — a genuine surplus), ages spread so

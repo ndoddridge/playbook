@@ -51,6 +51,25 @@ public sealed class DropPickupService : IDropPickupService
     private const double PreseasonDynastyImmediateDampening = 0.2;
 
     private const double DynastyRoleBonus = 3.5;
+
+    /// <summary>
+    /// Contingent "next man up" value: real dynasty upside if an older starter at the same
+    /// position declines, is traded, or retires. Deliberately about half of DynastyRoleBonus —
+    /// realized value, not yet-realized potential — and only ever applies to the single
+    /// best-projected non-starter at a position (see NextManUpMaxAge / NextManUpMinAgeGapYears),
+    /// never every backup.
+    /// </summary>
+    private const double ContingentRoleBonus = 2.0;
+
+    /// <summary>Matches the existing "young" dynasty age bucket (DynastyAgeComponent's top tier).</summary>
+    private const int NextManUpMaxAge = 26;
+
+    /// <summary>
+    /// How much older an active starter must be, at minimum, for the position's top non-starter
+    /// to count as "behind an aging starter" rather than just "behind a starter."
+    /// </summary>
+    private const double NextManUpMinAgeGapYears = 5.0;
+
     private const double DynastyThinPositionBonus = 3.0;
     private const double DynastyShallowPositionBonus = 1.0;
     private const double DynastyConfidenceWeightPerPoint = 0.04;
@@ -274,9 +293,39 @@ public sealed class DropPickupService : IDropPickupService
         // Quick Picks uses) — not this fantasy league's own week number, which says nothing about
         // whether the real season is currently in preseason.
         var isPreseason = _calendar.GetCurrentContext().Phase == NflSeasonPhase.Preseason;
+
+        // "Next man up" contingent value: real-roster-derived only, not player-specific. At each
+        // position, the single best-projected non-starter is the presumptive first player to
+        // inherit real opportunity if an older starter at that position declines, is traded, or
+        // retires — that contingent upside is real dynasty value, not "ordinary replaceable
+        // depth," even though this week's raw projection alone can't see it. Deliberately narrow
+        // (top non-starter only, and only when meaningfully younger than an active starter at the
+        // same position) so it can't turn into blanket protection for every young backup.
+        var bestNonStarterIdByPosition = activeRosterRows
+            .Where(p => !starterSet.Contains(p.Id))
+            .Select(p => (Player: p, Projection: projectionByPlayer.GetValueOrDefault(p.Id)))
+            .Where(x => x.Projection is not null)
+            .GroupBy(x => x.Player.Position)
+            .ToDictionary(
+                g => g.Key,
+                g => g.OrderByDescending(x => (double)x.Projection!.ProjectedFantasyPoints).First().Player.Id);
+
+        var oldestStarterAgeByPosition = activeRosterRows
+            .Where(p => starterSet.Contains(p.Id) && p.Age is not null)
+            .GroupBy(p => p.Position)
+            .ToDictionary(g => g.Key, g => g.Max(p => p.Age!.Value));
+
         var dropCandidates = rosterRows
             .Select(player =>
             {
+                var isNextManUp = isDynasty &&
+                    !starterSet.Contains(player.Id) &&
+                    !reserveSet.Contains(player.Id) &&
+                    player.Age is int nextManAge && nextManAge <= NextManUpMaxAge &&
+                    bestNonStarterIdByPosition.GetValueOrDefault(player.Position) == player.Id &&
+                    oldestStarterAgeByPosition.TryGetValue(player.Position, out var oldestStarterAge) &&
+                    oldestStarterAge - nextManAge >= NextManUpMinAgeGapYears;
+
                 var positionDepth = depthByPosition.GetValueOrDefault(player.Position);
                 var starters = startersByPosition.GetValueOrDefault(player.Position);
                 var normalAllowance = Math.Max(starters + NormalBenchAllowance(player.Position), MinimumNormalAllowance);
@@ -289,6 +338,7 @@ public sealed class DropPickupService : IDropPickupService
                     player,
                     starterSet.Contains(player.Id),
                     reserveSet.Contains(player.Id),
+                    isNextManUp,
                     projectionByPlayer.GetValueOrDefault(player.Id),
                     positionDepth,
                     freeAgentsByPosition.GetValueOrDefault(player.Position),
@@ -410,6 +460,7 @@ public sealed class DropPickupService : IDropPickupService
         Player player,
         bool isStarter,
         bool isReserve,
+        bool isNextManUp,
         PlayerProjection? projection,
         int positionDepth,
         List<(Player Player, PlayerProjection? Projection)>? freeAgentsAtPosition,
@@ -446,7 +497,7 @@ public sealed class DropPickupService : IDropPickupService
         if (isDynasty)
         {
             var ageComponent = DynastyAgeComponent(player.Age, player.Position);
-            var roleComponent = isStarter ? DynastyRoleBonus : 0.0;
+            var roleComponent = isStarter ? DynastyRoleBonus : isNextManUp ? ContingentRoleBonus : 0.0;
             var injuryComponent = DynastyInjuryComponent(currentInjury);
             var dynastyScarcityBonus =
                 positionDepth <= 1 ? DynastyThinPositionBonus : positionDepth == 2 ? DynastyShallowPositionBonus : 0.0;
@@ -540,6 +591,13 @@ public sealed class DropPickupService : IDropPickupService
         if (isStarter)
         {
             reasons.Add("Currently a starter.");
+        }
+
+        if (isNextManUp)
+        {
+            reasons.Add(
+                $"Best-projected backup {player.Position} behind an older starter — retains contingent " +
+                "dynasty value as the presumptive next man up.");
         }
 
         // Shared research-memory evidence — purely additive context, never a scoring input. Only
