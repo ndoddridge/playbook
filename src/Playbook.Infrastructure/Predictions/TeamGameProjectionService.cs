@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Playbook.Application.Injuries.Interfaces;
 using Playbook.Application.Intelligence.Interfaces;
 using Playbook.Application.Players;
@@ -7,16 +8,19 @@ using Playbook.Application.Stats.Interfaces;
 using Playbook.Core.Players;
 using Playbook.Core.Predictions;
 using Playbook.Core.Predictions.Models;
-using Playbook.Core.Projections.Models;
 using Playbook.Core.Stats.Models;
-using Microsoft.Extensions.Logging;
 
 namespace Playbook.Infrastructure.Predictions;
 
 /// <summary>
-/// Estimates team-level game scoring by aggregating player projections with real intelligence factors.
-/// Regular season: uses player projections + health/usage/trend adjustments.
-/// Preseason: conservative, unavailable unless strong roster data available.
+/// Builds a team's aggregate offensive production from real player projections, injuries and
+/// intelligence, then decides whether that aggregate can honestly answer a game market.
+///
+/// It currently cannot, and says so. The aggregate is weekly <em>fantasy</em> points in the
+/// connected league's scoring format; a sportsbook total/spread is in NFL points. Playbook has
+/// no validated conversion between the two, so this returns Unavailable rather than emitting a
+/// number in the wrong units. The aggregation itself is still computed and reported, so the
+/// inputs stay observable and the only missing piece is the calibration.
 /// </summary>
 public sealed class TeamGameProjectionService : ITeamGameProjectionService
 {
@@ -53,165 +57,111 @@ public sealed class TeamGameProjectionService : ITeamGameProjectionService
             return TeamGameProjection.Unavailable("Empty team abbreviation");
         }
 
-        // Preseason: do not fabricate lineup/snap assumptions.
+        // Preseason: roster/snap uncertainty is too high to project a team at all.
         if (seasonPhase == NflSeasonPhase.Preseason)
         {
             return TeamGameProjection.Unavailable(
                 "Team projections unavailable during preseason (roster/lineup uncertainty too high).");
         }
 
-        // Regular season: aggregate player projections with real intelligence factors.
         try
         {
-            var projections = _projectionService.GetAllProjections();
-            if (projections.Count == 0)
+            var index = BuildProductionIndex(teamAbbreviation);
+            if (index is null)
             {
-                return TeamGameProjection.Unavailable("No player projections available");
+                return TeamGameProjection.Unavailable(
+                    $"Insufficient player data for {teamAbbreviation} (need a quarterback and at least one skill player).");
             }
 
-            // Collect offensive players on this team, split by position.
-            var qbs = new List<(PlayerProjection proj, Player player)>();
-            var rbsWrsTeS = new List<(PlayerProjection proj, Player player)>();
-
-            foreach (var proj in projections)
-            {
-                var player = _playerService.GetPlayer(proj.PlayerId);
-                if (player is not null &&
-                    string.Equals(player.Team, teamAbbreviation, StringComparison.OrdinalIgnoreCase) &&
-                    player.Status == PlayerStatus.Active)
-                {
-                    if (player.Position == Position.QB)
-                    {
-                        qbs.Add((proj, player));
-                    }
-                    else if (player.Position is Position.RB or Position.WR or Position.TE)
-                    {
-                        rbsWrsTeS.Add((proj, player));
-                    }
-                }
-            }
-
-            if (rbsWrsTeS.Count == 0)
-            {
-                return TeamGameProjection.Unavailable($"No active RB/WR/TE found for {teamAbbreviation}");
-            }
-
-            // QB adjustment: critical for team scoring.
-            var qbMultiplier = 1m;
-            if (qbs.Count > 0)
-            {
-                var qb = qbs[0]; // Primary QB
-                var qbInjury = _injuryService.GetCurrentInjury(qb.player.Id);
-                var qbIntel = _intelligenceService.GetPlayerProfile(qb.player.Id);
-
-                // If QB is out/injured, apply significant reduction.
-                if (qbInjury?.IsOutOrSidelined() ?? false)
-                {
-                    qbMultiplier = 0.75m; // Backup QB is typically 75% as effective
-                }
-                else if (qbIntel?.HealthScore < 40)
-                {
-                    qbMultiplier = 0.90m; // Injured but playing is slightly reduced
-                }
-            }
-            else
-            {
-                // No QB on roster (unusual)
-                qbMultiplier = 0.75m;
-            }
-
-            // Aggregate RB/WR/TE with health-score weighting.
-            decimal totalProjection = 0;
-            int projectionCount = 0;
-
-            foreach (var (proj, player) in rbsWrsTeS)
-            {
-                var adjustedProj = proj.ProjectedPoints;
-
-                // Health-score adjustment: lower health score = lower expected production.
-                var playerIntel = _intelligenceService.GetPlayerProfile(player.Id);
-                if (playerIntel is not null)
-                {
-                    // Health score 50 = neutral, < 50 = hurt, > 50 = healthy
-                    var healthMultiplier = (playerIntel.HealthScore - 25m) / 100m; // Range: 0.25 to 0.75
-                    healthMultiplier = Math.Clamp(healthMultiplier, 0.60m, 1.15m); // Don't go too extreme
-                    adjustedProj = Math.Round(adjustedProj * healthMultiplier, 1);
-                }
-
-                // Recent trend adjustment: if player's usage is trending down, reduce projection.
-                var statsCtx = _statsService.GetContext(player.Id);
-                if (statsCtx?.Trend == StatisticalTrendSignal.Decreasing)
-                {
-                    adjustedProj = Math.Round(adjustedProj * 0.95m, 1);
-                }
-                else if (statsCtx?.Trend == StatisticalTrendSignal.Increasing)
-                {
-                    adjustedProj = Math.Round(adjustedProj * 1.05m, 1);
-                }
-
-                totalProjection += adjustedProj;
-                projectionCount++;
-            }
-
-            // Apply QB multiplier to the full team projection.
-            totalProjection = Math.Round(totalProjection * qbMultiplier, 1);
-
-            // Confidence based on:
-            // 1. Coverage: have projections for most starters?
-            // 2. Injury: any key players out?
-            // 3. Trend stability: is the team's offensive production stable?
-            var coverageRatio = (decimal)rbsWrsTeS.Count / 8m; // Expect ~8 key positions
-            var baseCoverage = Math.Clamp(coverageRatio, 0.5m, 1m) * 100m;
-
-            var injuryImpact = 0; // 0 = no impact, -10 = some key player out, etc.
-            var activeInjuries = rbsWrsTeS.Count(pair =>
-            {
-                var inj = _injuryService.GetCurrentInjury(pair.player.Id);
-                return inj?.IsOutOrSidelined() ?? false;
-            });
-            if (activeInjuries > 0)
-            {
-                injuryImpact = -Math.Min(activeInjuries * 8, 20);
-            }
-
-            var confidence = (int)Math.Clamp(baseCoverage * 0.75m + 50m + injuryImpact, 25, 75);
-
-            var volatility = 48; // Slightly higher due to team-level unpredictability
-
-            var reasoning = $"Aggregated {projectionCount} players ({rbsWrsTeS.Count} skill); " +
-                          $"QB multiplier {qbMultiplier:0.00}; health-adjusted; recent trends applied; " +
-                          $"proj {totalProjection} pts · conf {confidence}%";
-
-            if (totalProjection < 8 || confidence < 25)
-            {
-                return TeamGameProjection.Unavailable($"Insufficient quality: {reasoning}");
-            }
-
-            return new TeamGameProjection
-            {
-                TeamAbbreviation = teamAbbreviation,
-                EstimatedTeamScore = totalProjection,
-                Confidence = confidence,
-                Volatility = volatility,
-                Reasoning = reasoning
-            };
+            // ---------------------------------------------------------------------------
+            // UNIT GUARD — the reason no game-market pick is produced today.
+            //
+            // index.FantasyProductionPoints is a sum of weekly fantasy points in the connected
+            // league's scoring format. A sportsbook total/spread is in NFL points. These are
+            // different units: the aggregate moves when the user's league switches PPR →
+            // Standard, and PPR reception points have no scoreboard equivalent at all.
+            //
+            // Comparing them would put a ~75-point aggregate against a ~45-point total and
+            // produce a maximum-edge OVER on every game on the slate. Dividing by a guessed
+            // constant, or fitting to the sportsbook line, would both be fabrication — the line
+            // is the market we are trying to beat, not an input.
+            //
+            // So: report the real aggregate, withhold the pick, and wait for a real calibration.
+            // ---------------------------------------------------------------------------
+            return TeamGameProjection.Unavailable(
+                $"{teamAbbreviation}: offensive production index {index.FantasyProductionPoints} fantasy pts " +
+                $"({index.Explanation}). No validated conversion from fantasy production to NFL points " +
+                "exists yet, so this cannot be compared against a sportsbook points line.");
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Team projection failed for {Team}", teamAbbreviation);
+            _logger.LogWarning(ex, "Team production index failed for {Team}", teamAbbreviation);
             return TeamGameProjection.Unavailable($"Projection service error: {ex.Message}");
         }
     }
+
+    /// <summary>
+    /// Gather this team's real per-player inputs and aggregate them.
+    /// Internal so the data-gathering path is testable independently of the unit guard.
+    /// </summary>
+    internal TeamProductionIndex? BuildProductionIndex(string teamAbbreviation)
+    {
+        var projections = _projectionService.GetAllProjections();
+        if (projections.Count == 0)
+        {
+            return null;
+        }
+
+        var inputs = new List<TeamPlayerProductionInput>();
+
+        foreach (var projection in projections)
+        {
+            var player = _playerService.GetPlayer(projection.PlayerId);
+            if (player is null ||
+                !string.Equals(player.Team, teamAbbreviation, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (player.Position is not (Position.QB or Position.RB or Position.WR or Position.TE))
+            {
+                continue;
+            }
+
+            // Roster status and injury designation both rule a player out. Previously a
+            // sidelined player was still counted at full projected value, which inflated the
+            // aggregate by the exact production that will not happen.
+            var ruledOutByRoster = player.Status
+                is PlayerStatus.InjuredReserve
+                or PlayerStatus.Suspended
+                or PlayerStatus.PracticeSquad;
+
+            var ruledOutByInjury = _injuryService.GetCurrentInjury(player.Id)?.IsOutOrSidelined() ?? false;
+
+            inputs.Add(new TeamPlayerProductionInput
+            {
+                Position = player.Position,
+                ProjectedFantasyPoints = projection.ProjectedPoints,
+                IsRuledOut = ruledOutByRoster || ruledOutByInjury,
+                HealthScore = _intelligenceService.GetPlayerProfile(player.Id)?.HealthScore,
+                Trend = _statsService.GetContext(player.Id)?.Trend ?? StatisticalTrendSignal.Unknown
+            });
+        }
+
+        return inputs.Count == 0 ? null : TeamProductionIndexCalculator.Compute(inputs);
+    }
 }
 
-/// <summary>Extension methods for injury data.</summary>
+/// <summary>Injury designation helpers.</summary>
 internal static class InjuryExtensions
 {
     internal static bool IsOutOrSidelined(this Core.Injuries.Models.PlayerInjuryRecord injury)
     {
         if (injury?.Status is null)
+        {
             return false;
-        // Out / IR / PUP / Suspension are all sidelining statuses.
+        }
+
         return injury.Status.Contains("Out", StringComparison.OrdinalIgnoreCase) ||
                injury.Status.Contains("IR", StringComparison.OrdinalIgnoreCase) ||
                injury.Status.Contains("PUP", StringComparison.OrdinalIgnoreCase) ||

@@ -58,6 +58,24 @@ public static class GameMarketProjector
         };
     }
 
+    /// <summary>
+    /// The home margin the market implies, given a home spread line.
+    ///
+    /// TheOddsAPI publishes the spread from the home team's perspective, so a home favourite is
+    /// a NEGATIVE point value (home −6.5 ⇒ the market expects home to win by 6.5). A projected
+    /// margin, by contrast, is POSITIVE when home is better. The two must be put in the same
+    /// convention before any edge is computed:
+    ///
+    ///     edge = projectedHomeMargin − MarketImpliedHomeMargin(line)
+    ///
+    /// Comparing a positive projected margin directly against the raw negative line — which is
+    /// what the pipeline would do today — roughly doubles the apparent edge and would flag every
+    /// home favourite as a value bet. This helper exists so the conversion is defined and tested
+    /// now; it is wired in as part of the points-calibration work, since the spread path is
+    /// withheld until then (see TeamGameProjectionService).
+    /// </summary>
+    public static decimal MarketImpliedHomeMargin(decimal homeSpreadLine) => -homeSpreadLine;
+
     /// <summary>Get the home team abbreviation from game event.</summary>
     private static string GetHomeTeamAbbreviation(FootballEvent gameEvent)
     {
