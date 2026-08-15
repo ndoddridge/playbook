@@ -492,6 +492,26 @@ public sealed class QuickPicksService : IQuickPicksService
             };
 
             var prediction = _engine.Evaluate(evaluation);
+
+            // Game-market bets are withheld. The team-points model predicts points well (it beats
+            // every naive baseline on two held-out seasons) but it does NOT beat a closing line:
+            // backtested against real closing lines it wins 49.8% of totals and 48.9% of spreads
+            // against a 52.4% break-even, and on totals it gets WORSE as its disagreement widens.
+            // See TeamPointsModel.GameMarketBettingEnabled for the full table.
+            //
+            // The projection itself is still produced and remains visible; only the wager is
+            // suppressed. Loosening this to populate the board would ship a losing strategy.
+            if (prediction is not null && isGameMarket && !TeamPointsModel.GameMarketBettingEnabled)
+            {
+                prediction = null;
+            }
+            else if (prediction is not null
+                && isGameMarket
+                && Math.Abs(prediction.Edge) < TeamPointsModel.MinimumGameMarketEdgePoints)
+            {
+                prediction = null;
+            }
+
             if (prediction is not null)
             {
                 // Knowledge Impact: bounded ranking adjustment (Baseline = no-op).

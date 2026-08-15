@@ -13,14 +13,19 @@ using Playbook.Core.Stats.Models;
 namespace Playbook.Infrastructure.Predictions;
 
 /// <summary>
-/// Builds a team's aggregate offensive production from real player projections, injuries and
-/// intelligence, then decides whether that aggregate can honestly answer a game market.
+/// Expected NFL points for one team in one game.
 ///
-/// It currently cannot, and says so. The aggregate is weekly <em>fantasy</em> points in the
-/// connected league's scoring format; a sportsbook total/spread is in NFL points. Playbook has
-/// no validated conversion between the two, so this returns Unavailable rather than emitting a
-/// number in the wrong units. The aggregation itself is still computed and reported, so the
-/// inputs stay observable and the only missing piece is the calibration.
+/// Runs the calibrated <see cref="TeamPointsModel"/>, which was fitted on real completed NFL
+/// final scores (nflverse schedules) and validated on two held-out seasons. Output is in POINTS
+/// and is therefore directly comparable to a sportsbook total or spread.
+///
+/// This deliberately does NOT use the fantasy-production aggregate. That path was withheld in
+/// 70b0428 because fantasy points are not NFL points; the fix was to model points directly from
+/// completed-game scoring rather than to invent a conversion. <see cref="BuildProductionIndex"/>
+/// is retained for observability of the player-level inputs and is not part of the points path.
+///
+/// Returns Unavailable — never an extrapolation — whenever the required completed-game history
+/// does not exist, which includes all of preseason and the opening weeks of a season.
 /// </summary>
 public sealed class TeamGameProjectionService : ITeamGameProjectionService
 {
@@ -29,7 +34,15 @@ public sealed class TeamGameProjectionService : ITeamGameProjectionService
     private readonly IPlayerInjuryService _injuryService;
     private readonly IIntelligenceService _intelligenceService;
     private readonly IPlayerStatisticalContextService _statsService;
+    private readonly IHistoricalGameScoreProvider _scores;
     private readonly ILogger<TeamGameProjectionService> _logger;
+
+    /// <summary>
+    /// Conservative baseline, anchored to measured error rather than invented: the model's
+    /// held-out 2025 RMSE was 8.8 points against a league SD of ~10, i.e. it explains only part
+    /// of the variance. Not a learned volatility model.
+    /// </summary>
+    internal const int TeamPointsVolatility = 55;
 
     public TeamGameProjectionService(
         IPlayerService playerService,
@@ -37,6 +50,7 @@ public sealed class TeamGameProjectionService : ITeamGameProjectionService
         IPlayerInjuryService injuryService,
         IIntelligenceService intelligenceService,
         IPlayerStatisticalContextService statsService,
+        IHistoricalGameScoreProvider scores,
         ILogger<TeamGameProjectionService> logger)
     {
         _playerService = playerService;
@@ -44,6 +58,7 @@ public sealed class TeamGameProjectionService : ITeamGameProjectionService
         _injuryService = injuryService;
         _intelligenceService = intelligenceService;
         _statsService = statsService;
+        _scores = scores;
         _logger = logger;
     }
 
@@ -66,32 +81,46 @@ public sealed class TeamGameProjectionService : ITeamGameProjectionService
 
         try
         {
-            var index = BuildProductionIndex(teamAbbreviation);
-            if (index is null)
+            // Real NFL points, from the calibrated team-points model fitted on real final scores.
+            // The fantasy-production index is NOT used here — that units gap (70b0428) is exactly
+            // why this path now runs on completed-game scoring instead.
+            var completed = _scores.GetCompletedGames(gameEvent.Season);
+            if (completed.Count == 0)
             {
                 return TeamGameProjection.Unavailable(
-                    $"Insufficient player data for {teamAbbreviation} (need a quarterback and at least one skill player).");
+                    "Historical NFL scores unavailable — team-points model cannot run.");
             }
 
-            // ---------------------------------------------------------------------------
-            // UNIT GUARD — the reason no game-market pick is produced today.
-            //
-            // index.FantasyProductionPoints is a sum of weekly fantasy points in the connected
-            // league's scoring format. A sportsbook total/spread is in NFL points. These are
-            // different units: the aggregate moves when the user's league switches PPR →
-            // Standard, and PPR reception points have no scoreboard equivalent at all.
-            //
-            // Comparing them would put a ~75-point aggregate against a ~45-point total and
-            // produce a maximum-edge OVER on every game on the slate. Dividing by a guessed
-            // constant, or fitting to the sportsbook line, would both be fabrication — the line
-            // is the market we are trying to beat, not an input.
-            //
-            // So: report the real aggregate, withhold the pick, and wait for a real calibration.
-            // ---------------------------------------------------------------------------
-            return TeamGameProjection.Unavailable(
-                $"{teamAbbreviation}: offensive production index {index.FantasyProductionPoints} fantasy pts " +
-                $"({index.Explanation}). No validated conversion from fantasy production to NFL points " +
-                "exists yet, so this cannot be compared against a sportsbook points line.");
+            var isHome = string.Equals(gameEvent.HomeTeam, teamAbbreviation, StringComparison.OrdinalIgnoreCase);
+            var opponent = isHome ? gameEvent.AwayTeam : gameEvent.HomeTeam;
+
+            var features = TeamPointsFeatureBuilder.Build(
+                teamAbbreviation, opponent, isHome, gameEvent.Season, gameEvent.Week, completed);
+
+            if (features is null)
+            {
+                return TeamGameProjection.Unavailable(
+                    $"{teamAbbreviation}: no completed games this season yet — team-points model needs "
+                    + $"{TeamPointsModel.MinimumGamesObserved}+ games for both teams.");
+            }
+
+            var prediction = TeamPointsModel.Predict(features);
+            if (prediction is null)
+            {
+                return TeamGameProjection.Unavailable(
+                    $"{teamAbbreviation}: only {features.GamesObservedTeam} team / "
+                    + $"{features.GamesObservedOpponent} opponent completed games — model requires "
+                    + $"{TeamPointsModel.MinimumGamesObserved} of each. No extrapolation.");
+            }
+
+            return new TeamGameProjection
+            {
+                TeamAbbreviation = teamAbbreviation,
+                EstimatedTeamScore = prediction.ExpectedPoints,
+                Confidence = prediction.Confidence,
+                Volatility = TeamPointsVolatility,
+                Reasoning = prediction.Explanation
+            };
         }
         catch (Exception ex)
         {

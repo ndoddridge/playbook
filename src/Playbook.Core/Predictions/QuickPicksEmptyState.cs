@@ -67,12 +67,14 @@ public static class QuickPicksEmptyState
             "No eligible player props for this slate and filter.",
 
         QuickPicksEmptyReason.GameLinesNotEvaluable =>
-            $"{gameMarketLines} real game line(s) are available for this slate, but Playbook does not "
-            + "currently have enough information to evaluate them responsibly. No player props are offered.",
+            $"{gameMarketLines} real game line(s) are available for this slate. Playbook's team-points "
+            + "model has no demonstrated edge over the closing line, so it is not recommending game "
+            + "bets. No player props are offered.",
 
         QuickPicksEmptyReason.NeitherMarketQualified =>
-            $"No eligible player props. {gameMarketLines} real game line(s) are available, but Playbook "
-            + "does not currently have enough information to evaluate them responsibly.",
+            $"No eligible player props. {gameMarketLines} real game line(s) are available, but Playbook's "
+            + "team-points model has no demonstrated edge over the closing line, so it is not "
+            + "recommending game bets.",
 
         QuickPicksEmptyReason.FilteredOut =>
             "No picks match the current filter.",

@@ -21,7 +21,9 @@ public class QuickPicksEmptyStateTests
 
         var text = QuickPicksEmptyState.Describe(reason, 21);
         Assert.Contains("game line", text, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("enough information", text, StringComparison.OrdinalIgnoreCase);
+        // The reason given must be the real one: the model has no demonstrated edge over the
+        // closing line, not that player props were unavailable.
+        Assert.Contains("no demonstrated edge", text, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("No eligible props", text, StringComparison.OrdinalIgnoreCase);
     }
 

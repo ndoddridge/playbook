@@ -118,16 +118,20 @@ public class GameMarketProjectionTests
         var (projection, conf, vol) = GameMarketProjector.ProjectGameMarket(
             PredictionMarketType.Spread, gameEvent, line, teamProjService, NflSeasonPhase.RegularSeason);
 
-        // Assert
+        // Assert — projection is emitted in the BOOK's convention, so a home team projected to
+        // win by 8 is reported as -8 (home -8), matching how the sportsbook publishes the line.
+        // This is what makes (projection - line) the true edge rather than roughly double it.
         Assert.NotNull(projection);
-        Assert.InRange(projection.Value, 7.9m, 8.1m);
+        Assert.InRange(projection.Value, -8.1m, -7.9m);
         Assert.True(conf > 0);
     }
 
     [Fact]
-    public void GameMarketProjector_Winner_RegularSeason_ReturnsProjection()
+    public void GameMarketProjector_Winner_IsDisabled_NotFakedFromMargin()
     {
-        // Moneyline should return spread projection
+        // Moneyline is deliberately unavailable. QuickPicksEngine compares Winner markets against
+        // a 0.5 probability constant, and a point margin is not a probability. Until a calibrated
+        // margin-to-win-probability mapping exists, returning nothing is the honest answer.
         var gameEvent = MakeGameEvent("BUF@MIA", NflSeasonPhase.RegularSeason);
         var line = MakePropLine(PredictionMarketType.Winner, gameEvent);
 
@@ -155,10 +159,9 @@ public class GameMarketProjectionTests
         var (projection, conf, vol) = GameMarketProjector.ProjectGameMarket(
             PredictionMarketType.Winner, gameEvent, line, teamProjService, NflSeasonPhase.RegularSeason);
 
-        // Assert
-        Assert.NotNull(projection);
-        Assert.InRange(projection.Value, 6.9m, 7.1m);
-        Assert.True(conf > 0);
+        // Assert — no projection even though both team projections are available.
+        Assert.Null(projection);
+        Assert.Equal(0, conf);
     }
 
     [Fact]

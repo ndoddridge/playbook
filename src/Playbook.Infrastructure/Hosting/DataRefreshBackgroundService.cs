@@ -25,6 +25,7 @@ public sealed class DataRefreshBackgroundService : BackgroundService
     private readonly IIntelligenceService _intelligence;
     private readonly IProjectionService _projections;
     private readonly IQuickPicksService _quickPicks;
+    private readonly IHistoricalGameScoreProvider _gameScores;
     private readonly IPostEventReconciliationService _reconciliation;
     private readonly BackgroundRefreshOptions _options;
     private readonly ILogger<DataRefreshBackgroundService> _logger;
@@ -37,6 +38,7 @@ public sealed class DataRefreshBackgroundService : BackgroundService
         IIntelligenceService intelligence,
         IProjectionService projections,
         IQuickPicksService quickPicks,
+        IHistoricalGameScoreProvider gameScores,
         IPostEventReconciliationService reconciliation,
         IOptions<BackgroundRefreshOptions> options,
         ILogger<DataRefreshBackgroundService> logger)
@@ -48,6 +50,7 @@ public sealed class DataRefreshBackgroundService : BackgroundService
         _intelligence = intelligence;
         _projections = projections;
         _quickPicks = quickPicks;
+        _gameScores = gameScores;
         _reconciliation = reconciliation;
         _options = options.Value;
         _logger = logger;
@@ -82,6 +85,7 @@ public sealed class DataRefreshBackgroundService : BackgroundService
             await RefreshInjuriesAsync(stoppingToken).ConfigureAwait(false);
             RefreshIntelligence();
             RefreshProjections();
+            await RefreshGameScoresAsync(stoppingToken).ConfigureAwait(false);
             RefreshQuickPicks();
             RunPostEventReconciliation();
 
@@ -174,6 +178,24 @@ public sealed class DataRefreshBackgroundService : BackgroundService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Background refresh: projection update failed");
+        }
+    }
+
+    /// <summary>
+    /// Real NFL final scores feed the team-points model. Refreshed before Quick Picks so a
+    /// newly completed week is reflected in the next projection. A failure here leaves the
+    /// model without history, which surfaces as NO PLAY rather than a stale or invented number.
+    /// </summary>
+    private async Task RefreshGameScoresAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _gameScores.RefreshAsync(DateTime.UtcNow.Year, cancellationToken).ConfigureAwait(false);
+            _logger.LogInformation("Background refresh: historical NFL scores updated");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Background refresh: historical NFL score update failed");
         }
     }
 

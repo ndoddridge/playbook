@@ -215,6 +215,11 @@ public static class DependencyInjection
         services.AddSingleton<IQuickPicksSyncStatus>(sp => sp.GetRequiredService<QuickPicksSyncStatus>());
         services.AddSingleton<IQuickPicksEngine, QuickPicksEngine>();
         services.AddSingleton<INflCalendarService, NflCalendarService>();
+        // Real NFL final scores — the only source of team points. Reuses the nflverse CSV cache
+        // already registered for historical replay, so no new external dependency or API key.
+        services.AddSingleton<NflverseGameScoreProvider>();
+        services.AddSingleton<IHistoricalGameScoreProvider>(sp =>
+            sp.GetRequiredService<NflverseGameScoreProvider>());
         services.AddSingleton<ITeamGameProjectionService, TeamGameProjectionService>();
 
         services.AddSingleton<MockPropLineProvider>();

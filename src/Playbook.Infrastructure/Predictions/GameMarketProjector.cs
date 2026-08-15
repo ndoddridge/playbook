@@ -5,10 +5,15 @@ using Playbook.Core.Predictions.Models;
 namespace Playbook.Infrastructure.Predictions;
 
 /// <summary>
-/// Game-market projection for Quick Picks (Spread, Total, Moneyline, Team Total).
-/// Complements PropStatProjector (player props) by estimating team-level scoring.
-/// Regular season: aggregates player data for defensible estimates.
-/// Preseason: returns unavailable to avoid fabricated lineup/snap estimates.
+/// Converts calibrated team-point projections into game-market numbers.
+///
+/// Team Total = that team's expected points.
+/// Game Total = home + away expected points.
+/// Spread     = projected home line, in the book's own sign convention.
+/// Moneyline  = DISABLED — a point margin is not a win probability (see EstimateMoneyline).
+///
+/// All values originate from TeamPointsModel, fitted on real completed NFL scores. Preseason
+/// returns nothing: participation dominates preseason outcomes and Playbook cannot observe it.
 /// </summary>
 public static class GameMarketProjector
 {
@@ -68,11 +73,9 @@ public static class GameMarketProjector
     ///
     ///     edge = projectedHomeMargin − MarketImpliedHomeMargin(line)
     ///
-    /// Comparing a positive projected margin directly against the raw negative line — which is
-    /// what the pipeline would do today — roughly doubles the apparent edge and would flag every
-    /// home favourite as a value bet. This helper exists so the conversion is defined and tested
-    /// now; it is wired in as part of the points-calibration work, since the spread path is
-    /// withheld until then (see TeamGameProjectionService).
+    /// Comparing a positive projected margin directly against the raw negative line roughly
+    /// doubles the apparent edge and would flag every home favourite as a value bet. EstimateSpread
+    /// therefore emits its projection already in the book's convention.
     /// </summary>
     public static decimal MarketImpliedHomeMargin(decimal homeSpreadLine) => -homeSpreadLine;
 
@@ -176,11 +179,19 @@ public static class GameMarketProjector
             return (null, 0, 100);
         }
 
-        var spreadProjection = homeTeamProj.EstimatedTeamScore - awayTeamProj.EstimatedTeamScore;
+        // Convention: the book publishes the HOME line, negative when home is favoured
+        // (home -6.5). A projected margin is positive when home is better. Emitting the raw
+        // margin would make the engine compute (+8) - (-6.5) = 14.5 for what is really a
+        // 1.5-point disagreement. Emit in the book's convention so (projection - line) is the
+        // true edge, and the engine's Cover/NotCover mapping stays correct: a projection more
+        // negative than the line means home covers by more than the market expects.
+        var projectedMargin = homeTeamProj.EstimatedTeamScore - awayTeamProj.EstimatedTeamScore;
+        var projectedHomeLine = -projectedMargin;
+
         var avgConf = (homeTeamProj.Confidence + awayTeamProj.Confidence) / 2;
         var maxVol = Math.Max(homeTeamProj.Volatility, awayTeamProj.Volatility);
 
-        return (spreadProjection, avgConf, maxVol);
+        return (projectedHomeLine, avgConf, maxVol);
     }
 
     private static (decimal? Projection, int Confidence, int Volatility) EstimateMoneyline(
@@ -189,33 +200,21 @@ public static class GameMarketProjector
         ITeamGameProjectionService projectionService,
         NflSeasonPhase seasonPhase)
     {
-        // Moneyline (Winner): home wins if spread > 0. Return the spread as proxy.
-        var homeAbbr = GetHomeTeamAbbreviation(gameEvent);
-        var awayAbbr = GetAwayTeamAbbreviation(gameEvent);
-
-        if (string.IsNullOrEmpty(homeAbbr) || string.IsNullOrEmpty(awayAbbr))
-        {
-            return (null, 0, 100);
-        }
-
-        var homeTeamProj = projectionService.GetTeamProjection(homeAbbr, gameEvent, seasonPhase);
-        if (homeTeamProj.Confidence == 0)
-        {
-            return (null, 0, 100);
-        }
-
-        var awayTeamProj = projectionService.GetTeamProjection(awayAbbr, gameEvent, seasonPhase);
-        if (awayTeamProj.Confidence == 0)
-        {
-            return (null, 0, 100);
-        }
-
-        // Moneyline edge is typically the spread, but normalized to ±0.5 for direction.
-        // For now, use spread as the projection (engine will map to direction).
-        var spreadProjection = homeTeamProj.EstimatedTeamScore - awayTeamProj.EstimatedTeamScore;
-        var avgConf = (homeTeamProj.Confidence + awayTeamProj.Confidence) / 2;
-        var maxVol = Math.Max(homeTeamProj.Volatility, awayTeamProj.Volatility);
-
-        return (spreadProjection, avgConf, maxVol);
+        // MONEYLINE IS DISABLED.
+        //
+        // QuickPicksEngine compares the projection against a 0.5 constant for Winner markets
+        // (ResolveComparableLine), i.e. it expects a probability. A point margin is not a
+        // probability, and Playbook has no calibrated margin-to-win-probability mapping: doing
+        // that honestly needs the historical relationship between projected margin and actual
+        // win rate, which has not been fitted or validated.
+        //
+        // Feeding a margin into a probability slot would make every positive-margin game read as
+        // a maximum-confidence home bet. Returning no projection keeps moneyline at NO PLAY until
+        // a real win-probability calibration exists.
+        _ = gameEvent;
+        _ = line;
+        _ = projectionService;
+        _ = seasonPhase;
+        return (null, 0, 100);
     }
 }
