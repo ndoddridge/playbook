@@ -85,7 +85,7 @@
             <p class="qp-section__subtitle">@topSubtitle@(selected is null ? "" : $" · {selected.DisplayLabel}")</p>
             @if (visibleTop.Count == 0)
             {
-                <p class="pb-empty">No eligible props for this slate and filter.</p>
+                <p class="pb-empty">@EmptyBoardMessage()</p>
             }
             else
             {
@@ -222,6 +222,17 @@
             topCount = Math.Clamp(n, 1, 20);
             ApplyFilters();
         }
+    }
+
+    /// <summary>
+    /// Explain an empty board from what the slate actually contained. Real game lines that
+    /// Playbook declined to evaluate must not be reported as "no eligible props".
+    /// </summary>
+    private string EmptyBoardMessage()
+    {
+        var (gameLines, propLines) = Board.GetSlateMarketCounts();
+        var reason = QuickPicksEmptyState.Classify(gameLines, propLines, slatePredictions.Count);
+        return QuickPicksEmptyState.Describe(reason, gameLines);
     }
 
     private void ApplyFilters()

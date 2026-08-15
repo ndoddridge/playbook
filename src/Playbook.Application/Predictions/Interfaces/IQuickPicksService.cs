@@ -36,6 +36,13 @@ public interface IQuickPicksService
     IReadOnlyList<FootballEvent> GetUpcomingEvents();
 
     /// <summary>
+    /// Real sportsbook lines present on the selected slate, split by kind. Lets the UI explain an
+    /// empty board honestly — in particular, it must not claim "no eligible props" when real game
+    /// lines arrived and Playbook simply declined to evaluate them.
+    /// </summary>
+    (int GameMarketLines, int PlayerPropLines) GetSlateMarketCounts();
+
+    /// <summary>
     /// Select a canonical season slate. Rebuilds predictions for that slate only
     /// (empty when the provider has no markets for it). Returns false if out of season.
     /// </summary>

@@ -26,6 +26,12 @@ public interface IQuickPicksBoard
 
     IReadOnlyList<FootballEvent> Upcoming { get; }
 
+    /// <summary>
+    /// Real sportsbook lines on the selected slate, split by kind, so an empty board can be
+    /// explained honestly rather than always blamed on player props.
+    /// </summary>
+    (int GameMarketLines, int PlayerPropLines) GetSlateMarketCounts();
+
     bool TrySelectWeek(NflWeekRef week);
 
     void Refresh();

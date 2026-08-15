@@ -184,6 +184,23 @@ public sealed class QuickPicksService : IQuickPicksService
         return _events;
     }
 
+    public (int GameMarketLines, int PlayerPropLines) GetSlateMarketCounts()
+    {
+        EnsureLoaded();
+
+        var slateLines = _enrichedLines
+            .Where(l => _selectedWeek is null || _selectedWeek.Matches(l.Event))
+            .ToList();
+
+        var gameLines = slateLines.Count(l => l.Market
+            is PredictionMarketType.GameTotal
+            or PredictionMarketType.TeamTotal
+            or PredictionMarketType.Winner
+            or PredictionMarketType.Spread);
+
+        return (gameLines, slateLines.Count - gameLines);
+    }
+
     public bool TrySelectWeek(NflWeekRef week)
     {
         ArgumentNullException.ThrowIfNull(week);

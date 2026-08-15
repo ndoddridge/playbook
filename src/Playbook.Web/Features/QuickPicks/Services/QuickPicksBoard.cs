@@ -33,6 +33,9 @@ public sealed class QuickPicksBoard : IQuickPicksBoard
 
     public IReadOnlyList<FootballEvent> Upcoming => _service.GetUpcomingEvents();
 
+    public (int GameMarketLines, int PlayerPropLines) GetSlateMarketCounts() =>
+        _service.GetSlateMarketCounts();
+
     public bool TrySelectWeek(NflWeekRef week) => _service.TrySelectWeek(week);
 
     public void Refresh() => _service.Refresh();
