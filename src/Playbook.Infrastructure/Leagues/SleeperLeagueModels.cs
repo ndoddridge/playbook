@@ -112,3 +112,63 @@ internal sealed class SleeperNflStateDto
     [JsonPropertyName("season")]
     public string? Season { get; set; }
 }
+
+internal sealed class SleeperDraftDto
+{
+    [JsonPropertyName("draft_id")]
+    public string? DraftId { get; set; }
+
+    [JsonPropertyName("league_id")]
+    public string? LeagueId { get; set; }
+
+    [JsonPropertyName("season")]
+    public string? Season { get; set; }
+
+    [JsonPropertyName("status")]
+    public string? Status { get; set; }
+
+    [JsonPropertyName("type")]
+    public string? Type { get; set; }
+
+    [JsonPropertyName("start_time")]
+    public long? StartTime { get; set; }
+
+    [JsonPropertyName("draft_order")]
+    public Dictionary<string, int>? DraftOrder { get; set; }
+
+    [JsonPropertyName("settings")]
+    public SleeperDraftSettingsDto? Settings { get; set; }
+}
+
+internal sealed class SleeperDraftSettingsDto
+{
+    [JsonPropertyName("rounds")]
+    public int Rounds { get; set; }
+
+    [JsonPropertyName("teams")]
+    public int Teams { get; set; }
+}
+
+internal sealed class SleeperDraftPickDto
+{
+    [JsonPropertyName("pick_no")]
+    public int PickNo { get; set; }
+
+    [JsonPropertyName("round")]
+    public int Round { get; set; }
+
+    [JsonPropertyName("draft_slot")]
+    public int DraftSlot { get; set; }
+
+    [JsonPropertyName("roster_id")]
+    public int? RosterId { get; set; }
+
+    [JsonPropertyName("picked_by")]
+    public string? PickedBy { get; set; }
+
+    [JsonPropertyName("player_id")]
+    public string? PlayerId { get; set; }
+
+    [JsonPropertyName("is_keeper")]
+    public bool? IsKeeper { get; set; }
+}

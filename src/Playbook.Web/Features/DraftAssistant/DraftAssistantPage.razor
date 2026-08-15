@@ -1,6 +1,186 @@
 @page "/draft-assistant"
+@using Playbook.Application.Draft
+@using Playbook.Application.Leagues
+@using Playbook.Core.Draft
+@using Playbook.Web.Features.DraftAssistant.Components
+@inject ILeagueState LeagueState
+@inject IDraftAssistantService DraftAssistant
+@implements IDisposable
 
 <PageTitle>Draft Assistant — Playbook</PageTitle>
 
-<ComingSoonPage Title="Draft Assistant"
-                Subtitle="Live draft board and pick recommendations will live here." />
+<section class="pb-page ti-page da-page">
+    <header class="pb-page__header ti-page__header">
+        <h1 class="pb-page__title">Draft Assistant</h1>
+        <p class="pb-page__subtitle">Live recommendations for your next Sleeper pick.</p>
+    </header>
+
+    @if (isLoading && report is null)
+    {
+        <p class="pb-empty">Loading draft state…</p>
+    }
+    else if (report is null || report.Board is null)
+    {
+        <p class="pb-empty">@(report?.StatusMessage ?? "Draft Assistant is unavailable.")</p>
+    }
+    else
+    {
+        var board = report.Board;
+        var recentPicks = board.Picks.Where(p => p.IsMade).OrderByDescending(p => p.PickNumber).Take(10).ToList();
+
+        <section class="da-status @(report.IsStale ? "da-status--stale" : report.IsOnTheClock ? "da-status--onclock" : "")">
+            <div class="da-status__row">
+                <span class="pb-badge @(report.IsStale ? "pb-badge--danger" : report.IsOnTheClock ? "pb-badge--accent" : "pb-badge--info")">
+                    @(report.IsStale ? "Offline" : board.Status.ToString())
+                </span>
+                <span class="da-status__message">@report.StatusMessage</span>
+            </div>
+            <p class="ti-footnote">
+                Pick @board.NextPickNumber of @(board.TotalRounds * board.TeamCount)
+                · Round @DraftOrderCalculator.RoundForPick(board.NextPickNumber, board.TeamCount)
+                · Updated @report.GeneratedAt.ToLocalTime().ToString("h:mm:ss tt")
+            </p>
+        </section>
+
+        @if (report.RosterNeeds.Count > 0)
+        {
+            <section class="ti-section" aria-labelledby="da-needs-title">
+                <h2 id="da-needs-title" class="ti-section__title">Your roster construction</h2>
+                <div class="da-needs">
+                    @foreach (var need in report.RosterNeeds)
+                    {
+                        <span class="pb-badge @NeedBadgeCss(need.NeedLevel)">
+                            @need.PositionLabel @need.CurrentCount/@need.TargetStarters
+                        </span>
+                    }
+                </div>
+            </section>
+        }
+
+        @if (report.IsOnTheClock && report.Recommended is not null)
+        {
+            <section class="ti-section" aria-labelledby="da-rec-title">
+                <h2 id="da-rec-title" class="ti-section__title">Recommended pick</h2>
+                <DraftRecommendationCard Recommendation="report.Recommended" IsPrimary="true" />
+            </section>
+
+            @if (report.Alternatives.Count > 0)
+            {
+                <section class="ti-section" aria-labelledby="da-alt-title">
+                    <h2 id="da-alt-title" class="ti-section__title">Alternatives</h2>
+                    <div class="da-alt-grid">
+                        @foreach (var alt in report.Alternatives)
+                        {
+                            <DraftRecommendationCard Recommendation="alt" IsPrimary="false" />
+                        }
+                    </div>
+                </section>
+            }
+        }
+        else if (board.Status == DraftStatus.Drafting)
+        {
+            <p class="pb-empty">Waiting for your pick — recommendations will appear when you're on the clock.</p>
+        }
+
+        @if (report.UnavailableSignals.Count > 0)
+        {
+            <section class="ti-section ti-section--secondary">
+                <h2 class="ti-section__title">Not yet factored in</h2>
+                <ul class="ti-list">
+                    @foreach (var missing in report.UnavailableSignals)
+                    {
+                        <li>@missing</li>
+                    }
+                </ul>
+            </section>
+        }
+
+        @if (recentPicks.Count > 0)
+        {
+            <section class="ti-section ti-section--secondary" aria-labelledby="da-board-title">
+                <h2 id="da-board-title" class="ti-section__title">Recent picks</h2>
+                <ul class="ti-list ti-list--compact">
+                    @foreach (var pick in recentPicks)
+                    {
+                        <li>
+                            Pick @pick.PickNumber (Rd @pick.Round): @(pick.PlayerName ?? "—")
+                            @(pick.PositionLabel is null ? "" : $"({pick.PositionLabel})")
+                        </li>
+                    }
+                </ul>
+            </section>
+        }
+    }
+</section>
+
+@code {
+    private DraftAssistantReport? report;
+    private bool isLoading = true;
+    private PeriodicTimer? pollTimer;
+    private CancellationTokenSource? cts;
+
+    protected override void OnInitialized()
+    {
+        LeagueState.Changed += OnLeagueChanged;
+        cts = new CancellationTokenSource();
+        _ = LoadAsync(cts.Token);
+        _ = PollAsync(cts.Token);
+    }
+
+    private void OnLeagueChanged() => _ = InvokeAsync(async () =>
+    {
+        isLoading = true;
+        report = null;
+        StateHasChanged();
+        await LoadAsync(cts?.Token ?? CancellationToken.None);
+    });
+
+    private async Task PollAsync(CancellationToken cancellationToken)
+    {
+        pollTimer = new PeriodicTimer(TimeSpan.FromSeconds(15));
+        try
+        {
+            while (await pollTimer.WaitForNextTickAsync(cancellationToken))
+            {
+                await LoadAsync(cancellationToken);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Page disposed.
+        }
+    }
+
+    private async Task LoadAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var next = await DraftAssistant.GetReportAsync(cancellationToken);
+            await InvokeAsync(() =>
+            {
+                report = next;
+                isLoading = false;
+                StateHasChanged();
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            // Page disposed mid-fetch.
+        }
+    }
+
+    private static string NeedBadgeCss(PositionalNeedLevel level) => level switch
+    {
+        PositionalNeedLevel.Urgent => "pb-badge--warning",
+        PositionalNeedLevel.Satisfied => "pb-badge--info",
+        _ => ""
+    };
+
+    public void Dispose()
+    {
+        LeagueState.Changed -= OnLeagueChanged;
+        cts?.Cancel();
+        cts?.Dispose();
+        pollTimer?.Dispose();
+    }
+}

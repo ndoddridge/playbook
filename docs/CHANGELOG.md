@@ -2,6 +2,36 @@
 
 All notable project changes are recorded here.
 
+## [Unreleased] — Draft Assistant foundation (live Sleeper draft board + recommendations)
+
+### Added
+
+- **Draft Assistant** (`/draft-assistant`): monitors the connected league's live Sleeper draft
+  and recommends the user's next pick. Reuses the existing Sleeper league integration, real
+  `IProjectionService` projections, and real `IPlayerInjuryService` signals — no parallel
+  valuation engine, no mock/fabricated data source.
+- Three new read-only Sleeper endpoints on `ISleeperLeagueClient`: `GetDraftsForLeagueAsync`,
+  `GetDraftAsync`, `GetDraftPicksAsync`. Draft Assistant never writes back to Sleeper.
+- New Core domain models (`Playbook.Core.Draft`): `DraftBoard`, `DraftPickRecord`,
+  `DraftRecommendation`, `DraftRecommendationFactor`, `PositionalNeed`, `DraftAssistantReport`,
+  plus pure/testable `DraftOrderCalculator` (snake/linear slot math) and `DraftPickDiff`
+  (new-pick detection between polls).
+- `DraftAssistantService` deliberately separates **best player available** (raw projection rank)
+  from **best fit for this team right now** (adjusted for real positional replacement value,
+  this team's actual drafted roster construction, dynasty age curve, and injury risk) — a
+  recommendation always reports both ranks so the trade-off is visible, never hidden behind one
+  opaque score.
+- UI polls every 15s while mounted, shows a clear offline/stale state (rather than inventing
+  picks) if Sleeper is unreachable, and lists `UnavailableSignals` (bye-week collision, strength
+  of schedule, playoff schedule, market ADP, trade value) honestly instead of guessing at them.
+
+### Deferred
+
+- Dynasty strategy selector (Championship Competitor / Hybrid / Rebuild) — recommendation model
+  is structured to add it later but it is not implemented yet.
+- Bye-week collision, strength of schedule, fantasy playoff schedule, market ADP, and trade
+  value are not yet real inputs (listed in the UI as unavailable rather than faked).
+
 ## [Unreleased] — Quick Picks consumes Shared Evidence; Drop/Pickup contingent value
 
 ### Added

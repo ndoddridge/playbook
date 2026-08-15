@@ -82,5 +82,17 @@ public class LeagueMockGatingTests
         public Task<SleeperLeagueSnapshot?> GetLeagueSnapshotAsync(
             string leagueId, CancellationToken cancellationToken = default) =>
             Task.FromResult<SleeperLeagueSnapshot?>(null);
+
+        public Task<IReadOnlyList<SleeperDraftSummary>> GetDraftsForLeagueAsync(
+            string leagueId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<SleeperDraftSummary>>([]);
+
+        public Task<SleeperDraftSnapshot?> GetDraftAsync(
+            string draftId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<SleeperDraftSnapshot?>(null);
+
+        public Task<IReadOnlyList<SleeperDraftPickSnapshot>> GetDraftPicksAsync(
+            string draftId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<SleeperDraftPickSnapshot>>([]);
     }
 }

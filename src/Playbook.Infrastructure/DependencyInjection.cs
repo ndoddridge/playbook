@@ -1,4 +1,5 @@
 using Playbook.Application.Abstractions;
+using Playbook.Application.Draft;
 using Playbook.Application.Replay;
 using Playbook.Application.Injuries;
 using Playbook.Application.Injuries.Interfaces;
@@ -20,6 +21,7 @@ using Playbook.Application.Knowledge;
 using Playbook.Core.Knowledge;
 using Playbook.Core.Replay;
 using Playbook.Infrastructure.Decisions;
+using Playbook.Infrastructure.Draft;
 using Playbook.Infrastructure.Knowledge;
 using Playbook.Infrastructure.Replay;
 using Playbook.Infrastructure.Replay.Calibration;
@@ -93,6 +95,7 @@ public static class DependencyInjection
         services.AddSingleton<IPlayerContextService, MockPlayerContextService>();
         RegisterLeagues(services);
         services.AddSingleton<IRecommendationService, MockRecommendationService>();
+        services.AddSingleton<IDraftAssistantService, DraftAssistantService>();
 
         services.AddHostedService<DataRefreshBackgroundService>();
         services.AddHostedService<LeagueAutoReconnectHostedService>();

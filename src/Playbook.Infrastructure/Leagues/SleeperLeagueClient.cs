@@ -126,6 +126,86 @@ public sealed class SleeperLeagueClient : ISleeperLeagueClient
         };
     }
 
+    public async Task<IReadOnlyList<SleeperDraftSummary>> GetDraftsForLeagueAsync(
+        string leagueId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(leagueId);
+        var client = _httpClientFactory.CreateClient(HttpClientName);
+        var drafts = await GetListAsync<SleeperDraftDto>(
+            client,
+            $"league/{Uri.EscapeDataString(leagueId.Trim())}/drafts",
+            cancellationToken).ConfigureAwait(false);
+
+        return drafts
+            .Where(d => !string.IsNullOrWhiteSpace(d.DraftId))
+            .Select(d => new SleeperDraftSummary
+            {
+                DraftId = d.DraftId!,
+                Status = d.Status ?? "unknown",
+                Season = d.Season ?? "unknown",
+                StartTime = d.StartTime
+            })
+            .ToList();
+    }
+
+    public async Task<SleeperDraftSnapshot?> GetDraftAsync(
+        string draftId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(draftId);
+        var client = _httpClientFactory.CreateClient(HttpClientName);
+        var draft = await GetAsync<SleeperDraftDto>(
+            client,
+            $"draft/{Uri.EscapeDataString(draftId.Trim())}",
+            cancellationToken).ConfigureAwait(false);
+
+        if (draft is null || string.IsNullOrWhiteSpace(draft.DraftId))
+        {
+            return null;
+        }
+
+        return new SleeperDraftSnapshot
+        {
+            DraftId = draft.DraftId!,
+            LeagueId = draft.LeagueId ?? string.Empty,
+            Season = draft.Season ?? "unknown",
+            Status = draft.Status ?? "unknown",
+            Type = string.IsNullOrWhiteSpace(draft.Type) ? "snake" : draft.Type!,
+            Rounds = draft.Settings?.Rounds ?? 0,
+            Teams = draft.Settings?.Teams ?? 0,
+            DraftOrderByUserId = draft.DraftOrder is null
+                ? new Dictionary<string, int>(StringComparer.Ordinal)
+                : new Dictionary<string, int>(draft.DraftOrder, StringComparer.Ordinal)
+        };
+    }
+
+    public async Task<IReadOnlyList<SleeperDraftPickSnapshot>> GetDraftPicksAsync(
+        string draftId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(draftId);
+        var client = _httpClientFactory.CreateClient(HttpClientName);
+        var picks = await GetListAsync<SleeperDraftPickDto>(
+            client,
+            $"draft/{Uri.EscapeDataString(draftId.Trim())}/picks",
+            cancellationToken).ConfigureAwait(false);
+
+        return picks
+            .OrderBy(p => p.PickNo)
+            .Select(p => new SleeperDraftPickSnapshot
+            {
+                PickNumber = p.PickNo,
+                Round = p.Round,
+                DraftSlot = p.DraftSlot,
+                RosterId = p.RosterId,
+                PickedByUserId = p.PickedBy,
+                SleeperPlayerId = p.PlayerId,
+                IsKeeper = p.IsKeeper ?? false
+            })
+            .ToList();
+    }
+
     private async Task<T?> GetAsync<T>(
         HttpClient client,
         string relativeUrl,

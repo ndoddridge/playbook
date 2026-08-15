@@ -1,0 +1,66 @@
+@using Playbook.Core.Draft
+
+<article class="pb-card da-rec-card @(IsPrimary ? "da-rec-card--primary" : "")">
+    <header class="da-rec-card__header">
+        <div>
+            <h3 class="da-rec-card__name">@Recommendation.PlayerName</h3>
+            <p class="da-rec-card__meta">@Recommendation.PositionLabel · @Recommendation.Team</p>
+        </div>
+        <span class="pb-badge pb-badge--accent">@Recommendation.Confidence% confidence</span>
+    </header>
+
+    <div class="da-rec-card__stats">
+        <div class="qp-stat">
+            <span class="qp-stat__label">Projected</span>
+            <span class="qp-stat__value">@(Recommendation.ProjectedPoints?.ToString("0.0") ?? "—") pts/wk</span>
+        </div>
+        <div class="qp-stat">
+            <span class="qp-stat__label">Best player rank</span>
+            <span class="qp-stat__value">#@Recommendation.BestPlayerAvailableRank</span>
+        </div>
+        <div class="qp-stat">
+            <span class="qp-stat__label">Fit for your team</span>
+            <span class="qp-stat__value">#@Recommendation.TeamFitRank</span>
+        </div>
+    </div>
+
+    <p class="da-rec-card__reasoning">@Recommendation.Reasoning</p>
+
+    <button type="button"
+            class="qp-card__expand"
+            @onclick="Toggle"
+            aria-expanded="@expanded">
+        @(expanded ? "Hide details" : "Why?")
+    </button>
+
+    @if (expanded)
+    {
+        <ul class="ti-list ti-list--compact da-rec-card__factors">
+            @foreach (var factor in Recommendation.Factors)
+            {
+                <li class="@FactorCss(factor.Direction)">
+                    <strong>@factor.Label:</strong> @(factor.Available ? factor.Detail : "Not available")
+                </li>
+            }
+        </ul>
+    }
+</article>
+
+@code {
+    [Parameter, EditorRequired]
+    public DraftRecommendation Recommendation { get; set; } = default!;
+
+    [Parameter]
+    public bool IsPrimary { get; set; }
+
+    private bool expanded;
+
+    private void Toggle() => expanded = !expanded;
+
+    private static string FactorCss(FactorDirection direction) => direction switch
+    {
+        FactorDirection.Positive => "da-factor--positive",
+        FactorDirection.Negative => "da-factor--negative",
+        _ => "da-factor--neutral"
+    };
+}
