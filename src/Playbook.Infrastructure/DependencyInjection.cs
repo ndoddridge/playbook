@@ -220,6 +220,10 @@ public static class DependencyInjection
         services.AddSingleton<NflverseGameScoreProvider>();
         services.AddSingleton<IHistoricalGameScoreProvider>(sp =>
             sp.GetRequiredService<NflverseGameScoreProvider>());
+        // Player-level evidence for the team-points model. Same nflverse cache, no new dependency.
+        services.AddSingleton<NflverseQuarterbackFormProvider>();
+        services.AddSingleton<IQuarterbackFormProvider>(sp =>
+            sp.GetRequiredService<NflverseQuarterbackFormProvider>());
         services.AddSingleton<ITeamGameProjectionService, TeamGameProjectionService>();
 
         services.AddSingleton<MockPropLineProvider>();

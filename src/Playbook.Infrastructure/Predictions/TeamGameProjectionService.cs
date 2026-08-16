@@ -35,6 +35,7 @@ public sealed class TeamGameProjectionService : ITeamGameProjectionService
     private readonly IIntelligenceService _intelligenceService;
     private readonly IPlayerStatisticalContextService _statsService;
     private readonly IHistoricalGameScoreProvider _scores;
+    private readonly IQuarterbackFormProvider _quarterbacks;
     private readonly ILogger<TeamGameProjectionService> _logger;
 
     /// <summary>
@@ -51,6 +52,7 @@ public sealed class TeamGameProjectionService : ITeamGameProjectionService
         IIntelligenceService intelligenceService,
         IPlayerStatisticalContextService statsService,
         IHistoricalGameScoreProvider scores,
+        IQuarterbackFormProvider quarterbacks,
         ILogger<TeamGameProjectionService> logger)
     {
         _playerService = playerService;
@@ -59,6 +61,7 @@ public sealed class TeamGameProjectionService : ITeamGameProjectionService
         _intelligenceService = intelligenceService;
         _statsService = statsService;
         _scores = scores;
+        _quarterbacks = quarterbacks;
         _logger = logger;
     }
 
@@ -96,6 +99,22 @@ public sealed class TeamGameProjectionService : ITeamGameProjectionService
 
             var features = TeamPointsFeatureBuilder.Build(
                 teamAbbreviation, opponent, isHome, gameEvent.Season, gameEvent.Week, completed);
+
+            // Player-level evidence: quarterback quality from completed games only. Absent data
+            // leaves the feature null, which selects the untouched baseline coefficients.
+            if (features is not null)
+            {
+                var qbForm = QuarterbackFormBuilder.Build(
+                    teamAbbreviation,
+                    gameEvent.Season,
+                    gameEvent.Week,
+                    _quarterbacks.GetQuarterbackLines(gameEvent.Season));
+
+                if (qbForm is not null)
+                {
+                    features = features with { QuarterbackEpaPerAttempt = qbForm.EpaPerAttempt };
+                }
+            }
 
             if (features is null)
             {

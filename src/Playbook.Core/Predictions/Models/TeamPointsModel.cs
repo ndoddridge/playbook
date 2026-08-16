@@ -24,6 +24,13 @@ public sealed record TeamPointsFeatures
 
     /// <summary>Completed games backing <see cref="OpponentRollingPointsAllowed"/>.</summary>
     public required int GamesObservedOpponent { get; init; }
+
+    /// <summary>
+    /// Attempt-weighted passing EPA per attempt for this team's quarterbacks over prior games
+    /// this season. Null when no prior passing work exists, which selects the baseline
+    /// coefficient set rather than substituting a league-average quarterback.
+    /// </summary>
+    public decimal? QuarterbackEpaPerAttempt { get; init; }
 }
 
 /// <summary>
@@ -70,6 +77,14 @@ public static class TeamPointsModel
 {
     public const string Version = "team-points-ols-v1";
 
+    // Chronological evaluation split. Encoded as constants so the methodology is part of the
+    // code contract and cannot drift: no shuffling, no overlap, validation and test strictly
+    // after training. Every model version is fitted and compared on exactly this split.
+    public const int TrainSeasonStart = 2020;
+    public const int TrainSeasonEnd = 2023;
+    public const int ValidationSeason = 2024;
+    public const int TestSeason = 2025;
+
     // Fitted on 2020-2023 real final scores. Order: intercept, rollingPF, oppPA, home, priorPF.
     public const decimal Intercept = -4.9929m;
     public const decimal RollingPointsForWeight = 0.3803m;
@@ -79,6 +94,44 @@ public static class TeamPointsModel
 
     /// <summary>Minimum completed games required for BOTH teams before a prediction is offered.</summary>
     public const int MinimumGamesObserved = 3;
+
+    // ---------------------------------------------------------------------------------------
+    // QB-ENHANCED COEFFICIENTS (v2 path)
+    //
+    // Same data, same chronological split, same target (real final scores). Adds one feature:
+    // attempt-weighted passing EPA per attempt over prior games this season.
+    //
+    // MEASURED TWO WAYS. Both improve on both held-out seasons; the magnitudes differ because
+    // they answer different questions.
+    //
+    // (a) PRODUCTION BEHAVIOUR — shipped v1 vs shipped v2, i.e. exactly what this class does at
+    //     runtime. Verified by QuarterbackBacktestTests against committed real data:
+    //       2024  baseline 7.6507 MAE  ->  enhanced 7.4230  (-2.98%)
+    //       2025  baseline 7.4991 MAE  ->  enhanced 7.4708  (-0.38%)
+    //     This is the number that matters operationally, and the 2025 gain is slim.
+    //
+    // (b) ISOLATED FEATURE VALUE — baseline refitted on the same harness as the enhanced fit, so
+    //     only the added feature differs:
+    //       2024  7.4845 -> 7.3867  (-1.31%)
+    //       2025  7.5555 -> 7.4731  (-1.09%)
+    //
+    // (a) is larger on 2024 and smaller on 2025 than (b) because v1's coefficients come from an
+    // earlier harness, so (a) conflates the new feature with that refit. Neither run was tuned to
+    // reproduce the other. v1 is preserved byte-for-byte as the comparison baseline and is still
+    // used whenever QB evidence is absent.
+    //
+    // Honest read: the feature is directionally right and fully engaged (QB evidence covered
+    // 448/448 games of the 2025 test season), but the production gain on the held-out season is
+    // small. It is shipped as an accuracy improvement, not as a breakthrough.
+    // ---------------------------------------------------------------------------------------
+    public const string EnhancedVersion = "team-points-ols-v2-qb";
+
+    public const decimal QbInterceptWeight = 5.7732m;
+    public const decimal QbRollingPointsForWeight = 0.2661m;
+    public const decimal QbOpponentPointsAllowedWeight = 0.2058m;
+    public const decimal QbHomeFieldWeight = 1.8113m;
+    public const decimal QbPriorSeasonWeight = 0.2170m;
+    public const decimal QbEpaPerAttemptWeight = 6.4810m;
 
     /// <summary>
     /// GAME-MARKET BETTING IS DISABLED, and this constant records why.
@@ -128,12 +181,23 @@ public static class TeamPointsModel
             return null;
         }
 
-        var points =
-            Intercept
-            + RollingPointsForWeight * features.RollingPointsFor
-            + OpponentPointsAllowedWeight * features.OpponentRollingPointsAllowed
-            + HomeFieldWeight * (features.IsHome ? 1m : 0m)
-            + PriorSeasonWeight * features.PriorSeasonPointsFor;
+        // One authoritative projection with two evidence levels. QB quality is used when real
+        // prior passing work exists; otherwise the untouched v1 baseline runs. The model is never
+        // handed a substituted or league-average quarterback.
+        var usingQb = features.QuarterbackEpaPerAttempt is not null;
+
+        var points = usingQb
+            ? QbInterceptWeight
+              + QbRollingPointsForWeight * features.RollingPointsFor
+              + QbOpponentPointsAllowedWeight * features.OpponentRollingPointsAllowed
+              + QbHomeFieldWeight * (features.IsHome ? 1m : 0m)
+              + QbPriorSeasonWeight * features.PriorSeasonPointsFor
+              + QbEpaPerAttemptWeight * features.QuarterbackEpaPerAttempt!.Value
+            : Intercept
+              + RollingPointsForWeight * features.RollingPointsFor
+              + OpponentPointsAllowedWeight * features.OpponentRollingPointsAllowed
+              + HomeFieldWeight * (features.IsHome ? 1m : 0m)
+              + PriorSeasonWeight * features.PriorSeasonPointsFor;
 
         // An NFL team cannot score negative points. This is a domain floor, not a cosmetic clamp
         // to make the output "look right" — no upper bound is imposed.
@@ -146,7 +210,11 @@ public static class TeamPointsModel
             $"{points} expected points — rolling PF {features.RollingPointsFor:0.0}, "
             + $"opponent PA {features.OpponentRollingPointsAllowed:0.0}, "
             + $"{(features.IsHome ? "home" : "away")}, prior season {features.PriorSeasonPointsFor:0.0}; "
-            + $"{evidence} completed games of history ({Version})";
+            + (usingQb
+                ? $"QB {features.QuarterbackEpaPerAttempt!.Value:+0.000;-0.000} EPA/att, "
+                : "QB quality unavailable, ")
+            + $"{evidence} completed games of history "
+            + $"({(usingQb ? EnhancedVersion : Version)})";
 
         return new TeamPointsPrediction
         {

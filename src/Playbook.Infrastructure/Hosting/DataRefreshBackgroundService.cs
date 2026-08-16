@@ -26,6 +26,7 @@ public sealed class DataRefreshBackgroundService : BackgroundService
     private readonly IProjectionService _projections;
     private readonly IQuickPicksService _quickPicks;
     private readonly IHistoricalGameScoreProvider _gameScores;
+    private readonly IQuarterbackFormProvider _quarterbackForm;
     private readonly IPostEventReconciliationService _reconciliation;
     private readonly BackgroundRefreshOptions _options;
     private readonly ILogger<DataRefreshBackgroundService> _logger;
@@ -39,6 +40,7 @@ public sealed class DataRefreshBackgroundService : BackgroundService
         IProjectionService projections,
         IQuickPicksService quickPicks,
         IHistoricalGameScoreProvider gameScores,
+        IQuarterbackFormProvider quarterbackForm,
         IPostEventReconciliationService reconciliation,
         IOptions<BackgroundRefreshOptions> options,
         ILogger<DataRefreshBackgroundService> logger)
@@ -51,6 +53,7 @@ public sealed class DataRefreshBackgroundService : BackgroundService
         _projections = projections;
         _quickPicks = quickPicks;
         _gameScores = gameScores;
+        _quarterbackForm = quarterbackForm;
         _reconciliation = reconciliation;
         _options = options.Value;
         _logger = logger;
@@ -190,8 +193,14 @@ public sealed class DataRefreshBackgroundService : BackgroundService
     {
         try
         {
-            await _gameScores.RefreshAsync(DateTime.UtcNow.Year, cancellationToken).ConfigureAwait(false);
-            _logger.LogInformation("Background refresh: historical NFL scores updated");
+            var season = DateTime.UtcNow.Year;
+            await _gameScores.RefreshAsync(season, cancellationToken).ConfigureAwait(false);
+
+            // Current season plus the prior one, matching the window the feature builder reads.
+            await _quarterbackForm.RefreshAsync(season, cancellationToken).ConfigureAwait(false);
+            await _quarterbackForm.RefreshAsync(season - 1, cancellationToken).ConfigureAwait(false);
+
+            _logger.LogInformation("Background refresh: historical NFL scores + quarterback form updated");
         }
         catch (Exception ex)
         {
