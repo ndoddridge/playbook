@@ -165,6 +165,15 @@ public sealed class DraftAssistantService : IDraftAssistantService
             RetrievedAt = now
         };
 
+        // Computed once, right after the board exists, so every return path below — including
+        // the early-exit states — reports the league's real type/strategy/phase instead of
+        // silently defaulting to Redraft/Hybrid/Early. A dynasty league whose draft hasn't
+        // started, is paused, or is already complete must still show as dynasty.
+        var isDynasty = league.LeagueType == LeagueType.Dynasty;
+        var strategy = isDynasty ? GetStrategy(league.Id) : DynastyStrategy.Hybrid;
+        var draftPhase = DraftPhasePolicy.ClassifyFromPick(
+            board.NextPickNumber, board.TeamCount, board.TotalRounds);
+
         if (board.IsComplete)
         {
             return new DraftAssistantReport
@@ -177,7 +186,11 @@ public sealed class DraftAssistantService : IDraftAssistantService
                 StatusMessage = "This draft is complete.",
                 UnavailableSignals = KnownUnavailableSignals,
                 IsStale = false,
-                GeneratedAt = now
+                GeneratedAt = now,
+                IsDynasty = isDynasty,
+                Strategy = strategy,
+                LeagueId = league.Id,
+                Phase = draftPhase
             };
         }
 
@@ -193,6 +206,10 @@ public sealed class DraftAssistantService : IDraftAssistantService
                 StatusMessage = status == DraftStatus.NotStarted
                     ? "Draft has not started yet."
                     : "Draft is paused.",
+                IsDynasty = isDynasty,
+                Strategy = strategy,
+                LeagueId = league.Id,
+                Phase = draftPhase,
                 UnavailableSignals = KnownUnavailableSignals,
                 IsStale = false,
                 GeneratedAt = now
@@ -223,17 +240,14 @@ public sealed class DraftAssistantService : IDraftAssistantService
             .ToList();
 
         var replacementLevelByPosition = ComputeReplacementLevels(undrafted, projectionByPlayer, league);
-        var isDynasty = league.LeagueType == LeagueType.Dynasty;
-        var strategy = isDynasty ? GetStrategy(league.Id) : DynastyStrategy.Hybrid;
+        // isDynasty / strategy / draftPhase already computed above (shared with the early-return
+        // paths).
 
         // Real published schedule -> bye weeks. Empty map when unavailable; the factor then
         // reports itself as unavailable rather than silently scoring zero.
         var byeWeeks = _byeWeeks.GetByeWeeks(league.Season);
         var byeCountsByPositionWeek = BuildByeCounts(userDraftedPlayers, byeWeeks);
 
-        // Real round from the real board — Sleeper reports total rounds and team count.
-        var draftPhase = DraftPhasePolicy.ClassifyFromPick(
-            board.NextPickNumber, board.TeamCount, board.TotalRounds);
         var rosterByPosition = rosterNeeds.ToDictionary(n => n.PositionLabel, n => n);
 
         var scored = undrafted

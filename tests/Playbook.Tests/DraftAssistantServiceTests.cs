@@ -308,6 +308,68 @@ public class DraftAssistantServiceTests
         Assert.Equal("This draft is complete.", report.StatusMessage);
     }
 
+    /// <summary>
+    /// Regression for a defect found validating against a real Sleeper dynasty league whose draft
+    /// had already completed: IsDynasty/Strategy/Phase/LeagueId were only ever set on the
+    /// active-drafting report, so a dynasty league defaulted to
+    /// IsDynasty=false/Strategy=Hybrid/LeagueId=null the moment its draft was complete — hiding
+    /// the strategy selector for the exact league it exists for. Same bug applied to the
+    /// not-started/paused early-return path.
+    /// </summary>
+    [Fact]
+    public async Task GetReportAsync_Reports_DynastyMetadata_OnTheCompleteDraft_EarlyReturnPath()
+    {
+        var league = MakeLeague(
+            numberOfTeams: 2, rosterPositions: ["QB", "RB"], leagueType: LeagueType.Dynasty);
+        var picks = Enumerable.Range(1, 6)
+            .Select(i => new SleeperDraftPickSnapshot
+            {
+                PickNumber = i,
+                Round = ((i - 1) / 2) + 1,
+                DraftSlot = ((i - 1) % 2) + 1,
+                RosterId = 100,
+                SleeperPlayerId = $"s-{i}"
+            })
+            .ToList();
+        var sleeper = new FakeSleeperLeagueClient
+        {
+            Drafts = [new SleeperDraftSummary { DraftId = "d1", Status = "complete", Season = "2026" }],
+            Draft = MakeDraftSnapshot(new Dictionary<string, int>(), status: "complete", rounds: 3, teams: 2),
+            Picks = picks,
+            LeagueSnapshot = MakeLeagueSnapshot(MakeRoster(100, "user-me"), MakeRoster(200, "user-rival"))
+        };
+        var service = CreateService(league, MakeTeam(100), sleeper);
+
+        var report = await service.GetReportAsync();
+
+        Assert.True(report.Board!.IsComplete);
+        Assert.True(report.IsDynasty, "a dynasty league must still report IsDynasty on the complete-draft path");
+        Assert.Equal(league.Id, report.LeagueId);
+        Assert.Equal(DynastyStrategy.Hybrid, report.Strategy); // default until explicitly changed
+    }
+
+    /// <summary>Same defect class, the not-started early-return path.</summary>
+    [Fact]
+    public async Task GetReportAsync_Reports_DynastyMetadata_OnTheNotStartedDraft_EarlyReturnPath()
+    {
+        var league = MakeLeague(
+            numberOfTeams: 2, rosterPositions: ["QB", "RB"], leagueType: LeagueType.Dynasty);
+        var sleeper = new FakeSleeperLeagueClient
+        {
+            Drafts = [new SleeperDraftSummary { DraftId = "d1", Status = "pre_draft", Season = "2026" }],
+            Draft = MakeDraftSnapshot(new Dictionary<string, int>(), status: "pre_draft", rounds: 3, teams: 2),
+            Picks = [],
+            LeagueSnapshot = MakeLeagueSnapshot(MakeRoster(100, "user-me"), MakeRoster(200, "user-rival"))
+        };
+        var service = CreateService(league, MakeTeam(100), sleeper);
+
+        var report = await service.GetReportAsync();
+
+        Assert.Equal("Draft has not started yet.", report.StatusMessage);
+        Assert.True(report.IsDynasty, "a dynasty league must still report IsDynasty before its draft starts");
+        Assert.Equal(league.Id, report.LeagueId);
+    }
+
     [Fact]
     public async Task GetReportAsync_Excludes_Drafted_Players_And_Ranks_By_Team_Fit_Not_Just_Raw_Projection()
     {
