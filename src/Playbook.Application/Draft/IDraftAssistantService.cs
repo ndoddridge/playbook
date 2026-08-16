@@ -10,4 +10,10 @@ namespace Playbook.Application.Draft;
 public interface IDraftAssistantService
 {
     Task<DraftAssistantReport> GetReportAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Current dynasty posture for a league. Ignored by redraft leagues.</summary>
+    DynastyStrategy GetStrategy(Guid leagueId);
+
+    /// <summary>Set the dynasty posture. Takes effect on the next report.</summary>
+    void SetStrategy(Guid leagueId, DynastyStrategy strategy);
 }

@@ -42,6 +42,25 @@
             </p>
         </section>
 
+        @if (report.IsDynasty && report.LeagueId is Guid strategyLeagueId)
+        {
+            <section class="da-strategy" aria-labelledby="da-strategy-title">
+                <h2 id="da-strategy-title" class="da-strategy__title">Dynasty strategy</h2>
+                <div class="da-strategy__options" role="group" aria-label="Dynasty strategy">
+                    @foreach (var option in AllStrategies)
+                    {
+                        <button type="button"
+                                class="da-strategy__option @(report.Strategy == option ? "da-strategy__option--active" : "")"
+                                aria-pressed="@(report.Strategy == option)"
+                                @onclick="() => SelectStrategy(strategyLeagueId, option)">
+                            @DynastyStrategyPolicy.DisplayName(option)
+                        </button>
+                    }
+                </div>
+                <p class="da-strategy__hint">@DynastyStrategyPolicy.Description(report.Strategy)</p>
+            </section>
+        }
+
         @if (report.RosterNeeds.Count > 0)
         {
             <section class="ti-section" aria-labelledby="da-needs-title">
@@ -114,6 +133,23 @@
 </section>
 
 @code {
+    private static readonly DynastyStrategy[] AllStrategies =
+    [
+        DynastyStrategy.ChampionshipCompetitor,
+        DynastyStrategy.Hybrid,
+        DynastyStrategy.Rebuild
+    ];
+
+    /// <summary>
+    /// Applies immediately: the strategy is stored against the league and the board is rebuilt,
+    /// so the change is visible in the recommendation rather than only in the UI.
+    /// </summary>
+    private async Task SelectStrategy(Guid leagueId, DynastyStrategy strategy)
+    {
+        DraftAssistant.SetStrategy(leagueId, strategy);
+        await LoadAsync(cts?.Token ?? CancellationToken.None);
+    }
+
     private DraftAssistantReport? report;
     private bool isLoading = true;
     private PeriodicTimer? pollTimer;

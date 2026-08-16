@@ -50,6 +50,7 @@ public sealed class DraftAssistantService : IDraftAssistantService
     private readonly IPlayerService _players;
     private readonly IProjectionService _projections;
     private readonly IPlayerInjuryService _injuries;
+    private readonly IByeWeekProvider _byeWeeks;
     private readonly ILogger<DraftAssistantService> _logger;
 
     public DraftAssistantService(
@@ -58,6 +59,7 @@ public sealed class DraftAssistantService : IDraftAssistantService
         IPlayerService players,
         IProjectionService projections,
         IPlayerInjuryService injuries,
+        IByeWeekProvider byeWeeks,
         ILogger<DraftAssistantService> logger)
     {
         _leagueState = leagueState;
@@ -65,8 +67,21 @@ public sealed class DraftAssistantService : IDraftAssistantService
         _players = players;
         _projections = projections;
         _injuries = injuries;
+        _byeWeeks = byeWeeks;
         _logger = logger;
     }
+
+    /// <summary>
+    /// Selected dynasty posture, held per league for the life of the session. Redraft leagues
+    /// ignore it entirely — every redraft pick is a win-now pick.
+    /// </summary>
+    private readonly Dictionary<Guid, DynastyStrategy> _strategyByLeague = [];
+
+    public DynastyStrategy GetStrategy(Guid leagueId) =>
+        _strategyByLeague.TryGetValue(leagueId, out var s) ? s : DynastyStrategy.Hybrid;
+
+    public void SetStrategy(Guid leagueId, DynastyStrategy strategy) =>
+        _strategyByLeague[leagueId] = strategy;
 
     public async Task<DraftAssistantReport> GetReportAsync(CancellationToken cancellationToken = default)
     {
@@ -209,6 +224,12 @@ public sealed class DraftAssistantService : IDraftAssistantService
 
         var replacementLevelByPosition = ComputeReplacementLevels(undrafted, projectionByPlayer, league);
         var isDynasty = league.LeagueType == LeagueType.Dynasty;
+        var strategy = isDynasty ? GetStrategy(league.Id) : DynastyStrategy.Hybrid;
+
+        // Real published schedule -> bye weeks. Empty map when unavailable; the factor then
+        // reports itself as unavailable rather than silently scoring zero.
+        var byeWeeks = _byeWeeks.GetByeWeeks(league.Season);
+        var byeCountsByPositionWeek = BuildByeCounts(userDraftedPlayers, byeWeeks);
 
         var scored = undrafted
             .Select(p => ScorePlayer(
@@ -217,7 +238,10 @@ public sealed class DraftAssistantService : IDraftAssistantService
                 replacementLevelByPosition,
                 needByPosition,
                 isDynasty,
-                _injuries.GetCurrentInjury(p.Id)))
+                _injuries.GetCurrentInjury(p.Id),
+                strategy,
+                byeWeeks,
+                byeCountsByPositionWeek))
             .Where(s => s.Projection is not null)
             .ToList();
 
@@ -248,9 +272,12 @@ public sealed class DraftAssistantService : IDraftAssistantService
                 : board.NextRosterId is null
                     ? $"Pick {board.NextPickNumber} is up next (roster unresolved)."
                     : $"Pick {board.NextPickNumber} is on the clock (not your team).",
-            UnavailableSignals = KnownUnavailableSignals,
+            UnavailableSignals = BuildUnavailableSignals(byeWeeks),
             IsStale = false,
-            GeneratedAt = now
+            GeneratedAt = now,
+            IsDynasty = isDynasty,
+            Strategy = strategy,
+            LeagueId = league.Id
         };
     }
 
@@ -260,10 +287,17 @@ public sealed class DraftAssistantService : IDraftAssistantService
         IReadOnlyDictionary<Position, decimal> replacementLevelByPosition,
         IReadOnlyDictionary<string, PositionalNeedLevel> needByPosition,
         bool isDynasty,
-        PlayerInjuryRecord? currentInjury)
+        PlayerInjuryRecord? currentInjury,
+        // Defaulted so focused unit tests can exercise one factor at a time. Production always
+        // passes these explicitly from GetReportAsync.
+        DynastyStrategy strategy = DynastyStrategy.Hybrid,
+        ByeWeekMap? byeWeeks = null,
+        IReadOnlyDictionary<(string Position, int Week), int>? byeCounts = null)
     {
         var positionLabel = PlayerPresentation.PositionLabel(player.Position);
         var factors = new List<DraftRecommendationFactor>();
+        byeWeeks ??= ByeWeekMap.Empty;
+        byeCounts ??= new Dictionary<(string, int), int>();
 
         if (projection is null)
         {
@@ -318,10 +352,11 @@ public sealed class DraftAssistantService : IDraftAssistantService
         var need = needByPosition.GetValueOrDefault(positionLabel, PositionalNeedLevel.Moderate);
         if (needByPosition.ContainsKey(positionLabel))
         {
+            var needWeight = isDynasty ? DynastyStrategyPolicy.NeedWeightMultiplier(strategy) : 1m;
             var needAdjustment = need switch
             {
-                PositionalNeedLevel.Urgent => NeedUrgentBonus,
-                PositionalNeedLevel.Satisfied => NeedSatisfiedPenalty,
+                PositionalNeedLevel.Urgent => NeedUrgentBonus * needWeight,
+                PositionalNeedLevel.Satisfied => NeedSatisfiedPenalty * needWeight,
                 _ => 0m
             };
             fitScore += needAdjustment;
@@ -343,18 +378,16 @@ public sealed class DraftAssistantService : IDraftAssistantService
         {
             if (player.Age is int age)
             {
-                var ageAdjustment = age < 27
-                    ? (27 - age) * DynastyYoungBonusPerYearUnder27
-                    : age > 29
-                        ? -(age - 29) * DynastyOldPenaltyPerYearOver29
-                        : 0m;
+                var ageAdjustment = DynastyStrategyPolicy.AgeAdjustment(strategy, age);
                 fitScore += ageAdjustment;
                 if (ageAdjustment != 0m)
                 {
                     factors.Add(new DraftRecommendationFactor
                     {
-                        Label = "Dynasty age curve",
-                        Detail = $"Age {age}",
+                        Label = $"Dynasty age curve ({DynastyStrategyPolicy.DisplayName(strategy)})",
+                        Detail = ageAdjustment > 0
+                            ? $"Age {age} — young enough to gain value under this strategy."
+                            : $"Age {age} — ageing profile is discounted under this strategy.",
                         Direction = ageAdjustment > 0 ? FactorDirection.Positive : FactorDirection.Negative,
                         Available = true
                     });
@@ -370,6 +403,45 @@ public sealed class DraftAssistantService : IDraftAssistantService
                     Available = false
                 });
             }
+        }
+
+        // Bye-week concentration. Real published schedule only; when the schedule is unavailable
+        // the factor reports itself unavailable rather than scoring a silent zero.
+        if (!byeWeeks.IsAvailable)
+        {
+            factors.Add(new DraftRecommendationFactor
+            {
+                Label = "Bye week",
+                Detail = "Schedule not loaded — bye-week fit not considered.",
+                Direction = FactorDirection.Neutral,
+                Available = false
+            });
+        }
+        else if (byeWeeks.ByeWeekFor(player.Team) is int bye)
+        {
+            var alreadyOnThatBye = byeCounts.GetValueOrDefault((positionLabel, bye), 0);
+            var byePenalty = ByeWeekCollisionPolicy.Penalty(alreadyOnThatBye + 1);
+            fitScore += byePenalty;
+
+            factors.Add(new DraftRecommendationFactor
+            {
+                Label = "Bye week",
+                Detail = byePenalty < 0
+                    ? $"Week {bye} — you already have {alreadyOnThatBye} {positionLabel} on this bye."
+                    : $"Week {bye} — no {positionLabel} bye collision.",
+                Direction = byePenalty < 0 ? FactorDirection.Negative : FactorDirection.Positive,
+                Available = true
+            });
+        }
+        else
+        {
+            factors.Add(new DraftRecommendationFactor
+            {
+                Label = "Bye week",
+                Detail = $"No bye on file for {player.Team ?? "this team"}.",
+                Direction = FactorDirection.Neutral,
+                Available = false
+            });
         }
 
         var hasLimitingInjury = currentInjury is not null &&
@@ -501,6 +573,49 @@ public sealed class DraftAssistantService : IDraftAssistantService
             ? rosterPositions.Count(p => p.Contains("FLEX", StringComparison.OrdinalIgnoreCase)) * 0.5
             : 0;
         return Math.Max(1, direct + (int)Math.Round(flexShare, MidpointRounding.AwayFromZero));
+    }
+
+    /// <summary>
+    /// How many already-drafted players of each position sit on each bye week. Built from the
+    /// user's real drafted roster; empty when the schedule is unavailable.
+    /// </summary>
+    /// <summary>
+    /// Honest inventory of what the recommendation could NOT consider. Bye weeks move in and out
+    /// of this list depending on whether the real schedule loaded.
+    /// </summary>
+    private static IReadOnlyList<string> BuildUnavailableSignals(ByeWeekMap byeWeeks)
+    {
+        var signals = KnownUnavailableSignals.ToList();
+        if (!byeWeeks.IsAvailable)
+        {
+            signals.Add("Bye weeks (schedule not loaded)");
+        }
+
+        return signals;
+    }
+
+    internal static IReadOnlyDictionary<(string Position, int Week), int> BuildByeCounts(
+        IReadOnlyList<Player> draftedPlayers,
+        ByeWeekMap byeWeeks)
+    {
+        var counts = new Dictionary<(string, int), int>();
+        if (!byeWeeks.IsAvailable)
+        {
+            return counts;
+        }
+
+        foreach (var player in draftedPlayers)
+        {
+            if (byeWeeks.ByeWeekFor(player.Team) is not int bye)
+            {
+                continue;
+            }
+
+            var key = (PlayerPresentation.PositionLabel(player.Position), bye);
+            counts[key] = counts.GetValueOrDefault(key, 0) + 1;
+        }
+
+        return counts;
     }
 
     internal static IReadOnlyList<PositionalNeed> BuildRosterNeeds(

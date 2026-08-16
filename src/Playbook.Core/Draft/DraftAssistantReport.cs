@@ -26,4 +26,13 @@ public sealed class DraftAssistantReport
     public required bool IsStale { get; init; }
 
     public required DateTimeOffset GeneratedAt { get; init; }
+
+    /// <summary>True only for dynasty leagues — redraft never shows the strategy selector.</summary>
+    public bool IsDynasty { get; init; }
+
+    /// <summary>Active dynasty posture. Meaningless when <see cref="IsDynasty"/> is false.</summary>
+    public DynastyStrategy Strategy { get; init; } = DynastyStrategy.Hybrid;
+
+    /// <summary>League the report was built for, so the UI can persist the strategy choice.</summary>
+    public Guid? LeagueId { get; init; }
 }

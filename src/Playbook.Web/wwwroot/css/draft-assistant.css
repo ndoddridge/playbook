@@ -103,3 +103,74 @@
         grid-template-columns: 1fr 1fr;
     }
 }
+
+/* --- Dynasty strategy selector (dynasty leagues only) --- */
+.da-strategy {
+    margin: 0 0 0.85rem;
+    padding: 0.7rem 0.8rem;
+    border: 1px solid var(--pb-border, #2a2f3a);
+    border-radius: 10px;
+    background: var(--pb-surface, #161a22);
+}
+
+.da-strategy__title {
+    font-size: 0.72rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--pb-muted, #8b93a7);
+    margin: 0 0 0.5rem;
+}
+
+.da-strategy__options {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.4rem;
+}
+
+.da-strategy__option {
+    /* 44px min target: thumb-friendly on iPhone */
+    min-height: 44px;
+    padding: 0.4rem 0.3rem;
+    font-size: 0.76rem;
+    line-height: 1.15;
+    border-radius: 8px;
+    border: 1px solid var(--pb-border, #2a2f3a);
+    background: transparent;
+    color: var(--pb-text, #e6e9f0);
+    cursor: pointer;
+}
+
+.da-strategy__option--active {
+    border-color: var(--pb-accent, #4ea87a);
+    color: var(--pb-accent, #4ea87a);
+    font-weight: 600;
+}
+
+.da-strategy__hint {
+    margin: 0.5rem 0 0;
+    font-size: 0.75rem;
+    line-height: 1.35;
+    color: var(--pb-muted, #8b93a7);
+}
+
+/* --- Phone-first ordering: clock -> recommendation -> alternatives --- */
+@media (max-width: 640px) {
+    .da-page { padding-left: 0.6rem; padding-right: 0.6rem; }
+
+    .da-status {
+        position: sticky;
+        top: 0;
+        z-index: 5;
+        padding: 0.6rem 0.7rem;
+    }
+
+    .da-status__message { font-size: 0.85rem; }
+
+    /* Alternatives stack rather than sitting in a cramped grid. */
+    .da-alt-grid { grid-template-columns: 1fr; }
+
+    /* Secondary detail is available but never above the recommendation. */
+    .ti-section--secondary { order: 99; }
+
+    .da-strategy__option { font-size: 0.72rem; }
+}

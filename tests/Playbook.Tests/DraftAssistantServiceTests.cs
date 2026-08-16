@@ -1,3 +1,4 @@
+using Playbook.Application.Draft;
 using Microsoft.Extensions.Logging.Abstractions;
 using Playbook.Application.Injuries.Interfaces;
 using Playbook.Application.Leagues;
@@ -422,6 +423,7 @@ public class DraftAssistantServiceTests
 
         return new DraftAssistantService(
             leagueState, sleeper, playerService, projectionService, injuryService,
+            new FakeByeWeekProvider(),
             NullLogger<DraftAssistantService>.Instance);
     }
 
@@ -534,6 +536,18 @@ public class DraftAssistantServiceTests
         ReserveSleeperPlayerIds = [],
         TaxiSleeperPlayerIds = []
     };
+
+    /// <summary>
+    /// No schedule loaded, so the bye-week factor reports itself unavailable. Keeps these tests
+    /// focused on the behaviour they were originally written for.
+    /// </summary>
+    private sealed class FakeByeWeekProvider : IByeWeekProvider
+    {
+        public ByeWeekMap GetByeWeeks(int season) => ByeWeekMap.Empty;
+
+        public Task RefreshAsync(int season, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+    }
 
     private sealed class FakeLeagueState : ILeagueState
     {

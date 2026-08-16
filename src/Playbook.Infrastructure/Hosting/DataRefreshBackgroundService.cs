@@ -27,6 +27,7 @@ public sealed class DataRefreshBackgroundService : BackgroundService
     private readonly IQuickPicksService _quickPicks;
     private readonly IHistoricalGameScoreProvider _gameScores;
     private readonly IQuarterbackFormProvider _quarterbackForm;
+    private readonly Playbook.Application.Draft.IByeWeekProvider _byeWeeks;
     private readonly IPostEventReconciliationService _reconciliation;
     private readonly BackgroundRefreshOptions _options;
     private readonly ILogger<DataRefreshBackgroundService> _logger;
@@ -41,6 +42,7 @@ public sealed class DataRefreshBackgroundService : BackgroundService
         IQuickPicksService quickPicks,
         IHistoricalGameScoreProvider gameScores,
         IQuarterbackFormProvider quarterbackForm,
+        Playbook.Application.Draft.IByeWeekProvider byeWeeks,
         IPostEventReconciliationService reconciliation,
         IOptions<BackgroundRefreshOptions> options,
         ILogger<DataRefreshBackgroundService> logger)
@@ -54,6 +56,7 @@ public sealed class DataRefreshBackgroundService : BackgroundService
         _quickPicks = quickPicks;
         _gameScores = gameScores;
         _quarterbackForm = quarterbackForm;
+        _byeWeeks = byeWeeks;
         _reconciliation = reconciliation;
         _options = options.Value;
         _logger = logger;
@@ -200,7 +203,12 @@ public sealed class DataRefreshBackgroundService : BackgroundService
             await _quarterbackForm.RefreshAsync(season, cancellationToken).ConfigureAwait(false);
             await _quarterbackForm.RefreshAsync(season - 1, cancellationToken).ConfigureAwait(false);
 
-            _logger.LogInformation("Background refresh: historical NFL scores + quarterback form updated");
+            // Bye weeks come from the same schedule file and are needed before a draft, not
+            // after games are played.
+            await _byeWeeks.RefreshAsync(season, cancellationToken).ConfigureAwait(false);
+
+            _logger.LogInformation(
+                "Background refresh: NFL scores, quarterback form and bye weeks updated");
         }
         catch (Exception ex)
         {
