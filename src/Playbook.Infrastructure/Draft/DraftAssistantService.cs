@@ -231,6 +231,11 @@ public sealed class DraftAssistantService : IDraftAssistantService
         var byeWeeks = _byeWeeks.GetByeWeeks(league.Season);
         var byeCountsByPositionWeek = BuildByeCounts(userDraftedPlayers, byeWeeks);
 
+        // Real round from the real board — Sleeper reports total rounds and team count.
+        var draftPhase = DraftPhasePolicy.ClassifyFromPick(
+            board.NextPickNumber, board.TeamCount, board.TotalRounds);
+        var rosterByPosition = rosterNeeds.ToDictionary(n => n.PositionLabel, n => n);
+
         var scored = undrafted
             .Select(p => ScorePlayer(
                 p,
@@ -241,7 +246,9 @@ public sealed class DraftAssistantService : IDraftAssistantService
                 _injuries.GetCurrentInjury(p.Id),
                 strategy,
                 byeWeeks,
-                byeCountsByPositionWeek))
+                byeCountsByPositionWeek,
+                draftPhase,
+                rosterByPosition))
             .Where(s => s.Projection is not null)
             .ToList();
 
@@ -277,7 +284,10 @@ public sealed class DraftAssistantService : IDraftAssistantService
             GeneratedAt = now,
             IsDynasty = isDynasty,
             Strategy = strategy,
-            LeagueId = league.Id
+            LeagueId = league.Id,
+            Phase = draftPhase,
+            DecisionSummary = BuildDecisionSummary(
+                recommendations.FirstOrDefault(), byRawProjection, draftPhase, isDynasty, strategy)
         };
     }
 
@@ -292,7 +302,9 @@ public sealed class DraftAssistantService : IDraftAssistantService
         // passes these explicitly from GetReportAsync.
         DynastyStrategy strategy = DynastyStrategy.Hybrid,
         ByeWeekMap? byeWeeks = null,
-        IReadOnlyDictionary<(string Position, int Week), int>? byeCounts = null)
+        IReadOnlyDictionary<(string Position, int Week), int>? byeCounts = null,
+        DraftPhase phase = DraftPhase.Middle,
+        IReadOnlyDictionary<string, PositionalNeed>? rosterByPosition = null)
     {
         var positionLabel = PlayerPresentation.PositionLabel(player.Position);
         var factors = new List<DraftRecommendationFactor>();
@@ -374,11 +386,43 @@ public sealed class DraftAssistantService : IDraftAssistantService
             }
         }
 
+        // Finer-grained roster shape than the three-level need signal above can express:
+        // specifically, the difference between useful depth and capital tied up at one position.
+        // Bounded to +/-2.5 so it can break a tie but never outrank a clearly better player.
+        if (rosterByPosition is not null && rosterByPosition.TryGetValue(positionLabel, out var slot))
+        {
+            var tier = RosterConstructionPolicy.Classify(slot.CurrentCount, slot.TargetStarters);
+            var phaseWeight = DraftPhasePolicy.RosterConstructionWeight(phase);
+            var constructionAdjustment = RosterConstructionPolicy.Adjustment(tier, phaseWeight);
+            fitScore += constructionAdjustment;
+
+            if (constructionAdjustment != 0m)
+            {
+                factors.Add(new DraftRecommendationFactor
+                {
+                    Label = "Roster shape",
+                    Detail = $"{RosterConstructionPolicy.Describe(tier, positionLabel)} "
+                             + DraftPhasePolicy.Describe(phase),
+                    Direction = constructionAdjustment > 0
+                        ? FactorDirection.Positive
+                        : FactorDirection.Negative,
+                    Available = true
+                });
+            }
+        }
+
         if (isDynasty)
         {
             if (player.Age is int age)
             {
-                var ageAdjustment = DynastyStrategyPolicy.AgeAdjustment(strategy, age);
+                // Phase layers on top of strategy: it scales the curve the strategy chose, so a
+                // Competitor late is still far less youth-driven than a Rebuild late.
+                var ageAdjustment = DynastyStrategyPolicy.AgeAdjustment(strategy, age)
+                                    * DraftPhasePolicy.UpsideWeight(phase);
+                ageAdjustment = Math.Clamp(
+                    ageAdjustment,
+                    -DynastyStrategyPolicy.MaxAgeAdjustment,
+                    DynastyStrategyPolicy.MaxAgeAdjustment);
                 fitScore += ageAdjustment;
                 if (ageAdjustment != 0m)
                 {
@@ -386,7 +430,7 @@ public sealed class DraftAssistantService : IDraftAssistantService
                     {
                         Label = $"Dynasty age curve ({DynastyStrategyPolicy.DisplayName(strategy)})",
                         Detail = ageAdjustment > 0
-                            ? $"Age {age} — young enough to gain value under this strategy."
+                            ? $"Age {age} — upside is weighted more here ({DraftPhasePolicy.DisplayName(phase).ToLowerInvariant()})."
                             : $"Age {age} — ageing profile is discounted under this strategy.",
                         Direction = ageAdjustment > 0 ? FactorDirection.Positive : FactorDirection.Negative,
                         Available = true
@@ -579,6 +623,51 @@ public sealed class DraftAssistantService : IDraftAssistantService
     /// How many already-drafted players of each position sit on each bye week. Built from the
     /// user's real drafted roster; empty when the schedule is unavailable.
     /// </summary>
+    /// <summary>
+    /// Plain-language explanation of the top pick, written for a manager mid-draft rather than
+    /// for a developer. Names the deciding consideration and, when Best Available and Team Fit
+    /// disagree, says so explicitly instead of quietly preferring one.
+    /// </summary>
+    private static string BuildDecisionSummary(
+        DraftRecommendation? top,
+        IReadOnlyList<ScoredCandidate> byRawProjection,
+        DraftPhase phase,
+        bool isDynasty,
+        DynastyStrategy strategy)
+    {
+        if (top is null)
+        {
+            return "";
+        }
+
+        var parts = new List<string>();
+        var bestAvailable = byRawProjection.FirstOrDefault();
+
+        if (bestAvailable is not null &&
+            !string.Equals(bestAvailable.Player.FullName, top.PlayerName, StringComparison.Ordinal))
+        {
+            parts.Add(
+                $"{bestAvailable.Player.FullName} is the highest raw projection, but {top.PlayerName} "
+                + "fits this roster better right now");
+        }
+        else
+        {
+            parts.Add($"{top.PlayerName} is both the best available and the best fit");
+        }
+
+        parts.Add(DraftPhasePolicy.Describe(phase).TrimEnd('.').ToLowerInvariant());
+
+        if (isDynasty && strategy != DynastyStrategy.Hybrid)
+        {
+            parts.Add(strategy == DynastyStrategy.Rebuild
+                ? "and your rebuild setting adds weight to youth and upside"
+                : "and your win-now setting favours immediate production");
+        }
+
+        return string.Join(" — ", parts.Take(2)) +
+               (parts.Count > 2 ? " " + parts[2] : "") + ".";
+    }
+
     /// <summary>
     /// Honest inventory of what the recommendation could NOT consider. Bye weeks move in and out
     /// of this list depending on whether the real schedule loaded.

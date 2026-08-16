@@ -35,4 +35,13 @@ public sealed class DraftAssistantReport
 
     /// <summary>League the report was built for, so the UI can persist the strategy choice.</summary>
     public Guid? LeagueId { get; init; }
+
+    /// <summary>Where the draft currently is, derived from the real round count.</summary>
+    public DraftPhase Phase { get; init; } = DraftPhase.Early;
+
+    /// <summary>
+    /// One-line, plain-language summary of why the top recommendation won — including when Best
+    /// Available and Team Fit disagree. Empty when there is nothing to recommend.
+    /// </summary>
+    public string DecisionSummary { get; init; } = "";
 }

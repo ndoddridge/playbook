@@ -78,6 +78,13 @@
 
         @if (report.IsOnTheClock && report.Recommended is not null)
         {
+            @if (!string.IsNullOrWhiteSpace(report.DecisionSummary))
+            {
+                <p class="da-decision">
+                    <span class="da-decision__phase">@DraftPhasePolicy.DisplayName(report.Phase)</span>
+                    @report.DecisionSummary
+                </p>
+            }
             <section class="ti-section" aria-labelledby="da-rec-title">
                 <h2 id="da-rec-title" class="ti-section__title">Recommended pick</h2>
                 <DraftRecommendationCard Recommendation="report.Recommended" IsPrimary="true" />

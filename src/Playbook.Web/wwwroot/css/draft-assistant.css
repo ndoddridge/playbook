@@ -174,3 +174,24 @@
 
     .da-strategy__option { font-size: 0.72rem; }
 }
+
+/* --- Decision summary: the one line a manager reads while on the clock --- */
+.da-decision {
+    margin: 0 0 0.6rem;
+    padding: 0.55rem 0.7rem;
+    border-left: 3px solid var(--pb-accent, #4ea87a);
+    border-radius: 0 8px 8px 0;
+    background: rgba(78, 168, 122, 0.07);
+    font-size: 0.85rem;
+    line-height: 1.4;
+}
+
+.da-decision__phase {
+    display: inline-block;
+    margin-right: 0.4rem;
+    font-size: 0.66rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--pb-accent, #4ea87a);
+    font-weight: 600;
+}
