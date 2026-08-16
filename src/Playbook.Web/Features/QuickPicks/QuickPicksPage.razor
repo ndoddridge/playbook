@@ -99,6 +99,86 @@
             }
         </section>
 
+        @if (gameAnalyses.Count > 0)
+        {
+            <section class="qp-section" aria-labelledby="qp-analysis-heading">
+                <h2 id="qp-analysis-heading" class="qp-section__title">Game Market Analysis</h2>
+                <p class="qp-section__subtitle">
+                    Real sportsbook lines and Playbook's model view.
+                    @if (!TeamPointsModel.GameMarketBettingEnabled)
+                    {
+                        <text>Analysis only — no wagers while the game-market model is being validated.</text>
+                    }
+                </p>
+
+                <div class="qp-analysis-grid">
+                    @foreach (var game in gameAnalyses)
+                    {
+                        <article class="qp-analysis" @key="game.Matchup">
+                            <header class="qp-analysis__head">
+                                <span class="qp-analysis__matchup">@game.Matchup</span>
+                                <span class="qp-analysis__status qp-analysis__status--@game.Status.ToString().ToLowerInvariant()">
+                                    @GameMarketAnalysisPolicy.StatusLabel(game.Status)
+                                </span>
+                            </header>
+
+                            <dl class="qp-analysis__lines">
+                                @if (game.SpreadLine is { } spread)
+                                {
+                                    <div><dt>Spread</dt><dd>@game.HomeTeam @spread.ToString("+0.0;-0.0;0.0")</dd></div>
+                                }
+                                @if (game.TotalLine is { } total)
+                                {
+                                    <div><dt>Total</dt><dd>@total.ToString("0.0")</dd></div>
+                                }
+                                @if (!string.IsNullOrWhiteSpace(game.Bookmaker))
+                                {
+                                    <div><dt>Book</dt><dd>@game.Bookmaker</dd></div>
+                                }
+                            </dl>
+
+                            @if (game.HasProjection)
+                            {
+                                <dl class="qp-analysis__model">
+                                    @if (game.ProjectedHomeMargin is { } margin)
+                                    {
+                                        <div>
+                                            <dt>Playbook projected margin</dt>
+                                            <dd>@game.HomeTeam @margin.ToString("+0.0;-0.0;0.0")</dd>
+                                        </div>
+                                    }
+                                    @if (game.ProjectedTotal is { } projTotal)
+                                    {
+                                        <div><dt>Playbook projected total</dt><dd>@projTotal.ToString("0.0")</dd></div>
+                                    }
+                                    @if (game.MarginDisagreement is { } marginGap)
+                                    {
+                                        <div>
+                                            <dt>Model disagreement (margin)</dt>
+                                            <dd>@Math.Abs(marginGap).ToString("0.0") pts</dd>
+                                        </div>
+                                    }
+                                    @if (game.TotalDisagreement is { } totalGap)
+                                    {
+                                        <div>
+                                            <dt>Model disagreement (total)</dt>
+                                            <dd>@Math.Abs(totalGap).ToString("0.0") pts</dd>
+                                        </div>
+                                    }
+                                </dl>
+                            }
+                            else
+                            {
+                                <p class="qp-analysis__unavailable">Playbook projection: unavailable</p>
+                            }
+
+                            <p class="qp-analysis__reason">@game.Reason</p>
+                        </article>
+                    }
+                </div>
+            </section>
+        }
+
         <section class="qp-section" aria-labelledby="qp-watch-heading">
             <h2 id="qp-watch-heading" class="qp-section__title">Watch</h2>
             <p class="qp-section__subtitle">Interesting but weaker opportunities than Top Picks</p>
@@ -172,6 +252,7 @@
     private IReadOnlyList<Prediction> visibleWatch = [];
     private IReadOnlyList<Prediction> visibleAll = [];
     private IReadOnlyList<FootballEvent> events = [];
+    private IReadOnlyList<GameMarketAnalysis> gameAnalyses = [];
     private string dataModeLabel = "MOCK DATA";
     private string dataModeCss = "mock";
     private bool isUnavailable;
@@ -189,6 +270,7 @@
         selected = Board.SelectedWeek;
         slatePredictions = Board.SlatePredictions;
         events = Board.Upcoming;
+        gameAnalyses = Board.GetGameMarketAnalyses();
         ApplyFilters();
 
         var isLive = string.Equals(SyncStatus.ProviderStatus, "Live", StringComparison.OrdinalIgnoreCase)

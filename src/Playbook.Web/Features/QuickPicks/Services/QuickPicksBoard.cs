@@ -36,6 +36,9 @@ public sealed class QuickPicksBoard : IQuickPicksBoard
     public (int GameMarketLines, int PlayerPropLines) GetSlateMarketCounts() =>
         _service.GetSlateMarketCounts();
 
+    public IReadOnlyList<Playbook.Core.Predictions.Models.GameMarketAnalysis> GetGameMarketAnalyses() =>
+        _service.GetGameMarketAnalyses();
+
     public bool TrySelectWeek(NflWeekRef week) => _service.TrySelectWeek(week);
 
     public void Refresh() => _service.Refresh();

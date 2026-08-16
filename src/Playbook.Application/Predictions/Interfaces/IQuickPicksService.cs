@@ -43,6 +43,12 @@ public interface IQuickPicksService
     (int GameMarketLines, int PlayerPropLines) GetSlateMarketCounts();
 
     /// <summary>
+    /// Real game markets on the selected slate with Playbook's model view where one exists.
+    /// Analysis only — these are never wagers while game-market betting is disabled.
+    /// </summary>
+    IReadOnlyList<Core.Predictions.Models.GameMarketAnalysis> GetGameMarketAnalyses();
+
+    /// <summary>
     /// Select a canonical season slate. Rebuilds predictions for that slate only
     /// (empty when the provider has no markets for it). Returns false if out of season.
     /// </summary>

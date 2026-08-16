@@ -32,6 +32,9 @@ public interface IQuickPicksBoard
     /// </summary>
     (int GameMarketLines, int PlayerPropLines) GetSlateMarketCounts();
 
+    /// <summary>Real game markets plus model analysis. Never wagers while betting is disabled.</summary>
+    IReadOnlyList<Playbook.Core.Predictions.Models.GameMarketAnalysis> GetGameMarketAnalyses();
+
     bool TrySelectWeek(NflWeekRef week);
 
     void Refresh();

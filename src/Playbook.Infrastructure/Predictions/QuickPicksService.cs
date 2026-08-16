@@ -201,6 +201,20 @@ public sealed class QuickPicksService : IQuickPicksService
         return (gameLines, slateLines.Count - gameLines);
     }
 
+    public IReadOnlyList<GameMarketAnalysis> GetGameMarketAnalyses()
+    {
+        EnsureLoaded();
+
+        var slateLines = _enrichedLines
+            .Where(l => _selectedWeek is null || _selectedWeek.Matches(l.Event))
+            .ToList();
+
+        return GameMarketAnalysisBuilder.Build(
+            slateLines,
+            _teamProjection,
+            TeamPointsModel.GameMarketBettingEnabled);
+    }
+
     public bool TrySelectWeek(NflWeekRef week)
     {
         ArgumentNullException.ThrowIfNull(week);

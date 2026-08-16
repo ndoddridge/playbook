@@ -687,3 +687,76 @@
         text-align: left;
     }
 }
+
+/* --- Game Market Analysis (analysis-only; never a wager while the gate is closed) --- */
+.qp-analysis-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 0.75rem;
+}
+
+.qp-analysis {
+    border: 1px solid var(--pb-border, #2a2f3a);
+    border-radius: 8px;
+    padding: 0.75rem 0.9rem;
+    background: var(--pb-surface, #161a22);
+}
+
+.qp-analysis__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.qp-analysis__matchup { font-weight: 600; }
+
+.qp-analysis__status {
+    font-size: 0.7rem;
+    letter-spacing: 0.04em;
+    padding: 0.15rem 0.45rem;
+    border-radius: 999px;
+    border: 1px solid currentColor;
+    white-space: nowrap;
+}
+
+.qp-analysis__status--noplay { color: #8b93a7; }
+.qp-analysis__status--analysisonly { color: #d9a441; }
+.qp-analysis__status--beteligible { color: #4ea87a; }
+
+.qp-analysis__lines,
+.qp-analysis__model {
+    margin: 0 0 0.5rem;
+    display: grid;
+    gap: 0.2rem;
+}
+
+.qp-analysis__lines > div,
+.qp-analysis__model > div {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
+    font-size: 0.85rem;
+}
+
+.qp-analysis__lines dt,
+.qp-analysis__model dt { color: var(--pb-muted, #8b93a7); margin: 0; }
+
+.qp-analysis__lines dd,
+.qp-analysis__model dd { margin: 0; font-variant-numeric: tabular-nums; }
+
+.qp-analysis__model { border-top: 1px solid var(--pb-border, #2a2f3a); padding-top: 0.5rem; }
+
+.qp-analysis__unavailable {
+    font-size: 0.85rem;
+    color: var(--pb-muted, #8b93a7);
+    margin: 0 0 0.4rem;
+}
+
+.qp-analysis__reason {
+    font-size: 0.78rem;
+    color: var(--pb-muted, #8b93a7);
+    margin: 0;
+    line-height: 1.35;
+}
