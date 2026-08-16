@@ -7,15 +7,30 @@ namespace Playbook.Infrastructure.Predictions;
 
 /// <summary>
 /// Deterministic mock NFL prop lines for local development without an Odds API key.
-/// Includes two preseason slates so week navigation can be exercised offline.
+///
+/// The fixture derives its kickoffs and phase from the live calendar rather than pinning them
+/// to a fixed weekday and a hardcoded phase. Two things previously drifted:
+///
+///   1. PHASE. Events were hardcoded Preseason. Once the real calendar moves to the regular
+///      season, SelectActiveWeek's phase-first rule discards them entirely.
+///   2. WEEK NUMBERING. AssignWeeksInPhase numbers a provider's own kickoff clusters
+///      sequentially 1..n; it does not use absolute calendar weeks. Emitting two clusters meant
+///      they became "week 1" and "week 2" of the mock's data, and SelectActiveWeek then matched
+///      whichever happened to equal the real current week number. As the wall clock advanced the
+///      selected cluster changed, so the visible fixture silently varied over time.
+///
+/// All events are therefore emitted in a SINGLE upcoming cluster carrying the calendar's current
+/// phase, which makes the selected slate deterministic regardless of the date the code runs.
 /// </summary>
 public sealed class MockPropLineProvider : IPropLineProvider
 {
     private readonly IPlayerService _players;
+    private readonly INflCalendarService _calendar;
 
-    public MockPropLineProvider(IPlayerService players)
+    public MockPropLineProvider(IPlayerService players, INflCalendarService calendar)
     {
         _players = players;
+        _calendar = calendar;
     }
 
     public string ProviderName => "Mock";
@@ -23,13 +38,21 @@ public sealed class MockPropLineProvider : IPropLineProvider
     public Task<IReadOnlyList<PropLine>> GetPropLinesAsync(CancellationToken cancellationToken = default)
     {
         var now = DateTimeOffset.UtcNow;
-        // Anchor mock kickoffs on upcoming Thu 20:00 UTC so they land in one NFL week cluster.
-        var week1Kickoff = NextThursday(now).AddHours(20);
-        var week2Kickoff = week1Kickoff.AddDays(7);
+        var phase = _calendar.GetCurrentContext().Phase;
 
-        var eventA = Event("mock-cin-cle", "CLE", "CIN", week1Kickoff);
-        var eventB = Event("mock-phi-dal", "DAL", "PHI", week1Kickoff.AddHours(3));
-        var eventC = Event("mock-buf-nyj", "NYJ", "BUF", week2Kickoff);
+        // One cluster, always upcoming. Spread over a few hours rather than days so every event
+        // shares a single NFL week-start and the provider yields exactly one slate.
+        var kickoff = now.AddHours(6);
+        if (NflCalendarService.NflWeekStartEastern(kickoff)
+            != NflCalendarService.NflWeekStartEastern(kickoff.AddHours(2)))
+        {
+            // Straddling a week boundary would split the cluster in two; push past it.
+            kickoff = kickoff.AddHours(3);
+        }
+
+        var eventA = Event("mock-cin-cle", "CLE", "CIN", kickoff, phase);
+        var eventB = Event("mock-phi-dal", "DAL", "PHI", kickoff.AddHours(1), phase);
+        var eventC = Event("mock-buf-nyj", "NYJ", "BUF", kickoff.AddHours(2), phase);
 
         var players = _players.GetAllPlayers();
         PropLine? PlayerLine(
@@ -153,26 +176,16 @@ public sealed class MockPropLineProvider : IPropLineProvider
         return Task.FromResult<IReadOnlyList<PropLine>>(lines);
     }
 
-    private static FootballEvent Event(string id, string home, string away, DateTimeOffset kickoff) =>
+    private static FootballEvent Event(
+        string id, string home, string away, DateTimeOffset kickoff, NflSeasonPhase phase) =>
         new()
         {
             EventId = id,
             HomeTeam = home,
             AwayTeam = away,
             CommenceTime = kickoff,
-            PhaseHint = NflSeasonPhase.Preseason,
-            Phase = NflSeasonPhase.Preseason
+            PhaseHint = phase,
+            Phase = phase
         };
 
-    private static DateTimeOffset NextThursday(DateTimeOffset now)
-    {
-        var date = now.UtcDateTime.Date;
-        var daysUntil = ((int)DayOfWeek.Thursday - (int)date.DayOfWeek + 7) % 7;
-        if (daysUntil == 0 && now.UtcDateTime.Hour >= 20)
-        {
-            daysUntil = 7;
-        }
-
-        return new DateTimeOffset(date.AddDays(daysUntil), TimeSpan.Zero);
-    }
 }
