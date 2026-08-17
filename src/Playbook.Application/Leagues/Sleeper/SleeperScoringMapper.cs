@@ -29,6 +29,36 @@ public static class SleeperScoringMapper
             _ => LeagueType.Redraft
         };
 
+    /// <summary>
+    /// Map a Sleeper draft's metadata.scoring_type name (e.g. "ppr", "half_ppr", "2qb",
+    /// "dynasty_2qb", "std") to a Playbook scoring format. Used when following a draft directly,
+    /// where the detailed scoring_settings dictionary a league exposes is not available.
+    /// Unrecognised names fall back to PPR, which is Sleeper's own default.
+    /// </summary>
+    public static ScoringType MapScoringTypeFromName(string? scoringTypeName)
+    {
+        if (string.IsNullOrWhiteSpace(scoringTypeName))
+        {
+            return ScoringType.Ppr;
+        }
+
+        var name = scoringTypeName.Trim().ToLowerInvariant();
+
+        if (name.Contains("half", StringComparison.Ordinal))
+        {
+            return ScoringType.HalfPpr;
+        }
+
+        // "std"/"standard" are the only non-reception formats Sleeper names directly.
+        if (name.Contains("std", StringComparison.Ordinal) ||
+            name.Contains("standard", StringComparison.Ordinal))
+        {
+            return ScoringType.Standard;
+        }
+
+        return ScoringType.Ppr;
+    }
+
     public static string FormatLabel(ScoringType format, decimal receptionPoints) =>
         format switch
         {

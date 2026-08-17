@@ -83,34 +83,69 @@ public sealed class DraftAssistantService : IDraftAssistantService
     public void SetStrategy(Guid leagueId, DynastyStrategy strategy) =>
         _strategyByLeague[leagueId] = strategy;
 
+    /// <summary>Draft id the user explicitly asked to follow, if any.</summary>
+    private string? _attachedDraftId;
+
+    public string? AttachedDraftId => _attachedDraftId;
+
+    public bool AttachDraft(string draftUrlOrId)
+    {
+        if (!SleeperDraftLink.TryParse(draftUrlOrId, out var draftId))
+        {
+            return false;
+        }
+
+        _attachedDraftId = draftId;
+        return true;
+    }
+
+    public void DetachDraft() => _attachedDraftId = null;
+
     public async Task<DraftAssistantReport> GetReportAsync(CancellationToken cancellationToken = default)
     {
         var now = DateTimeOffset.UtcNow;
         var league = _leagueState.CurrentLeague;
         var team = _leagueState.CurrentUserTeam;
+        var attachedDraftId = _attachedDraftId;
 
-        if (league is null || league.DataSource != LeagueDataSource.Sleeper ||
-            string.IsNullOrWhiteSpace(league.ExternalId))
+        // A directly-attached draft does not require a connected league — that is the whole
+        // point of it. Only the league-resolution path needs one.
+        if (attachedDraftId is null &&
+            (league is null || league.DataSource != LeagueDataSource.Sleeper ||
+             string.IsNullOrWhiteSpace(league.ExternalId)))
         {
-            return Empty(now, "Connect a live Sleeper league to use the Draft Assistant.");
+            return Empty(
+                now,
+                "Connect a live Sleeper league, or paste a Sleeper draft link, to use the Draft Assistant.");
         }
 
-        SleeperDraftSummary? draftSummary;
-        try
+        string resolvedDraftId;
+        if (attachedDraftId is not null)
         {
-            var drafts = await _sleeper.GetDraftsForLeagueAsync(league.ExternalId, cancellationToken)
-                .ConfigureAwait(false);
-            draftSummary = drafts.OrderByDescending(d => d.StartTime ?? 0).FirstOrDefault();
+            resolvedDraftId = attachedDraftId;
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        else
         {
-            _logger.LogWarning(ex, "Draft Assistant: failed to list drafts for league {LeagueId}", league.ExternalId);
-            return Empty(now, "Could not reach Sleeper to look up this league's draft.", isStale: true);
-        }
+            SleeperDraftSummary? draftSummary;
+            try
+            {
+                var drafts = await _sleeper.GetDraftsForLeagueAsync(league!.ExternalId!, cancellationToken)
+                    .ConfigureAwait(false);
+                draftSummary = drafts.OrderByDescending(d => d.StartTime ?? 0).FirstOrDefault();
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogWarning(
+                    ex, "Draft Assistant: failed to list drafts for league {LeagueId}", league!.ExternalId);
+                return Empty(now, "Could not reach Sleeper to look up this league's draft.", isStale: true);
+            }
 
-        if (draftSummary is null)
-        {
-            return Empty(now, "No draft found for this league yet.");
+            if (draftSummary is null)
+            {
+                return Empty(now, "No draft found for this league yet.");
+            }
+
+            resolvedDraftId = draftSummary.DraftId;
         }
 
         SleeperDraftSnapshot? draft;
@@ -118,9 +153,13 @@ public sealed class DraftAssistantService : IDraftAssistantService
         SleeperLeagueSnapshot? leagueSnapshot;
         try
         {
-            var draftTask = _sleeper.GetDraftAsync(draftSummary.DraftId, cancellationToken);
-            var picksTask = _sleeper.GetDraftPicksAsync(draftSummary.DraftId, cancellationToken);
-            var leagueSnapshotTask = _sleeper.GetLeagueSnapshotAsync(league.ExternalId, cancellationToken);
+            var draftTask = _sleeper.GetDraftAsync(resolvedDraftId, cancellationToken);
+            var picksTask = _sleeper.GetDraftPicksAsync(resolvedDraftId, cancellationToken);
+            // The league snapshot is only used to cross-reference roster ownership. An attached
+            // draft carries its own slot_to_roster_id, so it is skipped when no league applies.
+            var leagueSnapshotTask = league is not null && !string.IsNullOrWhiteSpace(league.ExternalId)
+                ? _sleeper.GetLeagueSnapshotAsync(league.ExternalId, cancellationToken)
+                : Task.FromResult<SleeperLeagueSnapshot?>(null);
             await Task.WhenAll(draftTask, picksTask, leagueSnapshotTask).ConfigureAwait(false);
             draft = draftTask.Result;
             picks = picksTask.Result;
@@ -128,7 +167,7 @@ public sealed class DraftAssistantService : IDraftAssistantService
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogWarning(ex, "Draft Assistant: failed to fetch live draft {DraftId}", draftSummary.DraftId);
+            _logger.LogWarning(ex, "Draft Assistant: failed to fetch live draft {DraftId}", resolvedDraftId);
             return Empty(now, "Could not reach Sleeper for live draft data.", isStale: true);
         }
 
@@ -136,6 +175,31 @@ public sealed class DraftAssistantService : IDraftAssistantService
         {
             return Empty(now, "Draft data unavailable from Sleeper.", isStale: true);
         }
+
+        // An attached draft may belong to a league the user has not connected (which is exactly
+        // what happens with a Sleeper mock). The draft object is self-describing — teams, rounds,
+        // roster slots, scoring and league type all live on it — so an effective League is built
+        // from the draft itself rather than requiring a connection. When the attached draft DOES
+        // belong to the connected league, the real league wins so the user's own roster is known.
+        var draftBelongsToConnectedLeague =
+            league is not null &&
+            !string.IsNullOrWhiteSpace(draft.LeagueId) &&
+            string.Equals(league.ExternalId, draft.LeagueId, StringComparison.Ordinal);
+
+        var effectiveLeague = draftBelongsToConnectedLeague || attachedDraftId is null
+            ? league
+            : BuildLeagueFromDraft(draft);
+
+        if (effectiveLeague is null)
+        {
+            return Empty(now, "Could not determine league settings for this draft.", isStale: true);
+        }
+
+        // The user's roster in an attached draft is resolved from the draft's own order, using the
+        // Sleeper user id taken from a connected league's roster ownership. Never guessed.
+        var effectiveTeamRosterId = draftBelongsToConnectedLeague || attachedDraftId is null
+            ? team?.RosterId
+            : ResolveAttachedUserRosterId(draft, leagueSnapshot, league);
 
         var slotToRosterId = BuildSlotToRosterId(draft, leagueSnapshot);
         var pickRecords = picks
@@ -152,7 +216,7 @@ public sealed class DraftAssistantService : IDraftAssistantService
         var board = new DraftBoard
         {
             DraftId = draft.DraftId,
-            LeagueId = league.Id,
+            LeagueId = effectiveLeague.Id,
             Season = draft.Season,
             Status = status,
             Type = draft.Type,
@@ -161,7 +225,7 @@ public sealed class DraftAssistantService : IDraftAssistantService
             Picks = pickRecords,
             NextPickNumber = nextPickNumber,
             NextRosterId = nextRosterId == 0 ? null : nextRosterId,
-            UserRosterId = team?.RosterId,
+            UserRosterId = effectiveTeamRosterId,
             RetrievedAt = now
         };
 
@@ -169,8 +233,8 @@ public sealed class DraftAssistantService : IDraftAssistantService
         // the early-exit states — reports the league's real type/strategy/phase instead of
         // silently defaulting to Redraft/Hybrid/Early. A dynasty league whose draft hasn't
         // started, is paused, or is already complete must still show as dynasty.
-        var isDynasty = league.LeagueType == LeagueType.Dynasty;
-        var strategy = isDynasty ? GetStrategy(league.Id) : DynastyStrategy.Hybrid;
+        var isDynasty = effectiveLeague.LeagueType == LeagueType.Dynasty;
+        var strategy = isDynasty ? GetStrategy(effectiveLeague.Id) : DynastyStrategy.Hybrid;
         var draftPhase = DraftPhasePolicy.ClassifyFromPick(
             board.NextPickNumber, board.TeamCount, board.TotalRounds);
 
@@ -189,32 +253,19 @@ public sealed class DraftAssistantService : IDraftAssistantService
                 GeneratedAt = now,
                 IsDynasty = isDynasty,
                 Strategy = strategy,
-                LeagueId = league.Id,
+                LeagueId = effectiveLeague.Id,
                 Phase = draftPhase
             };
         }
 
-        if (status != DraftStatus.Drafting)
-        {
-            return new DraftAssistantReport
-            {
-                Board = board,
-                IsOnTheClock = false,
-                Recommended = null,
-                Alternatives = [],
-                RosterNeeds = [],
-                StatusMessage = status == DraftStatus.NotStarted
-                    ? "Draft has not started yet."
-                    : "Draft is paused.",
-                IsDynasty = isDynasty,
-                Strategy = strategy,
-                LeagueId = league.Id,
-                Phase = draftPhase,
-                UnavailableSignals = KnownUnavailableSignals,
-                IsStale = false,
-                GeneratedAt = now
-            };
-        }
+        // NOTE: a non-Drafting status is deliberately NOT a reason to withhold recommendations.
+        // Sleeper reports mock drafts as "paused" even while picks are actively being made — this
+        // was observed live on a real mock (pick count advancing while status stayed "paused"),
+        // and short-circuiting here made the Draft Assistant useless for exactly the mock-draft
+        // case it is most needed for. A pre-draft board is likewise worth recommending against,
+        // so the user can prepare before pick 1.01.
+        //
+        // Only a COMPLETE draft has nothing left to recommend, and that is handled above.
 
         var allPlayers = _players.GetAllPlayers().ToDictionary(p => p.Id);
         var draftedIds = pickRecords
@@ -223,7 +274,7 @@ public sealed class DraftAssistantService : IDraftAssistantService
             .ToHashSet();
         var projectionByPlayer = _projections.GetAllProjections().ToDictionary(p => p.PlayerId);
 
-        var userRosterId = team?.RosterId;
+        var userRosterId = effectiveTeamRosterId;
         var userDraftedPlayers = userRosterId is int urid
             ? pickRecords
                 .Where(p => p.RosterId == urid && p.PlayerId is Guid pid && allPlayers.ContainsKey(pid))
@@ -231,7 +282,7 @@ public sealed class DraftAssistantService : IDraftAssistantService
                 .ToList()
             : [];
 
-        var rosterNeeds = BuildRosterNeeds(league, userDraftedPlayers);
+        var rosterNeeds = BuildRosterNeeds(effectiveLeague, userDraftedPlayers);
         var needByPosition = rosterNeeds.ToDictionary(n => n.PositionLabel, n => n.NeedLevel);
 
         var undrafted = allPlayers.Values
@@ -239,13 +290,14 @@ public sealed class DraftAssistantService : IDraftAssistantService
             .Where(p => p.Position is Position.QB or Position.RB or Position.WR or Position.TE)
             .ToList();
 
-        var replacementLevelByPosition = ComputeReplacementLevels(undrafted, projectionByPlayer, league);
+        var replacementLevelByPosition =
+            ComputeReplacementLevels(undrafted, projectionByPlayer, effectiveLeague);
         // isDynasty / strategy / draftPhase already computed above (shared with the early-return
         // paths).
 
         // Real published schedule -> bye weeks. Empty map when unavailable; the factor then
         // reports itself as unavailable rather than silently scoring zero.
-        var byeWeeks = _byeWeeks.GetByeWeeks(league.Season);
+        var byeWeeks = _byeWeeks.GetByeWeeks(effectiveLeague.Season);
         var byeCountsByPositionWeek = BuildByeCounts(userDraftedPlayers, byeWeeks);
 
         var rosterByPosition = rosterNeeds.ToDictionary(n => n.PositionLabel, n => n);
@@ -279,7 +331,8 @@ public sealed class DraftAssistantService : IDraftAssistantService
         }
 
         var recommendations = byTeamFit.Take(1 + MaxAlternatives).Select(BuildRecommendation).ToList();
-        var isOnTheClock = board.IsUserOnTheClock;
+        // Nobody is on the clock before the draft begins, even though slot 1 technically resolves.
+        var isOnTheClock = status != DraftStatus.NotStarted && board.IsUserOnTheClock;
 
         return new DraftAssistantReport
         {
@@ -288,17 +341,27 @@ public sealed class DraftAssistantService : IDraftAssistantService
             Recommended = recommendations.FirstOrDefault(),
             Alternatives = recommendations.Skip(1).ToList(),
             RosterNeeds = rosterNeeds,
-            StatusMessage = isOnTheClock
-                ? "You're on the clock."
-                : board.NextRosterId is null
-                    ? $"Pick {board.NextPickNumber} is up next (roster unresolved)."
-                    : $"Pick {board.NextPickNumber} is on the clock (not your team).",
+            StatusMessage = status switch
+            {
+                // Keep the real Sleeper state visible rather than implying an active clock.
+                DraftStatus.NotStarted =>
+                    "Draft has not started yet — showing who to target first.",
+                DraftStatus.Paused when isOnTheClock =>
+                    "Draft is paused — you're up next.",
+                DraftStatus.Paused =>
+                    $"Draft is paused — pick {board.NextPickNumber} is next.",
+                _ => isOnTheClock
+                    ? "You're on the clock."
+                    : board.NextRosterId is null
+                        ? $"Pick {board.NextPickNumber} is up next (roster unresolved)."
+                        : $"Pick {board.NextPickNumber} is on the clock (not your team)."
+            },
             UnavailableSignals = BuildUnavailableSignals(byeWeeks),
             IsStale = false,
             GeneratedAt = now,
             IsDynasty = isDynasty,
             Strategy = strategy,
-            LeagueId = league.Id,
+            LeagueId = effectiveLeague.Id,
             Phase = draftPhase,
             DecisionSummary = BuildDecisionSummary(
                 recommendations.FirstOrDefault(), byRawProjection, draftPhase, isDynasty, strategy)
@@ -747,9 +810,78 @@ public sealed class DraftAssistantService : IDraftAssistantService
         return needs;
     }
 
+    /// <summary>
+    /// Build an effective League purely from a Sleeper draft object. Every value is read from the
+    /// draft — nothing is assumed. Used when following a draft that belongs to a league the user
+    /// has not connected (a Sleeper mock being the common case).
+    ///
+    /// The id is derived deterministically from the draft id so the same draft always maps to the
+    /// same league id across polls, which keeps the dynasty-strategy selection stable.
+    /// </summary>
+    internal static League BuildLeagueFromDraft(SleeperDraftSnapshot draft)
+    {
+        var leagueType = SleeperScoringMapper.MapLeagueType(
+            int.TryParse(draft.LeagueTypeRaw, out var rawType) ? rawType : 0);
+
+        var scoring = SleeperScoringMapper.MapScoringTypeFromName(draft.ScoringType);
+
+        return new League
+        {
+            Id = SleeperPlayerIds.ToPlaybookId($"draft:{draft.DraftId}"),
+            Name = string.IsNullOrWhiteSpace(draft.Name) ? "Sleeper draft" : draft.Name!,
+            Platform = LeaguePlatform.Sleeper,
+            LeagueType = leagueType,
+            ScoringType = scoring,
+            NumberOfTeams = draft.Teams,
+            CurrentWeek = 1,
+            Season = int.TryParse(draft.Season, out var season) ? season : DateTime.UtcNow.Year,
+            IsActive = true,
+            DataSource = LeagueDataSource.Sleeper,
+            ExternalId = draft.LeagueId,
+            RosterPositions = draft.RosterPositions
+        };
+    }
+
+    /// <summary>
+    /// Which roster in the attached draft belongs to the user. Resolved from the draft's own
+    /// draft_order using the Sleeper user id that owns the user's roster in a connected league.
+    /// Returns null when that cannot be established — the board then shows the draft without
+    /// claiming a team, rather than guessing one.
+    /// </summary>
+    internal static int? ResolveAttachedUserRosterId(
+        SleeperDraftSnapshot draft,
+        SleeperLeagueSnapshot? connectedLeagueSnapshot,
+        League? connectedLeague)
+    {
+        if (connectedLeagueSnapshot is null || connectedLeague?.SelectedRosterId is not int selectedRoster)
+        {
+            return null;
+        }
+
+        var sleeperUserId = connectedLeagueSnapshot.Rosters
+            .FirstOrDefault(r => r.RosterId == selectedRoster)?.OwnerId;
+
+        if (string.IsNullOrWhiteSpace(sleeperUserId) ||
+            !draft.DraftOrderByUserId.TryGetValue(sleeperUserId, out var slot))
+        {
+            return null;
+        }
+
+        return draft.SlotToRosterId.TryGetValue(slot, out var rosterId) ? rosterId : null;
+    }
+
     internal static IReadOnlyDictionary<int, int> BuildSlotToRosterId(
         SleeperDraftSnapshot draft, SleeperLeagueSnapshot? leagueSnapshot)
     {
+        // Sleeper publishes slot_to_roster_id on the draft itself. Prefer it: it is the
+        // authoritative mapping and, critically, it is present for a draft attached directly by
+        // id where no league roster list exists. The league cross-reference below remains as a
+        // fallback for drafts that omit it.
+        if (draft.SlotToRosterId.Count > 0)
+        {
+            return new Dictionary<int, int>(draft.SlotToRosterId);
+        }
+
         var result = new Dictionary<int, int>();
         if (leagueSnapshot is null)
         {

@@ -48,6 +48,29 @@ public sealed class SleeperDraftSnapshot
     /// <summary>Sleeper user id → draft slot (1-indexed). Combine with league roster ownership to
     /// resolve slot → roster id; Sleeper does not always publish slot_to_roster_id directly.</summary>
     public required IReadOnlyDictionary<string, int> DraftOrderByUserId { get; init; }
+
+    /// <summary>
+    /// Draft slot → roster id, published directly on the draft object. Preferred over
+    /// cross-referencing league rosters because it also works for a draft attached by id, where
+    /// no league roster list is available. Empty when Sleeper omits it.
+    /// </summary>
+    public IReadOnlyDictionary<int, int> SlotToRosterId { get; init; } =
+        new Dictionary<int, int>();
+
+    /// <summary>
+    /// Starting roster slots derived from the draft's own settings (slots_qb, slots_rb, ...).
+    /// Lets a directly-attached draft describe its own roster shape without a league.
+    /// </summary>
+    public IReadOnlyList<string> RosterPositions { get; init; } = [];
+
+    /// <summary>Sleeper scoring_type from draft metadata, e.g. "ppr", "2qb", "dynasty_2qb".</summary>
+    public string? ScoringType { get; init; }
+
+    /// <summary>Sleeper league_type from draft metadata: "0" redraft, "1" keeper, "2" dynasty.</summary>
+    public string? LeagueTypeRaw { get; init; }
+
+    /// <summary>Draft name from metadata, for display when attached by id.</summary>
+    public string? Name { get; init; }
 }
 
 public sealed class SleeperDraftPickSnapshot

@@ -15,6 +15,34 @@
         <p class="pb-page__subtitle">Live recommendations for your next Sleeper pick.</p>
     </header>
 
+    <section class="da-attach">
+        <label class="da-attach__label" for="da-attach-input">
+            Following a mock draft? Paste its Sleeper draft link
+        </label>
+        <div class="da-attach__row">
+            <input id="da-attach-input"
+                   class="da-attach__input"
+                   type="text"
+                   inputmode="url"
+                   autocomplete="off"
+                   placeholder="https://sleeper.com/draft/nfl/..."
+                   @bind="attachInput"
+                   @bind:event="oninput" />
+            <button type="button" class="da-attach__btn" @onclick="AttachAsync">Follow</button>
+        </div>
+        @if (!string.IsNullOrWhiteSpace(attachError))
+        {
+            <p class="da-attach__error">@attachError</p>
+        }
+        else if (DraftAssistant.AttachedDraftId is string followedId)
+        {
+            <p class="da-attach__status">
+                Following draft @followedId
+                <button type="button" class="da-attach__clear" @onclick="DetachAsync">stop following</button>
+            </p>
+        }
+    </section>
+
     @if (isLoading && report is null)
     {
         <p class="pb-empty">Loading draft state…</p>
@@ -140,6 +168,36 @@
 </section>
 
 @code {
+    private string attachInput = "";
+    private string? attachError;
+
+    /// <summary>
+    /// Follow a specific Sleeper draft by pasted link. This is what makes mock drafts work: a
+    /// Sleeper mock lives in its own league that the user has not connected, so resolving a draft
+    /// from the connected league can never find it.
+    /// </summary>
+    private async Task AttachAsync()
+    {
+        attachError = null;
+
+        if (!DraftAssistant.AttachDraft(attachInput))
+        {
+            attachError = "That doesn't look like a Sleeper draft link. Open the draft in Sleeper, "
+                        + "copy its link, and paste it here.";
+            return;
+        }
+
+        attachInput = "";
+        await LoadAsync(cts?.Token ?? CancellationToken.None);
+    }
+
+    private async Task DetachAsync()
+    {
+        DraftAssistant.DetachDraft();
+        attachError = null;
+        await LoadAsync(cts?.Token ?? CancellationToken.None);
+    }
+
     private static readonly DynastyStrategy[] AllStrategies =
     [
         DynastyStrategy.ChampionshipCompetitor,

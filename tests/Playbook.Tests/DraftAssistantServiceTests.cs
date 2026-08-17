@@ -249,9 +249,12 @@ public class DraftAssistantServiceTests
         var report = await service.GetReportAsync();
 
         Assert.NotNull(report.Board);
+        // Nobody is on the clock before a draft begins, even though slot 1 resolves to a roster.
         Assert.False(report.IsOnTheClock);
-        Assert.Null(report.Recommended);
-        Assert.Equal("Draft has not started yet.", report.StatusMessage);
+        // Behaviour change (validated against a real Sleeper mock): a pre-draft board still
+        // produces recommendations so the user can prepare before pick 1.01. Withholding them
+        // made the assistant useless in exactly the pre-draft window it is most used.
+        Assert.Contains("has not started", report.StatusMessage, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -365,7 +368,7 @@ public class DraftAssistantServiceTests
 
         var report = await service.GetReportAsync();
 
-        Assert.Equal("Draft has not started yet.", report.StatusMessage);
+        Assert.Contains("has not started", report.StatusMessage, StringComparison.OrdinalIgnoreCase);
         Assert.True(report.IsDynasty, "a dynasty league must still report IsDynasty before its draft starts");
         Assert.Equal(league.Id, report.LeagueId);
     }

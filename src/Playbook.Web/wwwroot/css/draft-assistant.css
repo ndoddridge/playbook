@@ -195,3 +195,71 @@
     color: var(--pb-accent, #4ea87a);
     font-weight: 600;
 }
+
+/* --- Attach a Sleeper draft (mock drafts live outside the connected league) --- */
+.da-attach {
+    margin: 0 0 0.85rem;
+    padding: 0.65rem 0.75rem;
+    border: 1px solid var(--pb-border, #2a2f3a);
+    border-radius: 10px;
+    background: var(--pb-surface, #161a22);
+}
+
+.da-attach__label {
+    display: block;
+    font-size: 0.72rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--pb-muted, #8b93a7);
+    margin-bottom: 0.4rem;
+}
+
+.da-attach__row { display: flex; gap: 0.4rem; }
+
+.da-attach__input {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 44px;            /* thumb-friendly on iPhone */
+    padding: 0.4rem 0.6rem;
+    border-radius: 8px;
+    border: 1px solid var(--pb-border, #2a2f3a);
+    background: transparent;
+    color: var(--pb-text, #e6e9f0);
+    font-size: 16px;             /* 16px stops iOS Safari zooming on focus */
+}
+
+.da-attach__btn {
+    flex: 0 0 auto;
+    min-height: 44px;
+    padding: 0 0.9rem;
+    border-radius: 8px;
+    border: 1px solid var(--pb-accent, #4ea87a);
+    background: transparent;
+    color: var(--pb-accent, #4ea87a);
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.da-attach__error {
+    margin: 0.45rem 0 0;
+    font-size: 0.78rem;
+    line-height: 1.35;
+    color: #d98080;
+}
+
+.da-attach__status {
+    margin: 0.45rem 0 0;
+    font-size: 0.78rem;
+    color: var(--pb-muted, #8b93a7);
+}
+
+.da-attach__clear {
+    margin-left: 0.4rem;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--pb-accent, #4ea87a);
+    text-decoration: underline;
+    cursor: pointer;
+    font-size: 0.78rem;
+}

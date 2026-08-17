@@ -176,8 +176,37 @@ public sealed class SleeperLeagueClient : ISleeperLeagueClient
             Teams = draft.Settings?.Teams ?? 0,
             DraftOrderByUserId = draft.DraftOrder is null
                 ? new Dictionary<string, int>(StringComparer.Ordinal)
-                : new Dictionary<string, int>(draft.DraftOrder, StringComparer.Ordinal)
+                : new Dictionary<string, int>(draft.DraftOrder, StringComparer.Ordinal),
+            SlotToRosterId = ParseSlotToRosterId(draft.SlotToRosterId),
+            RosterPositions = draft.Settings?.ToRosterPositions() ?? [],
+            ScoringType = draft.Metadata?.ScoringType,
+            LeagueTypeRaw = draft.Metadata?.LeagueType,
+            Name = draft.Metadata?.Name
         };
+    }
+
+    /// <summary>
+    /// Sleeper publishes slot_to_roster_id keyed by slot-as-string, and a slot can legitimately
+    /// map to null before a draft is populated. Null entries are dropped rather than coerced.
+    /// </summary>
+    private static IReadOnlyDictionary<int, int> ParseSlotToRosterId(
+        IReadOnlyDictionary<string, int?>? raw)
+    {
+        var result = new Dictionary<int, int>();
+        if (raw is null)
+        {
+            return result;
+        }
+
+        foreach (var (slotText, rosterId) in raw)
+        {
+            if (rosterId is int roster && int.TryParse(slotText, out var slot))
+            {
+                result[slot] = roster;
+            }
+        }
+
+        return result;
     }
 
     public async Task<IReadOnlyList<SleeperDraftPickSnapshot>> GetDraftPicksAsync(
