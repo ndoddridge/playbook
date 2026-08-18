@@ -141,6 +141,7 @@ public sealed class DraftAssistantService : IDraftAssistantService
         var league = _leagueState.CurrentLeague;
         var team = _leagueState.CurrentUserTeam;
         var attachedDraftId = _attachedDraftId;
+        var (personalKnowledge, personalStatus) = LoadPersonalScope(league, team);
 
         // A directly-attached draft does not require a connected league — that is the whole
         // point of it. Only the league-resolution path needs one.
@@ -150,7 +151,9 @@ public sealed class DraftAssistantService : IDraftAssistantService
         {
             return Empty(
                 now,
-                "Connect a live Sleeper league, or paste a Sleeper draft link, to use the Draft Assistant.");
+                "Connect a live Sleeper league, or paste a Sleeper draft link, to use the Draft Assistant.",
+                personalKnowledge: personalKnowledge,
+                personalStatus: personalStatus);
         }
 
         string resolvedDraftId;
@@ -171,12 +174,12 @@ public sealed class DraftAssistantService : IDraftAssistantService
             {
                 _logger.LogWarning(
                     ex, "Draft Assistant: failed to list drafts for league {LeagueId}", league!.ExternalId);
-                return Empty(now, "Could not reach Sleeper to look up this league's draft.", isStale: true);
+                return Empty(now, "Could not reach Sleeper to look up this league's draft.", isStale: true, personalKnowledge: personalKnowledge, personalStatus: personalStatus);
             }
 
             if (draftSummary is null)
             {
-                return Empty(now, "No draft found for this league yet.");
+                return Empty(now, "No draft found for this league yet.", personalKnowledge: personalKnowledge, personalStatus: personalStatus);
             }
 
             resolvedDraftId = draftSummary.DraftId;
@@ -202,12 +205,12 @@ public sealed class DraftAssistantService : IDraftAssistantService
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogWarning(ex, "Draft Assistant: failed to fetch live draft {DraftId}", resolvedDraftId);
-            return Empty(now, "Could not reach Sleeper for live draft data.", isStale: true);
+            return Empty(now, "Could not reach Sleeper for live draft data.", isStale: true, personalKnowledge: personalKnowledge, personalStatus: personalStatus);
         }
 
         if (draft is null)
         {
-            return Empty(now, "Draft data unavailable from Sleeper.", isStale: true);
+            return Empty(now, "Draft data unavailable from Sleeper.", isStale: true, personalKnowledge: personalKnowledge, personalStatus: personalStatus);
         }
 
         // An attached draft may belong to a league the user has not connected (which is exactly
@@ -226,7 +229,7 @@ public sealed class DraftAssistantService : IDraftAssistantService
 
         if (effectiveLeague is null)
         {
-            return Empty(now, "Could not determine league settings for this draft.", isStale: true);
+            return Empty(now, "Could not determine league settings for this draft.", isStale: true, personalKnowledge: personalKnowledge, personalStatus: personalStatus);
         }
 
         // The user's roster in an attached draft is resolved from the draft's own order, using the
@@ -288,7 +291,9 @@ public sealed class DraftAssistantService : IDraftAssistantService
                 IsDynasty = isDynasty,
                 Strategy = strategy,
                 LeagueId = effectiveLeague.Id,
-                Phase = draftPhase
+                Phase = draftPhase,
+                PersonalKnowledge = personalKnowledge,
+                PersonalKnowledgeStatus = personalStatus
             };
         }
 
@@ -425,6 +430,13 @@ public sealed class DraftAssistantService : IDraftAssistantService
             .Where(s => s.Projection is not null)
             .ToList();
 
+        ApplyPersonalKnowledge(
+            scored,
+            personalKnowledge,
+            effectiveLeague,
+            board,
+            rosterByPosition);
+
         var byRawProjection = scored.OrderByDescending(s => s.Projection!.Value).ToList();
         for (var i = 0; i < byRawProjection.Count; i++)
         {
@@ -482,7 +494,9 @@ public sealed class DraftAssistantService : IDraftAssistantService
                 recommendations.FirstOrDefault(), byRawProjection, draftPhase, isDynasty, strategy),
             TargetWatch = targetWatch.OrderBy(x => x.Assessment.Timing).ToList(),
             RouteTree = routeTree,
-            MyTendencies = myTendencies
+            MyTendencies = myTendencies,
+            PersonalKnowledge = personalKnowledge,
+            PersonalKnowledgeStatus = personalStatus
         };
     }
 
@@ -572,6 +586,118 @@ public sealed class DraftAssistantService : IDraftAssistantService
             : [];
         return PersonalDraftTendencyPolicy.Compute(board, myRosterId, decisionHistory);
     }
+
+    private (PersonalDraftKnowledge? Knowledge, PersonalDraftKnowledgeStatus Status) LoadPersonalScope(
+        League? league, FantasyTeam? team)
+    {
+        PersonalDraftKnowledge? knowledge = null;
+        if (league is not null && team is not null && _historical is not null)
+        {
+            var request = PersonalDraftLearningRequest.From(league, team);
+            if (request is not null)
+            {
+                knowledge = _historical.GetPersonalKnowledge(request.LeagueId, request.TeamId);
+            }
+        }
+
+        return (knowledge, PersonalDraftLearningPolicy.Status(league, team, knowledge));
+    }
+
+    /// <summary>
+    /// Bounded personal-preference nudge for the selected LeagueId + TeamId only. Applied after
+    /// objective scoring so it can break a close call but never replace projection/roster value.
+    /// </summary>
+    private static void ApplyPersonalKnowledge(
+        List<ScoredCandidate> scored,
+        PersonalDraftKnowledge? knowledge,
+        League league,
+        DraftBoard board,
+        IReadOnlyDictionary<string, PositionalNeed> rosterByPosition)
+    {
+        if (knowledge is null || knowledge.Preferences.Count == 0 || scored.Count == 0)
+        {
+            return;
+        }
+
+        knowledge = WithNormalizedKeys(knowledge);
+
+        var available = scored
+            .Where(s => s.Projection is not null)
+            .Select(s => (Key: NormalizePlayerKey(s.Player), Name: s.Player.FullName, Projection: s.Projection!.Value))
+            .ToList();
+        var roster = rosterByPosition.ToDictionary(
+            kv => kv.Key, kv => kv.Value.CurrentCount, StringComparer.OrdinalIgnoreCase);
+        var round = DraftOrderCalculator.RoundForPick(board.NextPickNumber, board.TeamCount);
+        var current = PersonalDraftLearningPolicy.LiveContext(
+            league, board.TeamCount, round, board.NextPickNumber, roster, available.Select(a => a.Key).ToList());
+
+        foreach (var candidate in scored)
+        {
+            if (candidate.Projection is null)
+            {
+                continue;
+            }
+
+            var adjustment = PersonalDraftLearningPolicy.Adjust(
+                NormalizePlayerKey(candidate.Player),
+                candidate.Player.FullName,
+                candidate.Projection.Value,
+                available,
+                knowledge,
+                current);
+            if (adjustment.ScoreDelta == 0)
+            {
+                continue;
+            }
+
+            candidate.TeamFitScore += adjustment.ScoreDelta;
+            if (adjustment.Factor is not null)
+            {
+                candidate.Factors = [.. candidate.Factors, adjustment.Factor];
+                if (!string.IsNullOrWhiteSpace(adjustment.Factor.Detail)
+                    && !candidate.Reasoning.Contains(adjustment.Factor.Detail, StringComparison.Ordinal))
+                {
+                    candidate.Reasoning = string.IsNullOrWhiteSpace(candidate.Reasoning)
+                        ? adjustment.Factor.Detail
+                        : candidate.Reasoning.TrimEnd('.') + ". " + adjustment.Factor.Detail;
+                }
+            }
+        }
+    }
+
+    internal static string NormalizePlayerKey(Player player) => player.Id.ToString("N");
+
+    internal static string NormalizeStoredKey(string key)
+    {
+        if (key.StartsWith("sleeper:", StringComparison.OrdinalIgnoreCase))
+        {
+            return SleeperPlayerIds.ToPlaybookId(key["sleeper:".Length..]).ToString("N");
+        }
+
+        return Guid.TryParse(key, out var id) ? id.ToString("N") : key;
+    }
+
+    private static PersonalDraftKnowledge WithNormalizedKeys(PersonalDraftKnowledge knowledge) => new()
+    {
+        LeagueId = knowledge.LeagueId,
+        TeamId = knowledge.TeamId,
+        OwnerKey = knowledge.OwnerKey,
+        LeagueName = knowledge.LeagueName,
+        TeamName = knowledge.TeamName,
+        DraftCount = knowledge.DraftCount,
+        DecisionCount = knowledge.DecisionCount,
+        LearnedDraftIds = knowledge.LearnedDraftIds,
+        UpdatedAtUtc = knowledge.UpdatedAtUtc,
+        Preferences = knowledge.Preferences.Select(p => p with
+        {
+            PreferredPlayerKey = NormalizeStoredKey(p.PreferredPlayerKey),
+            PassedPlayerKey = NormalizeStoredKey(p.PassedPlayerKey),
+            Context = p.Context with
+            {
+                AlternativePlayerKeys = p.Context.AlternativePlayerKeys.Select(NormalizeStoredKey).ToList()
+            }
+        }).ToList()
+    };
 
     internal static ScoredCandidate ScorePlayer(
         Player player,
@@ -1188,7 +1314,15 @@ public sealed class DraftAssistantService : IDraftAssistantService
         }
 
         return string.Join(" — ", parts.Take(2)) +
-               (parts.Count > 2 ? " " + parts[2] : "") + ".";
+               (parts.Count > 2 ? " " + parts[2] : "") + "."
+               + PersonalHistorySuffix(top);
+    }
+
+    private static string PersonalHistorySuffix(DraftRecommendation top)
+    {
+        var history = top.Factors.FirstOrDefault(f =>
+            string.Equals(f.Label, "Personal history", StringComparison.Ordinal) && f.Available);
+        return history?.Detail is { Length: > 0 } detail ? " " + detail : "";
     }
 
     /// <summary>
@@ -1391,7 +1525,12 @@ public sealed class DraftAssistantService : IDraftAssistantService
         _ => DraftStatus.Unknown
     };
 
-    private static DraftAssistantReport Empty(DateTimeOffset now, string message, bool isStale = false) => new()
+    private static DraftAssistantReport Empty(
+        DateTimeOffset now,
+        string message,
+        bool isStale = false,
+        PersonalDraftKnowledge? personalKnowledge = null,
+        PersonalDraftKnowledgeStatus? personalStatus = null) => new()
     {
         Board = null,
         IsOnTheClock = false,
@@ -1401,7 +1540,9 @@ public sealed class DraftAssistantService : IDraftAssistantService
         StatusMessage = message,
         UnavailableSignals = [],
         IsStale = isStale,
-        GeneratedAt = now
+        GeneratedAt = now,
+        PersonalKnowledge = personalKnowledge,
+        PersonalKnowledgeStatus = personalStatus
     };
 
     internal sealed class ScoredCandidate
@@ -1411,9 +1552,9 @@ public sealed class DraftAssistantService : IDraftAssistantService
         public PlayerProjection? ProjectionDetail { get; init; }
         public required int? ProjectionConfidence { get; init; }
         public required decimal? ValueOverReplacement { get; init; }
-        public required decimal TeamFitScore { get; init; }
-        public required IReadOnlyList<DraftRecommendationFactor> Factors { get; init; }
-        public required string Reasoning { get; init; }
+        public required decimal TeamFitScore { get; set; }
+        public required IReadOnlyList<DraftRecommendationFactor> Factors { get; set; }
+        public required string Reasoning { get; set; }
         public int BestPlayerAvailableRank { get; set; }
         public int TeamFitRank { get; set; }
         public AvailabilityRisk AvailabilityRisk { get; init; } = AvailabilityRisk.Unknown;

@@ -301,3 +301,21 @@
     cursor: pointer;
     font-size: 0.78rem;
 }
+
+.da-learn {
+    margin: 0 0 0.75rem;
+    font-size: 0.8rem;
+    line-height: 1.4;
+    color: var(--pb-color-text-secondary, #8b93a7);
+}
+
+.da-learn strong {
+    display: block;
+    color: var(--pb-color-text, #e6e9f0);
+    font-weight: 600;
+}
+
+.da-learn__counts {
+    display: block;
+    margin-top: 0.15rem;
+}

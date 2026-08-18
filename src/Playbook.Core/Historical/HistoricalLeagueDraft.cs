@@ -138,4 +138,5 @@ public sealed record HistoricalPositionDraftRange(
     int? EarliestPick, int? LatestPick, HistoricalEvidenceStrength EvidenceStrength);
 
 public sealed record HistoricalImportResult(bool Succeeded, IReadOnlyList<string> Errors,
-    IReadOnlyList<string> Warnings, HistoricalLeagueDraft? Draft = null);
+    IReadOnlyList<string> Warnings, HistoricalLeagueDraft? Draft = null,
+    Playbook.Core.Draft.PersonalDraftKnowledge? PersonalKnowledge = null);

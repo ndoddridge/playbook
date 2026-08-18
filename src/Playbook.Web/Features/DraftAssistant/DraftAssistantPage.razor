@@ -13,6 +13,16 @@
     <header class="pb-page__header ti-page__header">
         <h1 class="pb-page__title">Draft Assistant</h1>
         <p class="pb-page__subtitle">Live recommendations for your next Sleeper pick.</p>
+        @if (report?.PersonalKnowledgeStatus is { } learning)
+        {
+            <p class="da-learn">
+                <strong>@learning.ScopeLabel</strong>
+                @if (!string.IsNullOrEmpty(learning.CountsLabel))
+                {
+                    <span class="da-learn__counts">@learning.CountsLabel</span>
+                }
+            </p>
+        }
     </header>
 
     <section class="da-attach">

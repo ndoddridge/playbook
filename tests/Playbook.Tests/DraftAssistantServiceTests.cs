@@ -1,16 +1,19 @@
 using Playbook.Application.Draft;
 using Microsoft.Extensions.Logging.Abstractions;
+using Playbook.Application.Historical;
 using Playbook.Application.Injuries.Interfaces;
 using Playbook.Application.Leagues;
 using Playbook.Application.Leagues.Sleeper;
 using Playbook.Application.Players;
 using Playbook.Application.Projections.Interfaces;
 using Playbook.Core.Draft;
+using Playbook.Core.Historical;
 using Playbook.Core.Injuries.Models;
 using Playbook.Core.Leagues;
 using Playbook.Core.Players;
 using Playbook.Core.Projections.Models;
 using Playbook.Infrastructure.Draft;
+using Playbook.Infrastructure.Historical;
 using Playbook.Infrastructure.Players;
 
 namespace Playbook.Tests;
@@ -686,6 +689,269 @@ public class DraftAssistantServiceTests
         Assert.Equal(candidate.Id, report.RouteTree!.BestCurrentMove!.PlayerId);
     }
 
+    [Fact]
+    public async Task GetReportAsync_Loads_Only_The_Selected_League_And_Team_Personal_Knowledge()
+    {
+        var preferred = MakePlayer(Position.RB, "Preferred RB");
+        var other = MakePlayer(Position.RB, "Other RB");
+        var (league, sleeper, team) = BuildOnTheClockScenario(nextPickGoesToUser: true);
+        var historical = HistoricalWith(
+            PersonalKnowledge("lg1", "100", preferred, other, observations: 8),
+            PersonalKnowledge("lg1", "200", other, preferred, observations: 12),
+            PersonalKnowledge("lg2", "100", other, preferred, observations: 12));
+
+        var service = CreateService(
+            league, team, sleeper,
+            [preferred, other],
+            new Dictionary<Guid, PlayerProjection>
+            {
+                [preferred.Id] = MakeProjection(preferred.Id, 14.5m, 50),
+                [other.Id] = MakeProjection(other.Id, 15.0m, 50)
+            },
+            historical: historical);
+
+        var report = await service.GetReportAsync();
+
+        Assert.Equal("lg1", report.PersonalKnowledge!.LeagueId);
+        Assert.Equal("100", report.PersonalKnowledge.TeamId);
+        Assert.Equal(preferred.Id, report.Recommended!.PlayerId);
+        Assert.Contains(report.Recommended.Factors, f => f.Label == "Personal history");
+        Assert.Contains(
+            PersonalDraftLearningPolicy.HistorySentence(preferred.FullName, other.FullName, 8),
+            report.Recommended.Reasoning);
+        Assert.Contains("Personal history:", report.DecisionSummary);
+        Assert.Equal(preferred.Id, report.RouteTree!.BestCurrentMove!.PlayerId);
+    }
+
+    [Fact]
+    public async Task GetReportAsync_Does_Not_Apply_Another_Team_Or_League_Personal_Knowledge()
+    {
+        var preferred = MakePlayer(Position.RB, "Preferred RB");
+        var other = MakePlayer(Position.RB, "Other RB");
+        var (league, sleeper, team) = BuildOnTheClockScenario(nextPickGoesToUser: true);
+        var historical = HistoricalWith(
+            PersonalKnowledge("lg1", "200", preferred, other, observations: 12),
+            PersonalKnowledge("lg2", "100", preferred, other, observations: 12));
+
+        var service = CreateService(
+            league, team, sleeper,
+            [preferred, other],
+            new Dictionary<Guid, PlayerProjection>
+            {
+                [preferred.Id] = MakeProjection(preferred.Id, 14.0m, 50),
+                [other.Id] = MakeProjection(other.Id, 16.0m, 50)
+            },
+            historical: historical);
+
+        var report = await service.GetReportAsync();
+
+        Assert.Null(report.PersonalKnowledge);
+        Assert.Equal(other.Id, report.Recommended!.PlayerId);
+        Assert.DoesNotContain(report.Recommended.Factors, f => f.Label == "Personal history");
+        Assert.DoesNotContain("Personal history:", report.DecisionSummary);
+    }
+
+    [Fact]
+    public async Task GetReportAsync_Weak_Personal_Evidence_Cannot_Overwhelm_Objective_Value()
+    {
+        var underdog = MakePlayer(Position.RB, "Underdog");
+        var elite = MakePlayer(Position.RB, "Elite");
+        var (league, sleeper, team) = BuildOnTheClockScenario(nextPickGoesToUser: true);
+        var historical = HistoricalWith(PersonalKnowledge("lg1", "100", underdog, elite, observations: 1));
+
+        var service = CreateService(
+            league, team, sleeper,
+            [underdog, elite],
+            new Dictionary<Guid, PlayerProjection>
+            {
+                [underdog.Id] = MakeProjection(underdog.Id, 10m, 50),
+                [elite.Id] = MakeProjection(elite.Id, 20m, 50)
+            },
+            historical: historical);
+
+        var report = await service.GetReportAsync();
+
+        Assert.Equal(elite.Id, report.Recommended!.PlayerId);
+        Assert.Equal(elite.Id, report.RouteTree!.BestCurrentMove!.PlayerId);
+    }
+
+    [Fact]
+    public async Task ScenarioA_Repeated_Preference_Moves_A_Above_B_When_Both_Are_Available()
+    {
+        var playerA = MakePlayer(Position.RB, "Player A");
+        var playerB = MakePlayer(Position.RB, "Player B");
+        var (league, sleeper, team) = BuildOnTheClockScenario(nextPickGoesToUser: true);
+        var service = CreateService(
+            league, team, sleeper,
+            [playerA, playerB],
+            new Dictionary<Guid, PlayerProjection>
+            {
+                [playerA.Id] = MakeProjection(playerA.Id, 14.6m, 50),
+                [playerB.Id] = MakeProjection(playerB.Id, 15.0m, 50)
+            },
+            historical: HistoricalWith(PersonalKnowledge("lg1", "100", playerA, playerB, observations: 8)));
+
+        var report = await service.GetReportAsync();
+
+        Assert.Equal(playerA.Id, report.Recommended!.PlayerId);
+        Assert.Equal(
+            PersonalDraftLearningPolicy.HistorySentence(playerA.FullName, playerB.FullName, 8),
+            report.Recommended.Factors.Single(f => f.Label == "Personal history").Detail);
+        Assert.Contains("You selected Player A over Player B in 8 similar decisions.", report.DecisionSummary);
+    }
+
+    [Fact]
+    public async Task ScenarioB_One_Weak_Decision_Does_Not_Overwhelm_A_Materially_Better_B()
+    {
+        var playerA = MakePlayer(Position.RB, "Player A");
+        var playerB = MakePlayer(Position.RB, "Player B");
+        var (league, sleeper, team) = BuildOnTheClockScenario(nextPickGoesToUser: true);
+        var service = CreateService(
+            league, team, sleeper,
+            [playerA, playerB],
+            new Dictionary<Guid, PlayerProjection>
+            {
+                [playerA.Id] = MakeProjection(playerA.Id, 12m, 50),
+                [playerB.Id] = MakeProjection(playerB.Id, 16m, 50)
+            },
+            historical: HistoricalWith(PersonalKnowledge("lg1", "100", playerA, playerB, observations: 1)));
+
+        var report = await service.GetReportAsync();
+
+        Assert.Equal(playerB.Id, report.Recommended!.PlayerId);
+        Assert.Equal(playerB.Id, report.RouteTree!.BestCurrentMove!.PlayerId);
+    }
+
+    [Fact]
+    public async Task ScenarioC_Roster_Context_Determines_Which_Preference_Applies()
+    {
+        var playerA = MakePlayer(Position.WR, "Player A");
+        var playerB = MakePlayer(Position.WR, "Player B");
+        var knowledge = PersonalKnowledgeFrom("lg1", "100",
+            Pref(playerA, playerB, wr: 0, observations: 4),
+            Pref(playerB, playerA, wr: 3, observations: 4));
+
+        var (league, emptyBoard, team) = BuildOnTheClockScenario(nextPickGoesToUser: true);
+        var lowWr = await CreateService(
+            league, team, emptyBoard,
+            [playerA, playerB],
+            new Dictionary<Guid, PlayerProjection>
+            {
+                [playerA.Id] = MakeProjection(playerA.Id, 15.0m, 50),
+                [playerB.Id] = MakeProjection(playerB.Id, 15.1m, 50)
+            },
+            historical: HistoricalWith(knowledge)).GetReportAsync();
+
+        Assert.Equal(playerA.Id, lowWr.Recommended!.PlayerId);
+        Assert.Contains("You selected Player A over Player B", lowWr.Recommended.Reasoning);
+
+        var wr1 = MakeSleeperMappedPlayer(Position.WR, "WR Depth 1", "wr-d1");
+        var wr2 = MakeSleeperMappedPlayer(Position.WR, "WR Depth 2", "wr-d2");
+        var wr3 = MakeSleeperMappedPlayer(Position.WR, "WR Depth 3", "wr-d3");
+        var (highLeague, highBoard, highTeam) = BuildOnTheClockScenario(nextPickGoesToUser: true);
+        highBoard.Picks =
+        [
+            Pick(1, 1, 1, 100, "wr-d1", "WR Depth 1", "WR"),
+            Pick(2, 1, 2, 200, "rb-r1", "Rival RB 1", "RB"),
+            Pick(3, 2, 2, 200, "rb-r2", "Rival RB 2", "RB"),
+            Pick(4, 2, 1, 100, "wr-d2", "WR Depth 2", "WR"),
+            Pick(5, 3, 1, 100, "wr-d3", "WR Depth 3", "WR")
+        ];
+        var highWr = await CreateService(
+            highLeague, highTeam, highBoard,
+            [playerA, playerB, wr1, wr2, wr3],
+            new Dictionary<Guid, PlayerProjection>
+            {
+                [playerA.Id] = MakeProjection(playerA.Id, 15.0m, 50),
+                [playerB.Id] = MakeProjection(playerB.Id, 15.1m, 50)
+            },
+            historical: HistoricalWith(knowledge)).GetReportAsync();
+
+        Assert.Equal(3, highWr.RosterNeeds.Single(n => n.PositionLabel == "WR").CurrentCount);
+        Assert.Equal(playerB.Id, highWr.Recommended!.PlayerId);
+        Assert.Contains("You selected Player B over Player A", highWr.Recommended.Reasoning);
+    }
+
+    [Fact]
+    public async Task ScenarioD_LeagueA_TeamA_Knowledge_Does_Not_Affect_LeagueB_TeamB()
+    {
+        var playerA = MakePlayer(Position.RB, "Player A");
+        var playerB = MakePlayer(Position.RB, "Player B");
+        var (league, sleeper, team) = BuildOnTheClockScenario(nextPickGoesToUser: true);
+        var service = CreateService(
+            league, team, sleeper,
+            [playerA, playerB],
+            new Dictionary<Guid, PlayerProjection>
+            {
+                [playerA.Id] = MakeProjection(playerA.Id, 14.0m, 50),
+                [playerB.Id] = MakeProjection(playerB.Id, 15.5m, 50)
+            },
+            historical: HistoricalWith(
+                PersonalKnowledge("lg-other", "100", playerA, playerB, observations: 12),
+                PersonalKnowledge("lg1", "999", playerA, playerB, observations: 12)));
+
+        var report = await service.GetReportAsync();
+
+        Assert.Null(report.PersonalKnowledge);
+        Assert.Equal(playerB.Id, report.Recommended!.PlayerId);
+        Assert.DoesNotContain("Personal history:", report.DecisionSummary);
+    }
+
+    [Fact]
+    public async Task ScenarioE_No_Personal_Knowledge_Leaves_Existing_Recommendations_Unchanged()
+    {
+        var playerA = MakePlayer(Position.RB, "Player A");
+        var playerB = MakePlayer(Position.RB, "Player B");
+        var (league, sleeper, team) = BuildOnTheClockScenario(nextPickGoesToUser: true);
+        var projections = new Dictionary<Guid, PlayerProjection>
+        {
+            [playerA.Id] = MakeProjection(playerA.Id, 12m, 50),
+            [playerB.Id] = MakeProjection(playerB.Id, 18m, 50)
+        };
+
+        var baseline = await CreateService(league, team, sleeper, [playerA, playerB], projections)
+            .GetReportAsync();
+        var withEmptyStore = await CreateService(
+            league, team, sleeper, [playerA, playerB], projections,
+            historical: HistoricalWith()).GetReportAsync();
+
+        Assert.Equal(playerB.Id, baseline.Recommended!.PlayerId);
+        Assert.Equal(baseline.Recommended.PlayerId, withEmptyStore.Recommended!.PlayerId);
+        Assert.Equal(baseline.Recommended.TeamFitRank, withEmptyStore.Recommended.TeamFitRank);
+        Assert.DoesNotContain("Personal history:", baseline.DecisionSummary);
+        Assert.DoesNotContain("Personal history:", withEmptyStore.DecisionSummary);
+        Assert.DoesNotContain(baseline.Recommended.Factors, f => f.Label == "Personal history");
+        Assert.DoesNotContain(withEmptyStore.Recommended.Factors, f => f.Label == "Personal history");
+    }
+
+    [Fact]
+    public async Task ScenarioF_Route_Tree_Incorporates_The_Learned_Preference()
+    {
+        var playerA = MakePlayer(Position.RB, "Player A");
+        var playerB = MakePlayer(Position.RB, "Player B");
+        var playerC = MakePlayer(Position.WR, "Player C");
+        var (league, sleeper, team) = BuildOnTheClockScenario(nextPickGoesToUser: true);
+        var report = await CreateService(
+            league, team, sleeper,
+            [playerA, playerB, playerC],
+            new Dictionary<Guid, PlayerProjection>
+            {
+                [playerA.Id] = MakeProjection(playerA.Id, 14.6m, 50),
+                [playerB.Id] = MakeProjection(playerB.Id, 15.0m, 50),
+                [playerC.Id] = MakeProjection(playerC.Id, 11.0m, 50)
+            },
+            historical: HistoricalWith(PersonalKnowledge("lg1", "100", playerA, playerB, observations: 8)))
+            .GetReportAsync();
+
+        Assert.NotNull(report.RouteTree);
+        Assert.Equal(playerA.Id, report.RouteTree!.BestCurrentMove!.PlayerId);
+        Assert.Contains("Personal history:", report.RouteTree.BestCurrentMove.Reasoning);
+        Assert.DoesNotContain(report.RouteTree.Alternatives, a => a.PlayerId == playerA.Id);
+        var ifATaken = Assert.Single(report.RouteTree.IfTakenBranches, b => b.TriggerPlayerId == playerA.Id);
+        Assert.NotEqual(playerA.Id, ifATaken.ThenRecommend.PlayerId);
+        Assert.Equal(playerB.Id, ifATaken.ThenRecommend.PlayerId);
+    }
+
     private static (League league, FakeSleeperLeagueClient sleeper, FantasyTeam team) BuildOnTheClockScenario(
         bool nextPickGoesToUser)
     {
@@ -713,7 +979,8 @@ public class DraftAssistantServiceTests
         FakeSleeperLeagueClient sleeper,
         IReadOnlyList<Player>? players = null,
         IReadOnlyDictionary<Guid, PlayerProjection>? projections = null,
-        IReadOnlyDictionary<Guid, PlayerInjuryRecord>? injuries = null)
+        IReadOnlyDictionary<Guid, PlayerInjuryRecord>? injuries = null,
+        IHistoricalLeagueIntelligenceService? historical = null)
     {
         var leagueState = new FakeLeagueState(league, team);
         var playerService = new FakePlayerService(players ?? []);
@@ -723,7 +990,76 @@ public class DraftAssistantServiceTests
         return new DraftAssistantService(
             leagueState, sleeper, playerService, projectionService, injuryService,
             new FakeByeWeekProvider(),
-            NullLogger<DraftAssistantService>.Instance);
+            NullLogger<DraftAssistantService>.Instance,
+            historical);
+    }
+
+    private static IHistoricalLeagueIntelligenceService HistoricalWith(params PersonalDraftKnowledge[] knowledge)
+    {
+        var hist = new HistoricalLeagueDraftStore(
+            NullLogger<HistoricalLeagueDraftStore>.Instance, $"da-hist-{Guid.NewGuid():N}.json");
+        var personal = new PersonalDraftKnowledgeStore(
+            NullLogger<PersonalDraftKnowledgeStore>.Instance, $"da-personal-{Guid.NewGuid():N}.json");
+        personal.Save(knowledge);
+        return new HistoricalLeagueIntelligenceService(hist, new NullSleeperForHistory(), new PlayerIdentityDirectory(), personal);
+    }
+
+    private static PersonalDraftKnowledge PersonalKnowledge(
+        string leagueId, string teamId, Player preferred, Player passed, int observations,
+        IReadOnlyDictionary<string, int>? rosterBefore = null) =>
+        PersonalKnowledgeFrom(leagueId, teamId, Pref(preferred, passed, wr: rosterBefore is not null && rosterBefore.TryGetValue("WR", out var wr) ? wr : 0, observations));
+
+    private static PersonalDraftKnowledge PersonalKnowledgeFrom(
+        string leagueId, string teamId, params PersonalPlayerPreference[] preferences) => new()
+    {
+        LeagueId = leagueId,
+        TeamId = teamId,
+        LeagueName = "Boys League",
+        TeamName = "My Team",
+        DraftCount = Math.Max(1, preferences.Length),
+        DecisionCount = preferences.Sum(p => p.ObservationCount),
+        Preferences = preferences
+    };
+
+    private static PersonalPlayerPreference Pref(Player preferred, Player passed, int wr, int observations) =>
+        new(
+            preferred.Id.ToString("N"),
+            preferred.FullName,
+            passed.Id.ToString("N"),
+            passed.FullName,
+            new PersonalPreferenceContext(
+                LeagueType.Redraft,
+                "PPR",
+                2,
+                1,
+                1,
+                wr <= 0 ? new Dictionary<string, int>() : new Dictionary<string, int> { ["WR"] = wr },
+                [passed.Id.ToString("N")]),
+            observations,
+            ["seed"]);
+
+    private static SleeperDraftPickSnapshot Pick(
+        int pickNumber, int round, int slot, int rosterId, string sleeperId, string name, string position) => new()
+    {
+        PickNumber = pickNumber,
+        Round = round,
+        DraftSlot = slot,
+        RosterId = rosterId,
+        SleeperPlayerId = sleeperId,
+        PlayerName = name,
+        Position = position
+    };
+
+    private sealed class NullSleeperForHistory : ISleeperLeagueClient
+    {
+        public Task<SleeperLeagueSnapshot?> GetLeagueSnapshotAsync(string id, CancellationToken cancellationToken = default) =>
+            Task.FromResult<SleeperLeagueSnapshot?>(null);
+        public Task<IReadOnlyList<SleeperDraftSummary>> GetDraftsForLeagueAsync(string id, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<SleeperDraftSummary>>([]);
+        public Task<SleeperDraftSnapshot?> GetDraftAsync(string id, CancellationToken cancellationToken = default) =>
+            Task.FromResult<SleeperDraftSnapshot?>(null);
+        public Task<IReadOnlyList<SleeperDraftPickSnapshot>> GetDraftPicksAsync(string id, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<SleeperDraftPickSnapshot>>([]);
     }
 
     private static League MakeLeague(
