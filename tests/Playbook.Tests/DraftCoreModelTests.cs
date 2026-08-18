@@ -44,6 +44,43 @@ public class DraftCoreModelTests
     }
 
     [Fact]
+    public void NextPickForRoster_Finds_The_Snake_Wraparound_Pick_Correctly()
+    {
+        // 4-team snake: slots on the clock are 1,2,3,4 | 4,3,2,1 | 1,2,3,4 ...
+        var slotToRosterId = new Dictionary<int, int> { [1] = 10, [2] = 20, [3] = 30, [4] = 40 };
+
+        // Roster 10 (slot 1) picks 1st, then 8th (last of round 2, snake reverses), then 9th.
+        Assert.Equal(1, DraftOrderCalculator.NextPickForRoster(1, 4, isSnake: true, totalPicks: 16, rosterId: 10, slotToRosterId));
+        Assert.Equal(8, DraftOrderCalculator.NextPickForRoster(2, 4, isSnake: true, totalPicks: 16, rosterId: 10, slotToRosterId));
+        Assert.Equal(9, DraftOrderCalculator.NextPickForRoster(9, 4, isSnake: true, totalPicks: 16, rosterId: 10, slotToRosterId));
+    }
+
+    [Fact]
+    public void NextPickForRoster_Is_Immediate_When_The_Roster_Is_Already_On_The_Clock()
+    {
+        var slotToRosterId = new Dictionary<int, int> { [1] = 10, [2] = 20 };
+
+        Assert.Equal(5, DraftOrderCalculator.NextPickForRoster(5, 2, isSnake: true, totalPicks: 20, rosterId: 10, slotToRosterId));
+    }
+
+    [Fact]
+    public void NextPickForRoster_Returns_Null_When_The_Roster_Never_Comes_On_The_Clock()
+    {
+        var slotToRosterId = new Dictionary<int, int> { [1] = 10 };
+
+        Assert.Null(DraftOrderCalculator.NextPickForRoster(1, 4, isSnake: true, totalPicks: 8, rosterId: 999, slotToRosterId));
+    }
+
+    [Fact]
+    public void NextPickForRoster_Respects_The_Total_Picks_Bound_So_It_Cannot_Loop_Forever()
+    {
+        var slotToRosterId = new Dictionary<int, int> { [1] = 10, [2] = 20 };
+
+        // Roster 10 owns slot 1 but the draft ends at pick 2 — looking past that must return null.
+        Assert.Null(DraftOrderCalculator.NextPickForRoster(3, 2, isSnake: true, totalPicks: 2, rosterId: 10, slotToRosterId));
+    }
+
+    [Fact]
     public void DetectNewPicks_Returns_Only_Picks_Made_Since_Previous_Poll()
     {
         var previous = new List<DraftPickRecord>

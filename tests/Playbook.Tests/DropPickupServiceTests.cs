@@ -349,6 +349,7 @@ public class DropPickupServiceTests
         public PlayerProjection? GetProjection(Guid playerId) => _projections.GetValueOrDefault(playerId);
         public PlayerProjection? ProjectPlayer(Guid playerId) => GetProjection(playerId);
         public IReadOnlyList<PlayerProjection> GetAllProjections() => _projections.Values.ToList();
+        public IReadOnlyList<PlayerProjection> GetAllProjections(ProjectionLeagueContext context) => GetAllProjections();
         public IReadOnlyList<PlayerProjection> GetTopProjections(int count = 8) =>
             _projections.Values.OrderByDescending(p => p.ProjectedFantasyPoints).Take(count).ToList();
         public PlayerProjectionComparison? ComparePlayers(Guid leftPlayerId, Guid rightPlayerId) => null;

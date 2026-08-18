@@ -16,6 +16,17 @@ public interface IProjectionService
 
     IReadOnlyList<PlayerProjection> GetAllProjections();
 
+    /// <summary>
+    /// Project every player for an EXPLICIT league context rather than whichever league happens
+    /// to be connected. Used by the Draft Assistant when following a draft (e.g. a Sleeper mock)
+    /// whose scoring format differs from the ambient connected league — without that, PPR vs.
+    /// Standard vs. Half-PPR would silently fail to affect player value for exactly the draft
+    /// being followed. Does not read or write the cached ambient projections used by
+    /// <see cref="GetAllProjections()"/>; this is a separate, uncached computation for exactly
+    /// the context given.
+    /// </summary>
+    IReadOnlyList<PlayerProjection> GetAllProjections(ProjectionLeagueContext context);
+
     IReadOnlyList<PlayerProjection> GetTopProjections(int count = 8);
 
     PlayerProjectionComparison? ComparePlayers(Guid leftPlayerId, Guid rightPlayerId);

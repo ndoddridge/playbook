@@ -37,6 +37,13 @@ public sealed class DraftAssistantService : IDraftAssistantService
     private const decimal SevereInjuryPenalty = -4.0m;
     private const decimal ModerateInjuryPenalty = -1.5m;
 
+    // Pick-timing / tier nudges — bounded well under a real projection gap or the need bonus, same
+    // design constraint as roster construction: context can break a tie, never dethrone a clearly
+    // better player.
+    private const decimal TimingAtRiskBonus = 1.5m;
+    private const decimal TimingSafeToWaitPenalty = 0.6m;
+    private const decimal LastInTierBonus = 1.2m;
+
     private static readonly IReadOnlyList<string> KnownUnavailableSignals =
     [
         "Bye-week collision across your roster is not factored in (not available).",
@@ -272,7 +279,17 @@ public sealed class DraftAssistantService : IDraftAssistantService
             .Where(p => p.PlayerId is not null)
             .Select(p => p.PlayerId!.Value)
             .ToHashSet();
-        var projectionByPlayer = _projections.GetAllProjections().ToDictionary(p => p.PlayerId);
+
+        // A followed draft that is NOT the connected league (the mock-draft case) must be priced
+        // using its OWN real scoring format — PPR/Half-PPR/Standard — rather than whatever league
+        // happens to be connected (or the engine's PPR default when nothing is connected). The
+        // ambient/cached path is kept for the common case (following the connected league's own
+        // draft) so polling stays cheap.
+        var usesEffectiveLeagueContext = !ReferenceEquals(effectiveLeague, league);
+        var projections = usesEffectiveLeagueContext
+            ? _projections.GetAllProjections(ProjectionLeagueContext.FromLeague(effectiveLeague))
+            : _projections.GetAllProjections();
+        var projectionByPlayer = projections.ToDictionary(p => p.PlayerId);
 
         var userRosterId = effectiveTeamRosterId;
         var userDraftedPlayers = userRosterId is int urid
@@ -302,6 +319,36 @@ public sealed class DraftAssistantService : IDraftAssistantService
 
         var rosterByPosition = rosterNeeds.ToDictionary(n => n.PositionLabel, n => n);
 
+        // Dynamic positional scarcity/tiers: derived fresh from the ACTUAL remaining pool every
+        // call, so a positional run by other teams immediately reshapes tiers and ranks rather
+        // than waiting for the user's own turn to recompute.
+        var (positionalRankByPlayer, tierInfoByPlayer) = BuildPositionalTiers(undrafted, projectionByPlayer);
+
+        // Pick timing / expected availability: real, observed signals only — this draft's own
+        // positional pace, and the user's actual next selection from real snake-order math.
+        var madePicks = pickRecords.Where(p => p.IsMade).ToList();
+        var totalPicksSoFar = madePicks.Count;
+        var picksAtPositionSoFar = madePicks
+            .Where(p => p.PositionLabel is not null)
+            .GroupBy(p => p.PositionLabel!)
+            .ToDictionary(g => g.Key, g => g.Count());
+        var observedRateByPosition = new[] { "QB", "RB", "WR", "TE" }.ToDictionary(
+            label => label,
+            label => DraftAvailabilityPolicy.ObservedPositionRate(
+                picksAtPositionSoFar.GetValueOrDefault(label, 0), totalPicksSoFar));
+
+        int? picksUntilNextUserPick = null;
+        if (userRosterId is int uridForTiming)
+        {
+            var totalPicksInDraft = board.TotalRounds * board.TeamCount;
+            var nextUserPick = DraftOrderCalculator.NextPickForRoster(
+                board.NextPickNumber, board.TeamCount, isSnake, totalPicksInDraft, uridForTiming, slotToRosterId);
+            if (nextUserPick is int npn)
+            {
+                picksUntilNextUserPick = npn - board.NextPickNumber;
+            }
+        }
+
         var scored = undrafted
             .Select(p => ScorePlayer(
                 p,
@@ -314,7 +361,11 @@ public sealed class DraftAssistantService : IDraftAssistantService
                 byeWeeks,
                 byeCountsByPositionWeek,
                 draftPhase,
-                rosterByPosition))
+                rosterByPosition,
+                positionalRankByPlayer.GetValueOrDefault(p.Id),
+                tierInfoByPlayer.GetValueOrDefault(p.Id),
+                observedRateByPosition.GetValueOrDefault(PlayerPresentation.PositionLabel(p.Position), -1m),
+                picksUntilNextUserPick))
             .Where(s => s.Projection is not null)
             .ToList();
 
@@ -330,7 +381,7 @@ public sealed class DraftAssistantService : IDraftAssistantService
             byTeamFit[i].TeamFitRank = i + 1;
         }
 
-        var recommendations = byTeamFit.Take(1 + MaxAlternatives).Select(BuildRecommendation).ToList();
+        var recommendations = BuildDiverseRecommendations(byTeamFit);
         // Nobody is on the clock before the draft begins, even though slot 1 technically resolves.
         var isOnTheClock = status != DraftStatus.NotStarted && board.IsUserOnTheClock;
 
@@ -381,7 +432,11 @@ public sealed class DraftAssistantService : IDraftAssistantService
         ByeWeekMap? byeWeeks = null,
         IReadOnlyDictionary<(string Position, int Week), int>? byeCounts = null,
         DraftPhase phase = DraftPhase.Middle,
-        IReadOnlyDictionary<string, PositionalNeed>? rosterByPosition = null)
+        IReadOnlyDictionary<string, PositionalNeed>? rosterByPosition = null,
+        int? positionalRank = null,
+        PositionalTierInfo? tierInfo = null,
+        decimal observedPositionRate = -1m,
+        int? picksUntilNextUserPick = null)
     {
         var positionLabel = PlayerPresentation.PositionLabel(player.Position);
         var factors = new List<DraftRecommendationFactor>();
@@ -593,17 +648,73 @@ public sealed class DraftAssistantService : IDraftAssistantService
             });
         }
 
+        // Pick timing / expected availability + dynamic tier. Both are derived from this draft's
+        // real, observed state (see DraftAvailabilityPolicy / PositionalTierPolicy) — never a
+        // fabricated ADP. Bounded small so context can only shade a close call, matching every
+        // other contextual nudge above.
+        var availabilityRisk = AvailabilityRisk.Unknown;
+        if (positionalRank is int rank && picksUntilNextUserPick is int picksUntil)
+        {
+            availabilityRisk = DraftAvailabilityPolicy.Classify(observedPositionRate, picksUntil, rank);
+            var timingAdjustment = availabilityRisk switch
+            {
+                AvailabilityRisk.AtRisk => TimingAtRiskBonus,
+                AvailabilityRisk.Safe => -TimingSafeToWaitPenalty,
+                _ => 0m
+            };
+            fitScore += timingAdjustment;
+
+            factors.Add(new DraftRecommendationFactor
+            {
+                Label = "Pick timing",
+                Detail = DraftAvailabilityPolicy.Describe(availabilityRisk, picksUntil, positionLabel),
+                Direction = availabilityRisk == AvailabilityRisk.AtRisk
+                    ? FactorDirection.Positive
+                    : FactorDirection.Neutral,
+                Available = availabilityRisk != AvailabilityRisk.Unknown
+            });
+        }
+        else
+        {
+            factors.Add(new DraftRecommendationFactor
+            {
+                Label = "Pick timing",
+                Detail = "Not enough of this draft has happened yet to estimate whether this can wait.",
+                Direction = FactorDirection.Neutral,
+                Available = false
+            });
+        }
+
+        if (tierInfo is not null)
+        {
+            var lastInSmallTier = tierInfo.IsLastInTier && tierInfo.PlayersInTier <= 3;
+            fitScore += lastInSmallTier ? LastInTierBonus : 0m;
+
+            factors.Add(new DraftRecommendationFactor
+            {
+                Label = "Tier",
+                Detail = tierInfo.IsLastInTier
+                    ? $"Last player in this {positionLabel} tier before a real value drop-off."
+                    : $"{tierInfo.PlayersInTier} comparable {positionLabel} remain in this tier.",
+                Direction = lastInSmallTier ? FactorDirection.Positive : FactorDirection.Neutral,
+                Available = true
+            });
+        }
+
         var reasoning = BuildReasoning(player, positionLabel, projectedPoints, valueOverReplacement, need, needByPosition.ContainsKey(positionLabel));
 
         return new ScoredCandidate
         {
             Player = player,
             Projection = projectedPoints,
+            ProjectionDetail = projection,
             ProjectionConfidence = confidence,
             ValueOverReplacement = valueOverReplacement,
             TeamFitScore = fitScore,
             Factors = factors,
-            Reasoning = reasoning
+            Reasoning = reasoning,
+            AvailabilityRisk = availabilityRisk,
+            TierInfo = tierInfo
         };
     }
 
@@ -643,7 +754,10 @@ public sealed class DraftAssistantService : IDraftAssistantService
         return core;
     }
 
-    private static DraftRecommendation BuildRecommendation(ScoredCandidate c) => new()
+    private static DraftRecommendation BuildRecommendation(
+        ScoredCandidate c,
+        RecommendationCategory category = RecommendationCategory.None,
+        string categoryRationale = "") => new()
     {
         PlayerId = c.Player.Id,
         PlayerName = c.Player.FullName,
@@ -655,8 +769,147 @@ public sealed class DraftAssistantService : IDraftAssistantService
         TeamFitRank = c.TeamFitRank,
         Confidence = c.ProjectionConfidence ?? 20,
         Reasoning = c.Reasoning,
-        Factors = c.Factors
+        Factors = c.Factors,
+        Category = category,
+        CategoryRationale = categoryRationale
     };
+
+    /// <summary>
+    /// Turns the flat team-fit ranking into distinct strategic choices (Part XVII: recommendation
+    /// diversity) instead of five near-identical picks. Best Overall always leads. Each other
+    /// category is only added when a genuinely distinct, competitive candidate exists for it — a
+    /// category with nothing meaningful to say is silently skipped rather than padded out.
+    /// Remaining slots (up to the existing alternatives count) are filled with the next-best plain
+    /// team-fit picks so the board stays as useful as before when categories don't fill it.
+    /// </summary>
+    private static List<DraftRecommendation> BuildDiverseRecommendations(IReadOnlyList<ScoredCandidate> byTeamFit)
+    {
+        if (byTeamFit.Count == 0)
+        {
+            return [];
+        }
+
+        // The "reasonably competitive" pool alternate categories are allowed to pick from — deep
+        // bench filler should never win "Best Upside" just because nothing else was compared.
+        var pool = byTeamFit.Take(Math.Max(1 + MaxAlternatives, 20)).ToList();
+        var chosenIds = new HashSet<Guid>();
+        var chosen = new List<DraftRecommendation>();
+
+        void Choose(ScoredCandidate? candidate, RecommendationCategory category, string rationale)
+        {
+            if (candidate is null || !chosenIds.Add(candidate.Player.Id))
+            {
+                return;
+            }
+
+            chosen.Add(BuildRecommendation(candidate, category, rationale));
+        }
+
+        var best = pool[0];
+        Choose(
+            best,
+            RecommendationCategory.BestOverall,
+            "The best combination of production, scarcity and roster fit for your team right now.");
+
+        var bestValue = pool
+            .Where(c => c.ValueOverReplacement is > 0m && !chosenIds.Contains(c.Player.Id))
+            .OrderByDescending(c => c.ValueOverReplacement)
+            .FirstOrDefault();
+        if (bestValue is not null)
+        {
+            Choose(
+                bestValue,
+                RecommendationCategory.BestValue,
+                $"{bestValue.ValueOverReplacement:0.0} pts above the next replacement-level "
+                + $"{PlayerPresentation.PositionLabel(bestValue.Player.Position)} — the scarcest real value on the board.");
+        }
+
+        var bestUpside = pool
+            .Where(c => c.ProjectionDetail is not null && !chosenIds.Contains(c.Player.Id))
+            .OrderByDescending(c => c.ProjectionDetail!.Ceiling)
+            .FirstOrDefault();
+        Choose(
+            bestUpside,
+            RecommendationCategory.BestUpside,
+            "Highest realistic ceiling among your competitive options — the swing-for-upside pick.");
+
+        var safestFloor = pool
+            .Where(c => c.ProjectionDetail is not null && !chosenIds.Contains(c.Player.Id))
+            .OrderByDescending(c => c.ProjectionDetail!.Floor)
+            .FirstOrDefault();
+        Choose(
+            safestFloor,
+            RecommendationCategory.SafestFloor,
+            "Highest realistic floor among your competitive options — the lowest-bust-risk pick.");
+
+        var safeToWait = pool
+            .Where(c => c.AvailabilityRisk == AvailabilityRisk.Safe && c.TierInfo is not null
+                        && !chosenIds.Contains(c.Player.Id))
+            .OrderByDescending(c => c.TierInfo!.PlayersInTier)
+            .ThenByDescending(c => c.TeamFitScore)
+            .FirstOrDefault();
+        if (safeToWait is not null)
+        {
+            Choose(
+                safeToWait,
+                RecommendationCategory.SafeToWaitOn,
+                $"{safeToWait.TierInfo!.PlayersInTier} comparable "
+                + $"{PlayerPresentation.PositionLabel(safeToWait.Player.Position)} remain — fine to address "
+                + "this position later and prioritise scarcer needs now.");
+        }
+
+        foreach (var candidate in byTeamFit)
+        {
+            if (chosen.Count >= 1 + MaxAlternatives)
+            {
+                break;
+            }
+
+            if (chosenIds.Add(candidate.Player.Id))
+            {
+                chosen.Add(BuildRecommendation(candidate));
+            }
+        }
+
+        return chosen;
+    }
+
+    /// <summary>
+    /// Per-player positional rank (1 = best remaining at that position) and dynamic tier, computed
+    /// fresh from the actual undrafted pool's real projections — see <see cref="PositionalTierPolicy"/>.
+    /// </summary>
+    internal static (
+        IReadOnlyDictionary<Guid, int> PositionalRankByPlayer,
+        IReadOnlyDictionary<Guid, PositionalTierInfo> TierInfoByPlayer) BuildPositionalTiers(
+        IReadOnlyList<Player> undraftedPlayers,
+        IReadOnlyDictionary<Guid, PlayerProjection> projectionByPlayer)
+    {
+        var rankByPlayer = new Dictionary<Guid, int>();
+        var tierByPlayer = new Dictionary<Guid, PositionalTierInfo>();
+
+        foreach (var group in undraftedPlayers.GroupBy(p => p.Position))
+        {
+            var ranked = group
+                .Select(p => (Player: p, Points: projectionByPlayer.GetValueOrDefault(p.Id)?.ProjectedFantasyPoints))
+                .Where(x => x.Points is not null)
+                .OrderByDescending(x => x.Points!.Value)
+                .ToList();
+
+            if (ranked.Count == 0)
+            {
+                continue;
+            }
+
+            var tierInfos = PositionalTierPolicy.BuildTierInfo(ranked.Select(x => x.Points!.Value).ToList());
+            for (var i = 0; i < ranked.Count; i++)
+            {
+                rankByPlayer[ranked[i].Player.Id] = i + 1;
+                tierByPlayer[ranked[i].Player.Id] = tierInfos[i];
+            }
+        }
+
+        return (rankByPlayer, tierByPlayer);
+    }
 
     internal static IReadOnlyDictionary<Position, decimal> ComputeReplacementLevels(
         IReadOnlyList<Player> undraftedPlayers,
@@ -690,8 +943,24 @@ public sealed class DraftAssistantService : IDraftAssistantService
     {
         var label = position.ToString();
         var direct = rosterPositions.Count(p => string.Equals(p, label, StringComparison.OrdinalIgnoreCase));
+
+        if (position == Position.QB)
+        {
+            // A superflex slot is filled by a QB in almost every competitive lineup once dedicated
+            // RB/WR/TE flexes already exist — treating it as a real QB slot for replacement-level
+            // purposes reflects how superflex leagues are actually drafted. Without this, a
+            // superflex league priced QB2s at 1-QB-league replacement level, which is exactly
+            // backwards for the format where QB is scarcest.
+            var superFlexSlots = rosterPositions.Count(p =>
+                p.Contains("FLEX", StringComparison.OrdinalIgnoreCase) &&
+                p.Contains("SUPER", StringComparison.OrdinalIgnoreCase));
+            return Math.Max(1, direct + superFlexSlots);
+        }
+
         var flexShare = position is Position.RB or Position.WR or Position.TE
-            ? rosterPositions.Count(p => p.Contains("FLEX", StringComparison.OrdinalIgnoreCase)) * 0.5
+            ? rosterPositions.Count(p =>
+                p.Contains("FLEX", StringComparison.OrdinalIgnoreCase) &&
+                !p.Contains("SUPER", StringComparison.OrdinalIgnoreCase)) * 0.5
             : 0;
         return Math.Max(1, direct + (int)Math.Round(flexShare, MidpointRounding.AwayFromZero));
     }
@@ -962,6 +1231,7 @@ public sealed class DraftAssistantService : IDraftAssistantService
     {
         public required Player Player { get; init; }
         public required decimal? Projection { get; init; }
+        public PlayerProjection? ProjectionDetail { get; init; }
         public required int? ProjectionConfidence { get; init; }
         public required decimal? ValueOverReplacement { get; init; }
         public required decimal TeamFitScore { get; init; }
@@ -969,5 +1239,7 @@ public sealed class DraftAssistantService : IDraftAssistantService
         public required string Reasoning { get; init; }
         public int BestPlayerAvailableRank { get; set; }
         public int TeamFitRank { get; set; }
+        public AvailabilityRisk AvailabilityRisk { get; init; } = AvailabilityRisk.Unknown;
+        public PositionalTierInfo? TierInfo { get; init; }
     }
 }

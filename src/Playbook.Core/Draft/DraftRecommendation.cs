@@ -35,4 +35,10 @@ public sealed class DraftRecommendation
     public required string Reasoning { get; init; }
 
     public required IReadOnlyList<DraftRecommendationFactor> Factors { get; init; }
+
+    /// <summary>Which strategic role this pick plays on the board — see <see cref="RecommendationCategory"/>.</summary>
+    public RecommendationCategory Category { get; init; } = RecommendationCategory.None;
+
+    /// <summary>Plain-language reason this candidate earned its category. Empty for <see cref="RecommendationCategory.None"/>.</summary>
+    public string CategoryRationale { get; init; } = "";
 }

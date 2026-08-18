@@ -85,6 +85,9 @@ public sealed class ProjectionService : IProjectionService, IDisposable
         return _projections;
     }
 
+    public IReadOnlyList<PlayerProjection> GetAllProjections(ProjectionLeagueContext context) =>
+        BuildProjections(context);
+
     public IReadOnlyList<PlayerProjection> GetTopProjections(int count = 8)
     {
         EnsureLoaded();
@@ -198,11 +201,35 @@ public sealed class ProjectionService : IProjectionService, IDisposable
 
     private void ProjectLocked()
     {
+        var league = _leagueState.CurrentLeague;
+        var context = ProjectionLeagueContext.FromLeague(league);
+        var (projections, watch) = BuildProjectionsTimed(context);
+
+        _projections = projections;
+        _byPlayer = projections.ToDictionary(p => p.PlayerId);
+        _projectedLeagueId = context.LeagueId;
+        _scoringSnapshot = new ScoringTypeSnapshot(context.ScoringType, context.CurrentWeek);
+        RecordStatus(projections, watch);
+    }
+
+    /// <summary>
+    /// Pure computation for an explicit context — does not touch the cached ambient state, so it
+    /// is safe to call for a context other than the currently connected league (e.g. a followed
+    /// Sleeper draft's own scoring format) without disturbing <see cref="GetAllProjections()"/>.
+    /// </summary>
+    private IReadOnlyList<PlayerProjection> BuildProjections(ProjectionLeagueContext context)
+    {
+        var (projections, watch) = BuildProjectionsTimed(context);
+        RecordStatus(projections, watch);
+        return projections;
+    }
+
+    private (IReadOnlyList<PlayerProjection> Projections, Stopwatch Watch) BuildProjectionsTimed(
+        ProjectionLeagueContext context)
+    {
         var watch = Stopwatch.StartNew();
         try
         {
-            var league = _leagueState.CurrentLeague;
-            var context = ProjectionLeagueContext.FromLeague(league);
             var players = _players.GetAllPlayers();
             var profiles = _intelligence.GetAllProfiles()
                 .ToDictionary(p => p.PlayerId);
@@ -243,45 +270,7 @@ public sealed class ProjectionService : IProjectionService, IDisposable
                 matchups,
                 environments);
             watch.Stop();
-
-            _projections = projections;
-            _byPlayer = projections.ToDictionary(p => p.PlayerId);
-            _projectedLeagueId = context.LeagueId;
-            _scoringSnapshot = new ScoringTypeSnapshot(context.ScoringType, context.CurrentWeek);
-
-            var avgConfidence = projections.Count == 0
-                ? 0
-                : projections.Average(p => p.Confidence);
-            var avgVolatility = projections.Count == 0
-                ? 0
-                : projections.Average(p => p.Volatility);
-            var avgProjection = projections.Count == 0
-                ? 0
-                : (double)projections.Average(p => p.ProjectedFantasyPoints);
-            var uniqueValues = projections
-                .Select(p => p.ProjectedFantasyPoints)
-                .Distinct()
-                .Count();
-
-            _status.RecordSuccess(
-                ProjectionEngineVersions.DisplayName,
-                _engine.Version,
-                projections.Count,
-                uniqueValues,
-                avgProjection,
-                avgConfidence,
-                avgVolatility,
-                watch.Elapsed);
-
-            _logger.LogInformation(
-                "{Engine} v{Version}: {Players} players, avg {Avg:0.0} pts, conf {Conf:0.0}, vol {Vol:0.0} in {Ms} ms",
-                ProjectionEngineVersions.DisplayName,
-                _engine.Version,
-                projections.Count,
-                avgProjection,
-                avgConfidence,
-                avgVolatility,
-                watch.ElapsedMilliseconds);
+            return (projections, watch);
         }
         catch (Exception ex)
         {
@@ -290,6 +279,43 @@ public sealed class ProjectionService : IProjectionService, IDisposable
             _logger.LogWarning(ex, "Projection pipeline failed");
             throw;
         }
+    }
+
+    private void RecordStatus(IReadOnlyList<PlayerProjection> projections, Stopwatch watch)
+    {
+        var avgConfidence = projections.Count == 0
+            ? 0
+            : projections.Average(p => p.Confidence);
+        var avgVolatility = projections.Count == 0
+            ? 0
+            : projections.Average(p => p.Volatility);
+        var avgProjection = projections.Count == 0
+            ? 0
+            : (double)projections.Average(p => p.ProjectedFantasyPoints);
+        var uniqueValues = projections
+            .Select(p => p.ProjectedFantasyPoints)
+            .Distinct()
+            .Count();
+
+        _status.RecordSuccess(
+            ProjectionEngineVersions.DisplayName,
+            _engine.Version,
+            projections.Count,
+            uniqueValues,
+            avgProjection,
+            avgConfidence,
+            avgVolatility,
+            watch.Elapsed);
+
+        _logger.LogInformation(
+            "{Engine} v{Version}: {Players} players, avg {Avg:0.0} pts, conf {Conf:0.0}, vol {Vol:0.0} in {Ms} ms",
+            ProjectionEngineVersions.DisplayName,
+            _engine.Version,
+            projections.Count,
+            avgProjection,
+            avgConfidence,
+            avgVolatility,
+            watch.ElapsedMilliseconds);
     }
 
     private readonly record struct ScoringTypeSnapshot(Core.Leagues.ScoringType ScoringType, int Week);

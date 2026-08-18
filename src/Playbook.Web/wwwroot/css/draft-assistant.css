@@ -175,6 +175,44 @@
     .da-strategy__option { font-size: 0.72rem; }
 }
 
+/* --- Clock state: recommendations now persist between the user's own picks --- */
+.da-clock-state {
+    margin: 0 0 0.6rem;
+    padding: 0.35rem 0.6rem;
+    display: inline-block;
+    border-radius: 6px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+}
+
+.da-clock-state--onclock {
+    color: #7dffc0;
+    background: rgba(62, 207, 142, 0.14);
+    border: 1px solid rgba(62, 207, 142, 0.4);
+}
+
+.da-clock-state--preparing {
+    color: var(--pb-muted, #8b93a7);
+    background: rgba(139, 147, 167, 0.1);
+    border: 1px solid var(--pb-border, #2a2f3a);
+}
+
+/* --- Recommendation category badge (Part XVII: distinct strategic choices) --- */
+.da-rec-card__category {
+    display: inline-block;
+    margin: 0 0 0.35rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--pb-accent, #4ea87a);
+    background: rgba(78, 168, 122, 0.12);
+    border: 1px solid rgba(78, 168, 122, 0.3);
+}
+
 /* --- Decision summary: the one line a manager reads while on the clock --- */
 .da-decision {
     margin: 0 0 0.6rem;

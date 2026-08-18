@@ -1,6 +1,10 @@
 @using Playbook.Core.Draft
 
 <article class="pb-card da-rec-card @(IsPrimary ? "da-rec-card--primary" : "")">
+    @if (Recommendation.Category != RecommendationCategory.None)
+    {
+        <span class="da-rec-card__category">@RecommendationCategoryPolicy.DisplayName(Recommendation.Category)</span>
+    }
     <header class="da-rec-card__header">
         <div>
             <h3 class="da-rec-card__name">@Recommendation.PlayerName</h3>
@@ -8,6 +12,11 @@
         </div>
         <span class="pb-badge pb-badge--accent">@Recommendation.Confidence% confidence</span>
     </header>
+
+    @if (!string.IsNullOrWhiteSpace(Recommendation.CategoryRationale))
+    {
+        <p class="da-rec-card__reasoning"><strong>@RecommendationCategoryPolicy.DisplayName(Recommendation.Category):</strong> @Recommendation.CategoryRationale</p>
+    }
 
     <div class="da-rec-card__stats">
         <div class="qp-stat">
