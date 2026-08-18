@@ -30,4 +30,9 @@ public interface IDraftAssistantService
 
     /// <summary>Draft id currently being followed directly, or null when using the league's draft.</summary>
     string? AttachedDraftId { get; }
+
+    /// <summary>Marks/unmarks a player as a timing target for this live league session.</summary>
+    void ToggleTarget(Guid leagueId, Guid playerId);
+
+    IReadOnlySet<Guid> GetTargets(Guid leagueId);
 }

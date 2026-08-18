@@ -44,4 +44,17 @@ public sealed class DraftAssistantReport
     /// Available and Team Fit disagree. Empty when there is nothing to recommend.
     /// </summary>
     public string DecisionSummary { get; init; } = "";
+
+    /// <summary>Target timing updates on every board refresh, including while another owner is on the clock.</summary>
+    public IReadOnlyList<HistoricalTargetWatch> TargetWatch { get; init; } = [];
+
+    /// <summary>Small decision tree (best move / alternatives / likely next target / "if X is
+    /// taken" branches) derived from already-computed recommendations. Updates every refresh,
+    /// including while another owner is on the clock.</summary>
+    public DraftRouteTree? RouteTree { get; init; }
+
+    /// <summary>Temporary, session-only observations about how the user is drafting this
+    /// attached/ingested mock. Null until the user has made at least one pick. Never persisted
+    /// and never blended into league-wide historical intelligence.</summary>
+    public PersonalDraftTendencies? MyTendencies { get; init; }
 }

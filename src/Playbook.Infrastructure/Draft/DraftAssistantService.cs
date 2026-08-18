@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using Playbook.Application.Draft;
+using Playbook.Application.Historical;
 using Playbook.Application.Injuries.Interfaces;
 using Playbook.Application.Leagues;
 using Playbook.Application.Leagues.Sleeper;
@@ -7,6 +8,7 @@ using Playbook.Application.Players;
 using Playbook.Application.Projections.Interfaces;
 using Playbook.Core.Draft;
 using Playbook.Core.Injuries.Models;
+using Playbook.Core.Historical;
 using Playbook.Core.Leagues;
 using Playbook.Core.Players;
 using Playbook.Core.Projections.Models;
@@ -43,6 +45,9 @@ public sealed class DraftAssistantService : IDraftAssistantService
     private const decimal TimingAtRiskBonus = 1.5m;
     private const decimal TimingSafeToWaitPenalty = 0.6m;
     private const decimal LastInTierBonus = 1.2m;
+    // Historical context is intentionally smaller than even the ordinary live timing nudge.
+    private const decimal HistoricalLastSafeBonus = 0.75m;
+    private const decimal HistoricalSafeWaitPenalty = 0.35m;
 
     private static readonly IReadOnlyList<string> KnownUnavailableSignals =
     [
@@ -58,6 +63,7 @@ public sealed class DraftAssistantService : IDraftAssistantService
     private readonly IProjectionService _projections;
     private readonly IPlayerInjuryService _injuries;
     private readonly IByeWeekProvider _byeWeeks;
+    private readonly IHistoricalLeagueIntelligenceService? _historical;
     private readonly ILogger<DraftAssistantService> _logger;
 
     public DraftAssistantService(
@@ -67,7 +73,8 @@ public sealed class DraftAssistantService : IDraftAssistantService
         IProjectionService projections,
         IPlayerInjuryService injuries,
         IByeWeekProvider byeWeeks,
-        ILogger<DraftAssistantService> logger)
+        ILogger<DraftAssistantService> logger,
+        IHistoricalLeagueIntelligenceService? historical = null)
     {
         _leagueState = leagueState;
         _sleeper = sleeper;
@@ -75,6 +82,7 @@ public sealed class DraftAssistantService : IDraftAssistantService
         _projections = projections;
         _injuries = injuries;
         _byeWeeks = byeWeeks;
+        _historical = historical;
         _logger = logger;
     }
 
@@ -83,12 +91,31 @@ public sealed class DraftAssistantService : IDraftAssistantService
     /// ignore it entirely — every redraft pick is a win-now pick.
     /// </summary>
     private readonly Dictionary<Guid, DynastyStrategy> _strategyByLeague = [];
+    private readonly Dictionary<Guid, HashSet<Guid>> _targetsByLeague = [];
+
+    // Personal mock-learning state — in-memory only, keyed by draft id, same non-persisted
+    // lifetime as everything else on this page. Never written to any store: a single mock must
+    // never permanently alter the historical model. _pendingRecommendationsByDraftId holds the
+    // diverse recommendation list from the most recent poll where the user was on the clock, so
+    // the NEXT poll (once a pick lands) can compare what actually happened against it without
+    // replaying any scoring.
+    private readonly Dictionary<string, IReadOnlyList<DraftRecommendation>> _pendingRecommendationsByDraftId = [];
+    private readonly Dictionary<string, int> _myPickCountByDraftId = [];
+    private readonly Dictionary<string, List<PersonalDraftDecision>> _decisionHistoryByDraftId = [];
 
     public DynastyStrategy GetStrategy(Guid leagueId) =>
         _strategyByLeague.TryGetValue(leagueId, out var s) ? s : DynastyStrategy.Hybrid;
 
     public void SetStrategy(Guid leagueId, DynastyStrategy strategy) =>
         _strategyByLeague[leagueId] = strategy;
+
+    public void ToggleTarget(Guid leagueId, Guid playerId)
+    {
+        if (!_targetsByLeague.TryGetValue(leagueId, out var targets)) _targetsByLeague[leagueId] = targets = [];
+        if (!targets.Add(playerId)) targets.Remove(playerId);
+    }
+
+    public IReadOnlySet<Guid> GetTargets(Guid leagueId) => _targetsByLeague.TryGetValue(leagueId, out var targets) ? targets : new HashSet<Guid>();
 
     /// <summary>Draft id the user explicitly asked to follow, if any.</summary>
     private string? _attachedDraftId;
@@ -349,6 +376,34 @@ public sealed class DraftAssistantService : IDraftAssistantService
             }
         }
 
+        // Targets are opt-in. An empty/missing history is explicitly harmless: it produces no
+        // timing assessment and no score impact, preserving the assistant's prior behavior.
+        var targetAssessments = new Dictionary<Guid, HistoricalTargetTimingAssessment>();
+        var targetWatch = new List<HistoricalTargetWatch>();
+        if (_historical is not null && !string.IsNullOrWhiteSpace(effectiveLeague.ExternalId) && picksUntilNextUserPick is int picksUntil && userRosterId is not null)
+        {
+            var targetIds = GetTargets(effectiveLeague.Id);
+            var nextUserPick = board.NextPickNumber + picksUntil;
+            var ownersBeforeNext = OwnersBeforePick(nextUserPick, board.NextPickNumber, draft.Teams, isSnake, slotToRosterId, leagueSnapshot);
+            foreach (var player in undrafted.Where(p => targetIds.Contains(p.Id)))
+            {
+                try
+                {
+                    var query = _historical.QueryTargetPlayer(effectiveLeague.ExternalId!, player.Id.ToString(), board.NextPickNumber, nextUserPick, effectiveLeague.LeagueType);
+                    var ownerRisk = query.LeagueRange?.OwnerSelections?.Any(x => x.Value >= 3 && ownersBeforeNext.Contains(x.Key)) == true;
+                    var position = PlayerPresentation.PositionLabel(player.Position);
+                    var positionRun = madePicks.OrderByDescending(p => p.PickNumber).Take(2).Count(p => p.PositionLabel == position) == 2;
+                    var assessment = HistoricalTargetTimingPolicy.Assess(query.Availability, ownerRisk, positionRun);
+                    targetAssessments[player.Id] = assessment;
+                    targetWatch.Add(new HistoricalTargetWatch(player.Id, player.FullName, position, assessment, board.NextPickNumber, nextUserPick, picksUntil));
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "Historical target analysis unavailable for {PlayerId}", player.Id);
+                }
+            }
+        }
+
         var scored = undrafted
             .Select(p => ScorePlayer(
                 p,
@@ -365,7 +420,8 @@ public sealed class DraftAssistantService : IDraftAssistantService
                 positionalRankByPlayer.GetValueOrDefault(p.Id),
                 tierInfoByPlayer.GetValueOrDefault(p.Id),
                 observedRateByPosition.GetValueOrDefault(PlayerPresentation.PositionLabel(p.Position), -1m),
-                picksUntilNextUserPick))
+                picksUntilNextUserPick,
+                targetAssessments.GetValueOrDefault(p.Id)))
             .Where(s => s.Projection is not null)
             .ToList();
 
@@ -384,6 +440,14 @@ public sealed class DraftAssistantService : IDraftAssistantService
         var recommendations = BuildDiverseRecommendations(byTeamFit);
         // Nobody is on the clock before the draft begins, even though slot 1 technically resolves.
         var isOnTheClock = status != DraftStatus.NotStarted && board.IsUserOnTheClock;
+
+        // Route tree is pure post-processing of data already computed above — no new scoring —
+        // and is attached unconditionally (not gated on isOnTheClock) so it keeps updating while
+        // another owner is on the clock, per the requirement that recommendations never go stale
+        // between the user's own picks.
+        var routeTree = BuildRouteTree(byTeamFit, recommendations);
+
+        var myTendencies = ComputeMyTendencies(draft.DraftId, board, userRosterId, isOnTheClock, recommendations);
 
         return new DraftAssistantReport
         {
@@ -415,8 +479,98 @@ public sealed class DraftAssistantService : IDraftAssistantService
             LeagueId = effectiveLeague.Id,
             Phase = draftPhase,
             DecisionSummary = BuildDecisionSummary(
-                recommendations.FirstOrDefault(), byRawProjection, draftPhase, isDynasty, strategy)
+                recommendations.FirstOrDefault(), byRawProjection, draftPhase, isDynasty, strategy),
+            TargetWatch = targetWatch.OrderBy(x => x.Assessment.Timing).ToList(),
+            RouteTree = routeTree,
+            MyTendencies = myTendencies
         };
+    }
+
+    /// <summary>
+    /// Small decision tree built purely from data already computed above — no new scoring or
+    /// simulation. <c>IfTakenBranches</c> re-runs the existing diverse-recommendation selection
+    /// with one trigger player excluded, the same pattern <see cref="BuildDiverseRecommendations"/>
+    /// already uses for alternatives.
+    /// </summary>
+    private static DraftRouteTree? BuildRouteTree(
+        IReadOnlyList<ScoredCandidate> byTeamFit, IReadOnlyList<DraftRecommendation> recommendations)
+    {
+        if (byTeamFit.Count == 0 || recommendations.Count == 0)
+        {
+            return null;
+        }
+
+        var best = recommendations[0];
+        var alternatives = recommendations.Skip(1).Take(2).ToList();
+        var likelyNext = recommendations.Skip(1 + alternatives.Count).FirstOrDefault();
+
+        var branches = new List<DraftRouteBranch>();
+        foreach (var trigger in new[] { best, likelyNext }.Where(x => x is not null).Cast<DraftRecommendation>().Take(2))
+        {
+            var filtered = byTeamFit.Where(c => c.Player.Id != trigger.PlayerId).ToList();
+            var thenRecommendations = BuildDiverseRecommendations(filtered);
+            if (thenRecommendations.Count > 0)
+            {
+                branches.Add(new DraftRouteBranch(trigger.PlayerId, trigger.PlayerName, thenRecommendations[0]));
+            }
+        }
+
+        return new DraftRouteTree(best, alternatives, likelyNext, branches);
+    }
+
+    /// <summary>
+    /// Session-only tendency tracking. Records how the newest pick (if any landed since the last
+    /// poll) compared to the diverse recommendation list captured the last time the user was on
+    /// the clock, then hands the accumulated history to the pure policy. Nothing here is
+    /// persisted — it lives only as long as this service instance does, same as
+    /// <see cref="_attachedDraftId"/>.
+    /// </summary>
+    private PersonalDraftTendencies? ComputeMyTendencies(
+        string draftId, DraftBoard board, int? userRosterId, bool isOnTheClock,
+        IReadOnlyList<DraftRecommendation> recommendations)
+    {
+        if (userRosterId is not int myRosterId)
+        {
+            return null;
+        }
+
+        var myPicksNow = board.Picks.Count(p => p.RosterId == myRosterId && p.IsMade);
+        var previousCount = _myPickCountByDraftId.GetValueOrDefault(draftId, 0);
+
+        if (myPicksNow > previousCount &&
+            _pendingRecommendationsByDraftId.TryGetValue(draftId, out var pending) && pending.Count > 0)
+        {
+            var newestPick = board.Picks
+                .Where(p => p.RosterId == myRosterId && p.IsMade)
+                .OrderByDescending(p => p.PickNumber)
+                .First();
+            if (newestPick.PlayerId is Guid pickedId && newestPick.PlayerName is not null)
+            {
+                var matched = pending.FirstOrDefault(r => r.PlayerId == pickedId);
+                var alignment = matched is not null && matched.PlayerId == pending[0].PlayerId
+                    ? PersonalDecisionAlignment.MatchedRecommendation
+                    : PersonalDecisionAlignment.WentOffBoard;
+                var decision = new PersonalDraftDecision(
+                    newestPick.PickNumber, pickedId, newestPick.PlayerName, matched?.Category, alignment);
+                if (!_decisionHistoryByDraftId.TryGetValue(draftId, out var history))
+                {
+                    _decisionHistoryByDraftId[draftId] = history = [];
+                }
+                history.Add(decision);
+            }
+            _pendingRecommendationsByDraftId.Remove(draftId);
+        }
+        _myPickCountByDraftId[draftId] = myPicksNow;
+
+        if (isOnTheClock && recommendations.Count > 0)
+        {
+            _pendingRecommendationsByDraftId[draftId] = recommendations;
+        }
+
+        var decisionHistory = _decisionHistoryByDraftId.TryGetValue(draftId, out var h)
+            ? (IReadOnlyList<PersonalDraftDecision>)h
+            : [];
+        return PersonalDraftTendencyPolicy.Compute(board, myRosterId, decisionHistory);
     }
 
     internal static ScoredCandidate ScorePlayer(
@@ -436,7 +590,8 @@ public sealed class DraftAssistantService : IDraftAssistantService
         int? positionalRank = null,
         PositionalTierInfo? tierInfo = null,
         decimal observedPositionRate = -1m,
-        int? picksUntilNextUserPick = null)
+        int? picksUntilNextUserPick = null,
+        HistoricalTargetTimingAssessment? historicalTarget = null)
     {
         var positionLabel = PlayerPresentation.PositionLabel(player.Position);
         var factors = new List<DraftRecommendationFactor>();
@@ -701,6 +856,14 @@ public sealed class DraftAssistantService : IDraftAssistantService
             });
         }
 
+        if (historicalTarget is not null)
+        {
+            var adjustment = historicalTarget.Recommendation == HistoricalTargetRecommendation.TakeNow && historicalTarget.Availability.EvidenceStrength is HistoricalEvidenceStrength.Moderate or HistoricalEvidenceStrength.Strong ? HistoricalLastSafeBonus
+                : historicalTarget.Recommendation == HistoricalTargetRecommendation.LikelyToSurvive ? -HistoricalSafeWaitPenalty : 0m;
+            fitScore += adjustment;
+            factors.Add(new DraftRecommendationFactor { Label = "Historical target timing", Detail = historicalTarget.Explanation, Direction = adjustment > 0 ? FactorDirection.Positive : FactorDirection.Neutral, Available = adjustment != 0m });
+        }
+
         var reasoning = BuildReasoning(player, positionLabel, projectedPoints, valueOverReplacement, need, needByPosition.ContainsKey(positionLabel));
 
         return new ScoredCandidate
@@ -752,6 +915,20 @@ public sealed class DraftAssistantService : IDraftAssistantService
         }
 
         return core;
+    }
+
+    private static HashSet<string> OwnersBeforePick(int endExclusive, int startInclusive, int teams, bool isSnake,
+        IReadOnlyDictionary<int, int> slotToRosterId, SleeperLeagueSnapshot? league)
+    {
+        var ownerByRoster = league?.Rosters.Where(r => !string.IsNullOrWhiteSpace(r.OwnerId))
+            .ToDictionary(r => r.RosterId, r => r.OwnerId!, EqualityComparer<int>.Default) ?? new Dictionary<int, string>();
+        var result = new HashSet<string>(StringComparer.Ordinal);
+        for (var pick = startInclusive; pick < endExclusive; pick++)
+        {
+            var slot = DraftOrderCalculator.SlotForPick(pick, teams, isSnake);
+            if (slotToRosterId.TryGetValue(slot, out var roster) && ownerByRoster.TryGetValue(roster, out var owner)) result.Add(owner);
+        }
+        return result;
     }
 
     private static DraftRecommendation BuildRecommendation(

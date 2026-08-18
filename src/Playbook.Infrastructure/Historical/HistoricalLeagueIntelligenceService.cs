@@ -2,6 +2,7 @@ using System.Text.Json;
 using Playbook.Application.Historical;
 using Playbook.Application.Leagues.Sleeper;
 using Playbook.Application.Players;
+using Playbook.Core.Draft;
 using Playbook.Core.Historical;
 using Playbook.Core.Leagues;
 
@@ -42,6 +43,127 @@ public sealed class HistoricalLeagueIntelligenceService : IHistoricalLeagueIntel
             next = league.PreviousLeagueId;
         }
         return imported.Count == 0 ? Fail("Sleeper returned no drafts for this league history.") : Success(imported.Last(), []);
+    }
+
+    public async Task<HistoricalImportResult> ImportSleeperDraftByIdAsync(string draftUrlOrId, CancellationToken cancellationToken = default)
+    {
+        if (!SleeperDraftLink.TryParse(draftUrlOrId, out var draftId)) return Fail("That doesn't look like a Sleeper draft link or ID.");
+        var draft = await _sleeper.GetDraftAsync(draftId, cancellationToken);
+        if (draft is null) return Fail($"Sleeper draft '{draftId}' was not found.");
+        if (!draft.Status.Equals("complete", StringComparison.OrdinalIgnoreCase))
+            return Fail("This draft is still in progress — use Follow in the Draft Assistant to track it live instead of importing it as a completed draft.");
+        var picks = await _sleeper.GetDraftPicksAsync(draftId, cancellationToken);
+        var league = await _sleeper.GetLeagueSnapshotAsync(draft.LeagueId, cancellationToken) ?? BuildFallbackLeagueSnapshot(draft);
+        return await ImportAsync(BuildSleeperDraft(league, draft, picks, source: "url-import"), cancellationToken);
+    }
+
+    private static SleeperLeagueSnapshot BuildFallbackLeagueSnapshot(SleeperDraftSnapshot draft)
+    {
+        var rosters = draft.DraftOrderByUserId
+            .Where(kv => draft.SlotToRosterId.ContainsKey(kv.Value))
+            .Select(kv =>
+            {
+                var rosterId = draft.SlotToRosterId[kv.Value];
+                return new SleeperRosterSnapshot
+                {
+                    RosterId = rosterId,
+                    OwnerId = kv.Key,
+                    TeamName = $"Team {rosterId}",
+                    OwnerName = $"Team {rosterId}",
+                    SleeperPlayerIds = [],
+                    StarterSleeperPlayerIds = [],
+                    ReserveSleeperPlayerIds = [],
+                    TaxiSleeperPlayerIds = []
+                };
+            }).ToList();
+        return new SleeperLeagueSnapshot
+        {
+            ExternalLeagueId = draft.LeagueId,
+            Name = string.IsNullOrWhiteSpace(draft.Name) ? "Sleeper draft" : draft.Name!,
+            Season = draft.Season,
+            Status = draft.Status,
+            TeamCount = draft.Teams,
+            CurrentWeek = 1,
+            SleeperLeagueType = int.TryParse(draft.LeagueTypeRaw, out var t) ? t : 0,
+            ScoringSettings = new Dictionary<string, double>(),
+            RosterPositions = draft.RosterPositions,
+            Rosters = rosters
+        };
+    }
+
+    public async Task<DraftImportSummary> ImportFromImageAsync(DraftImageParseResult parsed, DraftImportContext context, CancellationToken cancellationToken = default)
+    {
+        var flagged = new List<string>();
+        var picks = new List<HistoricalDraftPick>();
+
+        foreach (var p in parsed.Picks)
+        {
+            var label = p.PickNumber?.ToString() ?? "?";
+            if (p.IsAmbiguous)
+            {
+                flagged.Add($"Pick {label}: {p.PlayerText ?? "(unreadable)"} — {p.AmbiguityReason ?? "flagged as ambiguous"}.");
+                continue;
+            }
+            if (p.PickNumber is null || p.Round is null || string.IsNullOrWhiteSpace(p.PlayerText) || string.IsNullOrWhiteSpace(p.OwnerText))
+            {
+                flagged.Add($"Pick {label}: missing pick number, round, player text, or owner text.");
+                continue;
+            }
+            var identity = _identities.ResolveByNameTeam(p.PlayerText!, null);
+            if (identity is null)
+            {
+                flagged.Add($"Pick {label}: could not confidently identify player \"{p.PlayerText}\".");
+                continue;
+            }
+            var ownerName = context.OwnerNames.FirstOrDefault(o => string.Equals(o.Trim(), p.OwnerText!.Trim(), StringComparison.OrdinalIgnoreCase));
+            if (ownerName is null)
+            {
+                flagged.Add($"Pick {label}: could not match owner \"{p.OwnerText}\" to a known team.");
+                continue;
+            }
+            picks.Add(new HistoricalDraftPick
+            {
+                PickNumber = p.PickNumber.Value,
+                Round = p.Round.Value,
+                DraftSlot = 0,
+                OwnerKey = ownerName,
+                OwnerName = ownerName,
+                SleeperPlayerId = identity.SleeperId,
+                PlaybookPlayerId = identity.PlaybookId,
+                PlayerName = identity.FullName,
+                Position = identity.Position ?? "UNKNOWN",
+                NflTeam = identity.Team,
+                IsKeeper = false
+            });
+        }
+
+        var draft = new HistoricalLeagueDraft
+        {
+            HistoricalDraftId = $"screenshot:{context.LeagueId}:{context.Season}:{Guid.NewGuid():N}",
+            LeagueId = context.LeagueId,
+            Season = context.Season,
+            LeagueName = context.LeagueName,
+            LeagueType = context.LeagueType,
+            DraftType = context.DraftType,
+            TeamCount = context.TeamCount,
+            RoundCount = context.RoundCount,
+            ScoringSettings = context.ScoringSettings,
+            RosterSettings = context.RosterSettings,
+            Owners = context.OwnerNames.Select(n => new HistoricalOwner { DisplayName = n }).ToList(),
+            Picks = picks,
+            Source = "screenshot",
+            IsComplete = context.IsCompleteDraft
+        };
+
+        if (!context.IsCompleteDraft)
+        {
+            return new DraftImportSummary(0, flagged.Count, flagged, null, draft);
+        }
+
+        var result = await ImportAsync(draft, cancellationToken);
+        return result.Succeeded
+            ? new DraftImportSummary(result.Draft!.Picks.Count, flagged.Count, flagged, result.Draft, null)
+            : new DraftImportSummary(0, flagged.Count + result.Errors.Count, [.. flagged, .. result.Errors], null, null);
     }
 
     public async Task<HistoricalImportResult> ImportJsonAsync(string json, CancellationToken cancellationToken = default)
@@ -113,7 +235,7 @@ public sealed class HistoricalLeagueIntelligenceService : IHistoricalLeagueIntel
     public HistoricalPlayerHistory GetPlayerHistory(string leagueId, string playerKey, LeagueType leagueType = LeagueType.Redraft)
     {
         var matches = GetDrafts(leagueId, leagueType).SelectMany(d => d.Picks.Select(p => new { d, p }))
-            .Where(x => string.Equals(PlayerKey(x.p), playerKey, StringComparison.OrdinalIgnoreCase)).ToList();
+            .Where(x => MatchesPlayer(x.p, playerKey)).ToList();
         return new HistoricalPlayerHistory(playerKey, matches.Count, matches.Select(x => x.d.Season).Distinct().Count(),
             matches.Count == 0 ? null : matches.Min(x => x.p.PickNumber), matches.Count == 0 ? null : matches.Max(x => x.p.PickNumber),
             matches.Select(x => x.p.OwnerKey).Distinct().ToList(), Strength(matches.Count));
@@ -128,7 +250,8 @@ public sealed class HistoricalLeagueIntelligenceService : IHistoricalLeagueIntel
         GetDrafts(leagueId, leagueType).SelectMany(d => d.Picks.Select(p => new { d, p })).GroupBy(x => PlayerKey(x.p), StringComparer.OrdinalIgnoreCase)
             .Select(g => { var picks = g.Select(x => x.p.PickNumber).Order().ToList(); return new HistoricalLeaguePlayerRange(g.Key, g.First().p.PlayerName, g.First().p.Position,
                 picks.Count, g.Select(x => x.d.Season).Distinct().Count(), picks.First(), Median(picks), picks.Average(), picks.Last(), g.Select(x => x.p.OwnerKey).Distinct().Count(),
-                g.Select(x => x.p.OwnerKey).Distinct().ToList(), g.OrderByDescending(x => x.d.Season).Take(5).Select(x => x.p.PickNumber).ToList(), Strength(picks.Count)); })
+                g.Select(x => x.p.OwnerKey).Distinct().ToList(), g.OrderByDescending(x => x.d.Season).Take(5).Select(x => x.p.PickNumber).ToList(), Strength(picks.Count),
+                g.GroupBy(x => x.p.OwnerKey).ToDictionary(x => x.Key, x => x.Count())); })
             .OrderBy(x => x.MedianPick).ToList();
 
     public IReadOnlyList<HistoricalLeaguePositionTendency> GetLeaguePositionTendencies(string leagueId, LeagueType leagueType = LeagueType.Redraft) =>
@@ -148,16 +271,16 @@ public sealed class HistoricalLeagueIntelligenceService : IHistoricalLeagueIntel
 
     public HistoricalTargetPlayerQuery QueryTargetPlayer(string leagueId, string playerKey, int currentPick, int nextPick, LeagueType leagueType = LeagueType.Redraft)
     {
-        var range = GetLeaguePlayerRanges(leagueId, leagueType).FirstOrDefault(x => x.PlayerKey.Equals(playerKey, StringComparison.OrdinalIgnoreCase));
-        var comparisons = GetPickMarketComparisons(leagueId, leagueType).Where(x => x.PlayerKey.Equals(playerKey, StringComparison.OrdinalIgnoreCase)).ToList();
-        var adp = GetDrafts(leagueId, leagueType).SelectMany(d => d.HistoricalAdpSnapshots).OrderByDescending(x => x.SnapshotDateUtc).SelectMany(x => x.Players).FirstOrDefault(x => RecordKey(x).Equals(playerKey, StringComparison.OrdinalIgnoreCase));
+        var range = GetLeaguePlayerRanges(leagueId, leagueType).FirstOrDefault(x => x.PlayerKey.Equals(playerKey, StringComparison.OrdinalIgnoreCase) || (Guid.TryParse(playerKey, out var id) && GetDrafts(leagueId, leagueType).SelectMany(d => d.Picks).Any(p => p.PlaybookPlayerId == id && PlayerKey(p).Equals(x.PlayerKey, StringComparison.OrdinalIgnoreCase))));
+        var comparisons = GetPickMarketComparisons(leagueId, leagueType).Where(x => x.PlayerKey.Equals(playerKey, StringComparison.OrdinalIgnoreCase) || (range is not null && x.PlayerKey.Equals(range.PlayerKey, StringComparison.OrdinalIgnoreCase))).ToList();
+        var adp = GetDrafts(leagueId, leagueType).SelectMany(d => d.HistoricalAdpSnapshots).OrderByDescending(x => x.SnapshotDateUtc).SelectMany(x => x.Players).FirstOrDefault(x => RecordKey(x).Equals(playerKey, StringComparison.OrdinalIgnoreCase) || (Guid.TryParse(playerKey, out var id) && x.PlaybookPlayerId == id));
         var evidence = range?.EvidenceStrength ?? HistoricalEvidenceStrength.Unavailable;
         var availability = range is null || range.DraftCount < 3 ? HistoricalAvailabilityAssessment.Unknown : currentPick >= range.MaximumPick || nextPick >= range.MedianPick ? HistoricalAvailabilityAssessment.Low : nextPick >= range.MinimumPick ? HistoricalAvailabilityAssessment.Medium : HistoricalAvailabilityAssessment.High;
         var explanation = availability == HistoricalAvailabilityAssessment.Unknown ? "Fewer than three league selections; availability is unknown." : $"Observed across {range!.DraftCount} drafts: picks {range.MinimumPick}-{range.MaximumPick}, median {range.MedianPick:0.#}.";
         return new HistoricalTargetPlayerQuery(range, adp, comparisons, new HistoricalAvailabilityResult(playerKey, currentPick, nextPick, availability, range, adp, evidence, explanation));
     }
 
-    private HistoricalLeagueDraft BuildSleeperDraft(SleeperLeagueSnapshot league, SleeperDraftSnapshot draft, IReadOnlyList<SleeperDraftPickSnapshot> picks)
+    internal HistoricalLeagueDraft BuildSleeperDraft(SleeperLeagueSnapshot league, SleeperDraftSnapshot draft, IReadOnlyList<SleeperDraftPickSnapshot> picks, string source = "sleeper")
     {
         var owners = league.Rosters.Select(r => new HistoricalOwner { SleeperUserId = r.OwnerId, DisplayName = r.OwnerName, RosterId = r.RosterId }).ToList();
         var byUser = owners.Where(o => o.SleeperUserId is not null).ToDictionary(o => o.SleeperUserId!, StringComparer.Ordinal);
@@ -181,7 +304,7 @@ public sealed class HistoricalLeagueIntelligenceService : IHistoricalLeagueIntel
             TeamCount = draft.Teams > 0 ? draft.Teams : league.TeamCount, RoundCount = draft.Rounds,
             ScoringSettings = league.ScoringSettings, RosterSettings = draft.RosterPositions.Count > 0 ? draft.RosterPositions : league.RosterPositions,
             Owners = owners, Picks = raw, DraftedAtUtc = draft.Status == "complete" ? raw.Select(p => p.PickedAtUtc).Where(x => x is not null).Max() : null,
-            Source = "sleeper", IsComplete = draft.Status.Equals("complete", StringComparison.OrdinalIgnoreCase) };
+            Source = source, IsComplete = draft.Status.Equals("complete", StringComparison.OrdinalIgnoreCase) };
     }
 
     private (HistoricalLeagueDraft? Draft, List<string> Errors, List<string> Warnings) ValidateAndReconstruct(HistoricalLeagueDraft source)
@@ -241,6 +364,7 @@ public sealed class HistoricalLeagueIntelligenceService : IHistoricalLeagueIntel
     private static double? AverageOrNull(IEnumerable<double> values) { var v = values.ToList(); return v.Count == 0 ? null : v.Average(); }
     private List<HistoricalLeagueDraft> LoadMutable() { lock (_gate) { return _drafts ??= _store.Load().ToList(); } }
     private static string PlayerKey(HistoricalDraftPick p) => p.SleeperPlayerId ?? p.PlaybookPlayerId?.ToString() ?? p.PlayerName;
+    private static bool MatchesPlayer(HistoricalDraftPick p, string key) => PlayerKey(p).Equals(key, StringComparison.OrdinalIgnoreCase) || p.PlaybookPlayerId?.ToString().Equals(key, StringComparison.OrdinalIgnoreCase) == true;
     private static HistoricalEvidenceStrength Strength(int n) => n switch { <= 0 => HistoricalEvidenceStrength.Unavailable, 1 or 2 => HistoricalEvidenceStrength.Insufficient, <= 5 => HistoricalEvidenceStrength.Limited, <= 11 => HistoricalEvidenceStrength.Moderate, _ => HistoricalEvidenceStrength.Strong };
     private static LeagueType MapType(string? raw, int fallback) => raw switch { "2" => LeagueType.Dynasty, "1" => LeagueType.Keeper, "bestball" => LeagueType.BestBall, _ => fallback switch { 2 => LeagueType.Dynasty, 1 => LeagueType.Keeper, _ => LeagueType.Redraft } };
     private static HistoricalImportResult Fail(string error) => new(false, [error], []);

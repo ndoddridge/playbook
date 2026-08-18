@@ -97,7 +97,15 @@ public sealed record HistoricalPickMarketComparison(
 public sealed record HistoricalLeaguePlayerRange(
     string PlayerKey, string PlayerName, string Position, int DraftCount, int SeasonCount,
     int MinimumPick, double MedianPick, double AveragePick, int MaximumPick, int DistinctOwnerCount,
-    IReadOnlyList<string> OwnerKeys, IReadOnlyList<int> RecentPicks, HistoricalEvidenceStrength EvidenceStrength);
+    IReadOnlyList<string> OwnerKeys, IReadOnlyList<int> RecentPicks, HistoricalEvidenceStrength EvidenceStrength,
+    IReadOnlyDictionary<string, int>? OwnerSelections = null);
+
+public enum HistoricalTargetTiming { Unknown, Early, SafeToWait, LastSafePick, TooLateLikelyGone }
+public enum HistoricalTargetRecommendation { Unknown, TakeNow, LikelyToSurvive, ProbablySurvives, Wait }
+public sealed record HistoricalTargetTimingAssessment(
+    HistoricalTargetTiming Timing, HistoricalTargetRecommendation Recommendation,
+    HistoricalAvailabilityResult Availability, bool ElevatedOwnerRisk, bool PositionRun,
+    string Explanation);
 
 public sealed record HistoricalAvailabilityResult(
     string PlayerKey, int CurrentPick, int NextPick, HistoricalAvailabilityAssessment Assessment,

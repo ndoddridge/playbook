@@ -648,6 +648,44 @@ public class DraftAssistantServiceTests
         Assert.Equal(candidate.Id, report.Recommended!.PlayerId);
     }
 
+    // ---------------------------------------------------------------- route tree
+
+    [Fact]
+    public async Task GetReportAsync_RouteTree_Is_Populated_When_On_The_Clock()
+    {
+        var (league, sleeper, team) = BuildOnTheClockScenario(nextPickGoesToUser: true);
+        var candidate = MakePlayer(Position.RB, "Any RB");
+        var projections = new Dictionary<Guid, PlayerProjection>
+        {
+            [candidate.Id] = MakeProjection(candidate.Id, points: 12m, confidence: 50)
+        };
+        var service = CreateService(league, team, sleeper, [candidate], projections);
+
+        var report = await service.GetReportAsync();
+
+        Assert.True(report.IsOnTheClock);
+        Assert.NotNull(report.RouteTree);
+        Assert.Equal(candidate.Id, report.RouteTree!.BestCurrentMove!.PlayerId);
+    }
+
+    [Fact]
+    public async Task GetReportAsync_RouteTree_Keeps_Updating_When_It_Is_Not_The_Users_Turn()
+    {
+        var (league, sleeper, team) = BuildOnTheClockScenario(nextPickGoesToUser: false);
+        var candidate = MakePlayer(Position.RB, "Any RB");
+        var projections = new Dictionary<Guid, PlayerProjection>
+        {
+            [candidate.Id] = MakeProjection(candidate.Id, points: 12m, confidence: 50)
+        };
+        var service = CreateService(league, team, sleeper, [candidate], projections);
+
+        var report = await service.GetReportAsync();
+
+        Assert.False(report.IsOnTheClock);
+        Assert.NotNull(report.RouteTree);
+        Assert.Equal(candidate.Id, report.RouteTree!.BestCurrentMove!.PlayerId);
+    }
+
     private static (League league, FakeSleeperLeagueClient sleeper, FantasyTeam team) BuildOnTheClockScenario(
         bool nextPickGoesToUser)
     {

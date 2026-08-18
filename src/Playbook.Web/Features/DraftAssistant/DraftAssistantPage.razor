@@ -43,6 +43,8 @@
         }
     </section>
 
+    <DraftImportPanel OnImported="() => LoadAsync(cts?.Token ?? CancellationToken.None)" />
+
     @if (isLoading && report is null)
     {
         <p class="pb-empty">Loading draft state…</p>
@@ -120,7 +122,7 @@
                 <h2 id="da-rec-title" class="ti-section__title">
                     @(report.IsOnTheClock ? "Recommended pick" : "Current best pick if you were on the clock")
                 </h2>
-                <DraftRecommendationCard Recommendation="report.Recommended" IsPrimary="true" />
+                <DraftRecommendationCard Recommendation="report.Recommended" IsPrimary="true" IsTarget="IsTarget(report.Recommended.PlayerId)" OnToggleTarget="ToggleTarget" />
             </section>
 
             @if (report.Alternatives.Count > 0)
@@ -130,9 +132,63 @@
                     <div class="da-alt-grid">
                         @foreach (var alt in report.Alternatives)
                         {
-                            <DraftRecommendationCard Recommendation="alt" IsPrimary="false" />
+                            <DraftRecommendationCard Recommendation="alt" IsPrimary="false" IsTarget="IsTarget(alt.PlayerId)" OnToggleTarget="ToggleTarget" />
                         }
                     </div>
+                </section>
+            }
+
+            @if (report.TargetWatch.Count > 0)
+            {
+                <section class="ti-section ti-section--secondary"><h2 class="ti-section__title">Target watch</h2><div class="da-needs">@foreach (var target in report.TargetWatch) { <article><strong>@target.PlayerName</strong> · @target.Assessment.Recommendation<br /><small>Range: @(target.Assessment.Availability.LeagueRange is { } r ? $"{r.MinimumPick}-{r.MaximumPick}, median {r.MedianPick:0.#}" : "unknown") · Current @target.CurrentPick · Next @target.NextPick</small><br /><small>@target.Assessment.Explanation</small></article> }</div></section>
+            }
+
+            @if (report.RouteTree is { } tree)
+            {
+                <section class="ti-section ti-section--secondary" aria-labelledby="da-route-title">
+                    <h2 id="da-route-title" class="ti-section__title">What's next</h2>
+                    @if (tree.LikelyNextTarget is not null)
+                    {
+                        <p class="ti-footnote">Likely next target: <strong>@tree.LikelyNextTarget.PlayerName</strong> (@tree.LikelyNextTarget.PositionLabel)</p>
+                    }
+                    @if (tree.IfTakenBranches.Count > 0)
+                    {
+                        <div class="da-alt-grid">
+                            @foreach (var branch in tree.IfTakenBranches)
+                            {
+                                <article>
+                                    <p class="ti-footnote">If <strong>@branch.TriggerPlayerName</strong> is taken first:</p>
+                                    <DraftRecommendationCard Recommendation="branch.ThenRecommend" IsPrimary="false" />
+                                </article>
+                            }
+                        </div>
+                    }
+                </section>
+            }
+
+            @if (report.MyTendencies is { } mine)
+            {
+                <section class="ti-section ti-section--secondary" aria-labelledby="da-mine-title">
+                    <h2 id="da-mine-title" class="ti-section__title">Your tendencies this mock (session only)</h2>
+                    <p class="ti-footnote">@mine.RosterBuildPattern · @mine.PickCount pick@(mine.PickCount == 1 ? "" : "s") · evidence: @mine.EvidenceStrength</p>
+                    @if (mine.PositionEmphasis.Count > 0)
+                    {
+                        <div class="da-needs">
+                            @foreach (var pos in mine.PositionEmphasis)
+                            {
+                                <span class="pb-badge">@pos.Position: @pos.PickCount (avg round @pos.AverageRound.ToString("0.#"))</span>
+                            }
+                        </div>
+                    }
+                    @if (mine.DecisionsVsRecommendations.Count > 0)
+                    {
+                        <ul class="ti-list ti-list--compact">
+                            @foreach (var decision in mine.DecisionsVsRecommendations)
+                            {
+                                <li>Pick @decision.PickNumber: @decision.PickedPlayerName — @decision.Alignment@(decision.MatchedCategory is { } cat ? $" ({RecommendationCategoryPolicy.DisplayName(cat)})" : "")</li>
+                            }
+                        </ul>
+                    }
                 </section>
             }
         }
@@ -175,6 +231,8 @@
 @code {
     private string attachInput = "";
     private string? attachError;
+    private bool IsTarget(Guid playerId) => report?.LeagueId is Guid leagueId && DraftAssistant.GetTargets(leagueId).Contains(playerId);
+    private async Task ToggleTarget(Guid playerId) { if (report?.LeagueId is Guid leagueId) { DraftAssistant.ToggleTarget(leagueId, playerId); await LoadAsync(cts?.Token ?? CancellationToken.None); } }
 
     /// <summary>
     /// Follow a specific Sleeper draft by pasted link. This is what makes mock drafts work: a

@@ -1,0 +1,235 @@
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.Extensions.Options
+@using Playbook.Application.Draft
+@using Playbook.Application.Historical
+@using Playbook.Application.Leagues
+@using Playbook.Core.Draft
+@using Playbook.Core.Leagues
+@inject IHistoricalLeagueIntelligenceService Historical
+@inject IDraftImageIngestionService ImageIngestion
+@inject ILeagueState LeagueState
+@inject IOptions<AnthropicVisionOptions> VisionOptions
+
+<section class="da-import" aria-labelledby="da-import-title">
+    <h2 id="da-import-title" class="ti-section__title">Import a draft</h2>
+
+    <div class="da-import__block">
+        <label class="da-attach__label" for="da-import-url-input">
+            Paste a completed Sleeper draft's link to add it to league history
+        </label>
+        <div class="da-attach__row">
+            <input id="da-import-url-input"
+                   class="da-attach__input"
+                   type="text"
+                   inputmode="url"
+                   autocomplete="off"
+                   placeholder="https://sleeper.com/draft/nfl/..."
+                   @bind="urlInput"
+                   @bind:event="oninput" />
+            <button type="button" class="da-attach__btn" @onclick="ImportUrlAsync" disabled="@urlBusy">
+                @(urlBusy ? "Importing…" : "Import as completed draft")
+            </button>
+        </div>
+        @if (!string.IsNullOrWhiteSpace(urlMessage))
+        {
+            <p class="@(urlSucceeded ? "da-attach__status" : "da-attach__error")">@urlMessage</p>
+        }
+    </div>
+
+    @if (string.IsNullOrWhiteSpace(VisionOptions.Value.ApiKey))
+    {
+        <p class="ti-footnote">Screenshot import isn't configured (no vision API key set).</p>
+    }
+    else
+    {
+        <div class="da-import__block">
+            <label class="da-attach__label" for="da-import-file">
+                Or upload a draft screenshot/photo
+            </label>
+            <InputFile id="da-import-file" OnChange="OnFileSelectedAsync" accept="image/png,image/jpeg,image/webp" />
+
+            <fieldset class="da-import__fieldset">
+                <legend>This is a:</legend>
+                <label><input type="radio" name="da-import-kind" checked="@(isCompleteDraft == true)" @onchange="() => isCompleteDraft = true" /> Completed past draft</label>
+                <label><input type="radio" name="da-import-kind" checked="@(isCompleteDraft == false)" @onchange="() => isCompleteDraft = false" /> Current mock in progress</label>
+            </fieldset>
+
+            <div class="da-import__fields">
+                <label>League name <input type="text" @bind="leagueName" /></label>
+                <label>Season <input type="text" @bind="season" /></label>
+                <label>Team count <input type="number" min="2" max="32" @bind="teamCount" /></label>
+                <label>Round count <input type="number" min="1" max="40" @bind="roundCount" /></label>
+                <label>League type
+                    <select @bind="leagueType">
+                        @foreach (var lt in Enum.GetValues<LeagueType>())
+                        {
+                            <option value="@lt">@lt</option>
+                        }
+                    </select>
+                </label>
+                <label>Team/owner names (one per line)
+                    <textarea rows="4" @bind="ownerNamesInput"></textarea>
+                </label>
+                <label>Which team is yours? (optional, must match a name above exactly)
+                    <input type="text" @bind="myOwnerName" />
+                </label>
+            </div>
+
+            <button type="button" class="da-attach__btn" @onclick="ImportImageAsync" disabled="@(imageBusy || selectedImageBytes is null || isCompleteDraft is null)">
+                @(imageBusy ? "Parsing…" : "Import screenshot")
+            </button>
+
+            @if (imageSummary is not null)
+            {
+                <p class="da-attach__status">
+                    Saved @imageSummary.SavedCount pick@(imageSummary.SavedCount == 1 ? "" : "s")
+                    @(imageSummary.FlaggedCount > 0 ? $" — {imageSummary.FlaggedCount} flagged, could not confidently identify" : "").
+                </p>
+                @if (imageSummary.FlaggedDetails.Count > 0)
+                {
+                    <ul class="ti-list ti-list--compact">
+                        @foreach (var detail in imageSummary.FlaggedDetails)
+                        {
+                            <li>@detail</li>
+                        }
+                    </ul>
+                }
+            }
+            @if (!string.IsNullOrWhiteSpace(imageError))
+            {
+                <p class="da-attach__error">@imageError</p>
+            }
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter] public EventCallback OnImported { get; set; }
+
+    private string urlInput = "";
+    private string? urlMessage;
+    private bool urlSucceeded;
+    private bool urlBusy;
+
+    private byte[]? selectedImageBytes;
+    private string? selectedImageMediaType;
+    private bool? isCompleteDraft;
+    private string leagueName = "";
+    private string season = DateTime.UtcNow.Year.ToString();
+    private int teamCount = 12;
+    private int roundCount = 15;
+    private LeagueType leagueType = LeagueType.Redraft;
+    private string ownerNamesInput = "";
+    private string myOwnerName = "";
+    private bool imageBusy;
+    private string? imageError;
+    private DraftImportSummary? imageSummary;
+
+    protected override void OnInitialized()
+    {
+        if (LeagueState.CurrentLeague is { } league)
+        {
+            leagueName = league.Name;
+            season = league.Season.ToString();
+            teamCount = league.NumberOfTeams;
+            leagueType = league.LeagueType;
+        }
+    }
+
+    private async Task ImportUrlAsync()
+    {
+        urlBusy = true;
+        urlMessage = null;
+        try
+        {
+            var result = await Historical.ImportSleeperDraftByIdAsync(urlInput);
+            urlSucceeded = result.Succeeded;
+            urlMessage = result.Succeeded
+                ? $"Saved {result.Draft?.Picks.Count ?? 0} picks to history."
+                : string.Join(" ", result.Errors);
+            if (result.Succeeded)
+            {
+                urlInput = "";
+                await OnImported.InvokeAsync();
+            }
+        }
+        finally
+        {
+            urlBusy = false;
+        }
+    }
+
+    private async Task OnFileSelectedAsync(InputFileChangeEventArgs e)
+    {
+        imageError = null;
+        imageSummary = null;
+        const long maxBytes = 15 * 1024 * 1024;
+        try
+        {
+            var file = e.File;
+            using var stream = file.OpenReadStream(maxBytes);
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+            selectedImageBytes = ms.ToArray();
+            selectedImageMediaType = string.IsNullOrWhiteSpace(file.ContentType) ? "image/png" : file.ContentType;
+        }
+        catch (Exception ex)
+        {
+            imageError = $"Could not read the selected file: {ex.Message}";
+            selectedImageBytes = null;
+        }
+    }
+
+    private async Task ImportImageAsync()
+    {
+        if (selectedImageBytes is null || selectedImageMediaType is null || isCompleteDraft is null)
+        {
+            return;
+        }
+
+        imageBusy = true;
+        imageError = null;
+        imageSummary = null;
+        try
+        {
+            var parsed = await ImageIngestion.ParseDraftScreenshotAsync(selectedImageBytes, selectedImageMediaType);
+            if (parsed.Unparseable)
+            {
+                imageError = "Couldn't read this image as a draft board. " + string.Join(" ", parsed.Warnings);
+                return;
+            }
+
+            var owners = ownerNamesInput
+                .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .ToList();
+
+            var context = new DraftImportContext(
+                LeagueId: LeagueState.CurrentLeague?.ExternalId ?? Guid.NewGuid().ToString("N"),
+                Season: season,
+                LeagueName: string.IsNullOrWhiteSpace(leagueName) ? "Imported draft" : leagueName,
+                LeagueType: leagueType,
+                DraftType: "snake",
+                TeamCount: teamCount,
+                RoundCount: roundCount,
+                ScoringSettings: new Dictionary<string, double>(),
+                RosterSettings: [],
+                OwnerNames: owners,
+                IsCompleteDraft: isCompleteDraft.Value,
+                MyOwnerName: string.IsNullOrWhiteSpace(myOwnerName) ? null : myOwnerName);
+
+            imageSummary = await Historical.ImportFromImageAsync(parsed, context);
+            if (imageSummary.SavedDraft is not null)
+            {
+                await OnImported.InvokeAsync();
+            }
+        }
+        catch (InvalidOperationException ex)
+        {
+            imageError = ex.Message;
+        }
+        finally
+        {
+            imageBusy = false;
+        }
+    }
+}

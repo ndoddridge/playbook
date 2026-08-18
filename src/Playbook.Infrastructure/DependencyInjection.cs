@@ -67,6 +67,7 @@ public static class DependencyInjection
             services.Configure<PropLineOptions>(configuration.GetSection(PropLineOptions.SectionName));
             services.PostConfigure<PropLineOptions>(PropLineCredentialResolver.ApplyAliasEnvironmentVariables);
             services.Configure<LeagueOptions>(configuration.GetSection(LeagueOptions.SectionName));
+            services.Configure<AnthropicVisionOptions>(configuration.GetSection(AnthropicVisionOptions.SectionName));
         }
         else
         {
@@ -82,6 +83,7 @@ public static class DependencyInjection
             services.Configure<PropLineOptions>(_ => { });
             services.PostConfigure<PropLineOptions>(PropLineCredentialResolver.ApplyAliasEnvironmentVariables);
             services.Configure<LeagueOptions>(_ => { });
+            services.Configure<AnthropicVisionOptions>(_ => { });
         }
 
         RegisterPlayerData(services);
@@ -102,6 +104,19 @@ public static class DependencyInjection
         // Bye weeks from the real published schedule (same nflverse cache, no new dependency).
         services.AddSingleton<IByeWeekProvider, NflverseByeWeekProvider>();
         services.AddSingleton<IDraftAssistantService, DraftAssistantService>();
+
+        // Draft screenshot ingestion — quietly unavailable (throws only when actually invoked)
+        // until DraftImageIngestion__ApiKey is configured; no Mock/Live switch since there's no
+        // meaningful mock vision fallback.
+        services.AddHttpClient(AnthropicDraftImageIngestionService.HttpClientName, (sp, client) =>
+        {
+            var options = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<AnthropicVisionOptions>>().Value;
+            client.BaseAddress = new Uri(options.BaseUrl);
+            client.Timeout = TimeSpan.FromSeconds(Math.Clamp(options.TimeoutSeconds, 5, 120));
+            client.DefaultRequestHeaders.Add("anthropic-version", "2023-06-01");
+            client.DefaultRequestHeaders.Add("x-api-key", options.ApiKey);
+        });
+        services.AddSingleton<IDraftImageIngestionService, AnthropicDraftImageIngestionService>();
 
         services.AddHostedService<DataRefreshBackgroundService>();
         services.AddHostedService<LeagueAutoReconnectHostedService>();

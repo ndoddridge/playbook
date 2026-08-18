@@ -35,6 +35,11 @@
 
     <p class="da-rec-card__reasoning">@Recommendation.Reasoning</p>
 
+    @if (OnToggleTarget.HasDelegate)
+    {
+        <button type="button" class="qp-card__expand" @onclick="() => OnToggleTarget.InvokeAsync(Recommendation.PlayerId)">@(IsTarget ? "Remove target" : "Target")</button>
+    }
+
     <button type="button"
             class="qp-card__expand"
             @onclick="Toggle"
@@ -61,6 +66,9 @@
 
     [Parameter]
     public bool IsPrimary { get; set; }
+
+    [Parameter] public bool IsTarget { get; set; }
+    [Parameter] public EventCallback<Guid> OnToggleTarget { get; set; }
 
     private bool expanded;
 

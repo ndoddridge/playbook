@@ -106,6 +106,29 @@ public class HistoricalLeagueIntelligenceTests
         Assert.False((await service.ImportAdpSnapshotAsync(invalid)).Succeeded);
     }
 
+    [Fact]
+    public void Target_Timing_Uses_Range_Evidence_Last_Safe_And_Unknown_Gates()
+    {
+        var range = new HistoricalLeaguePlayerRange("p", "Player", "WR", 4, 4, 24, 27, 27, 30, 2, [], [], HistoricalEvidenceStrength.Moderate);
+        var low = new HistoricalAvailabilityResult("p", 21, 28, HistoricalAvailabilityAssessment.Low, range, null, HistoricalEvidenceStrength.Moderate, "");
+        Assert.Equal(HistoricalTargetTiming.LastSafePick, HistoricalTargetTimingPolicy.Assess(low).Timing);
+        var early = low with { CurrentPick = 15, NextPick = 20, Assessment = HistoricalAvailabilityAssessment.High };
+        Assert.Equal(HistoricalTargetRecommendation.LikelyToSurvive, HistoricalTargetTimingPolicy.Assess(early).Recommendation);
+        var unknown = low with { LeagueRange = range with { DraftCount = 2, EvidenceStrength = HistoricalEvidenceStrength.Insufficient }, EvidenceStrength = HistoricalEvidenceStrength.Insufficient };
+        Assert.Equal(HistoricalTargetRecommendation.Unknown, HistoricalTargetTimingPolicy.Assess(unknown).Recommendation);
+    }
+
+    [Fact]
+    public void Owner_Risk_And_Positional_Run_Are_Cautious_Context_Not_Quality()
+    {
+        var range = new HistoricalLeaguePlayerRange("p", "Player", "WR", 4, 4, 30, 35, 35, 40, 1, [], [], HistoricalEvidenceStrength.Moderate);
+        var availability = new HistoricalAvailabilityResult("p", 22, 27, HistoricalAvailabilityAssessment.High, range, null, HistoricalEvidenceStrength.Moderate, "");
+        var owner = HistoricalTargetTimingPolicy.Assess(availability, elevatedOwnerRisk: true);
+        Assert.Equal(HistoricalTargetRecommendation.TakeNow, owner.Recommendation);
+        var run = HistoricalTargetTimingPolicy.Assess(availability, positionRun: true);
+        Assert.Equal(HistoricalTargetRecommendation.ProbablySurvives, run.Recommendation);
+    }
+
     private static HistoricalLeagueDraft Draft(string season = "2024", string ownerId = "owner-a", string ownerName = "A", LeagueType type = LeagueType.Redraft, DateTimeOffset? draftedAt = null) => new()
     {
         HistoricalDraftId = $"draft-{season}-{ownerId}", LeagueId = "league-a", Season = season, LeagueName = "Boys League", LeagueType = type, DraftType = "snake",
