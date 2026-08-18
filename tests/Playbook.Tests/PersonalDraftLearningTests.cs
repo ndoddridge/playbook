@@ -225,7 +225,70 @@ public class PersonalDraftLearningTests : IDisposable
     }
 
     [Fact]
-    public void Dissimilar_Roster_Context_Does_Not_Apply_The_Preference()
+    public void One_Imported_Decision_Moves_A_Close_Call()
+    {
+        var knowledge = KnowledgeWithPreference("b", "B", "a", "A", observations: 1);
+        var available = new List<(string Key, string Name, decimal Projection)>
+        {
+            ("a", "A", 15.1m),
+            ("b", "B", 14.9m)
+        };
+
+        var forB = PersonalDraftLearningPolicy.Adjust("b", "B", 14.9m, available, knowledge, Context(wr: 0));
+        var forA = PersonalDraftLearningPolicy.Adjust("a", "A", 15.1m, available, knowledge, Context(wr: 0));
+
+        Assert.True(forB.ScoreDelta > 0);
+        Assert.True(14.9m + forB.ScoreDelta > 15.1m + forA.ScoreDelta);
+        Assert.Contains("You selected B over A in 1 similar decision.", forB.Factor!.Detail);
+    }
+
+    [Fact]
+    public void Similar_Roster_Context_Still_Applies_The_Preference()
+    {
+        var knowledge = KnowledgeWithPreference("b", "B", "a", "A", observations: 1);
+        var available = new List<(string Key, string Name, decimal Projection)>
+        {
+            ("a", "A", 15.0m),
+            ("b", "B", 15.0m)
+        };
+
+        var matching = PersonalDraftLearningPolicy.Adjust("b", "B", 15.0m, available, knowledge, Context(wr: 0));
+        var similar = PersonalDraftLearningPolicy.Adjust("b", "B", 15.0m, available, knowledge, Context(wr: 1));
+
+        Assert.True(matching.ScoreDelta > 0);
+        Assert.True(similar.ScoreDelta > 0);
+        Assert.True(similar.ScoreDelta <= matching.ScoreDelta);
+        Assert.NotNull(similar.Factor);
+    }
+
+    [Fact]
+    public void Unknown_Scoring_From_A_Stale_Import_Still_Matches_Live_Ppr()
+    {
+        var unknown = Context(wr: 0) with { ScoringFormat = "Unknown" };
+        var knowledge = new PersonalDraftKnowledge
+        {
+            LeagueId = "lg1",
+            TeamId = "1",
+            LeagueName = "Boys League",
+            TeamName = "Alpha",
+            DraftCount = 1,
+            DecisionCount = 1,
+            Preferences = [new PersonalPlayerPreference("b", "B", "a", "A", unknown, 1, ["d1"])]
+        };
+        var available = new List<(string Key, string Name, decimal Projection)>
+        {
+            ("a", "A", 15.0m),
+            ("b", "B", 15.0m)
+        };
+
+        var adjustment = PersonalDraftLearningPolicy.Adjust("b", "B", 15.0m, available, knowledge, Context(wr: 0));
+
+        Assert.True(adjustment.ScoreDelta > 0);
+        Assert.NotNull(adjustment.Factor);
+    }
+
+    [Fact]
+    public void Different_League_Type_Does_Not_Apply_The_Preference()
     {
         var knowledge = KnowledgeWithPreference("b", "B", "a", "A", observations: 8);
         var available = new List<(string Key, string Name, decimal Projection)>
@@ -233,9 +296,10 @@ public class PersonalDraftLearningTests : IDisposable
             ("a", "A", 15.0m),
             ("b", "B", 15.0m)
         };
+        var dynasty = Context(wr: 0) with { LeagueType = LeagueType.Dynasty };
 
         var adjustment = PersonalDraftLearningPolicy.Adjust(
-            "b", "B", 15.0m, available, knowledge, Context(wr: 3));
+            "b", "B", 15.0m, available, knowledge, dynasty);
 
         Assert.Equal(0m, adjustment.ScoreDelta);
         Assert.Null(adjustment.Factor);

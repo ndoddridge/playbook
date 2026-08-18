@@ -18,13 +18,14 @@ public static class PersonalDraftLearningPolicy
         "Could not identify this team's picks in the uploaded draft, so no personal learning was stored.";
 
     /// <summary>
-    /// Personal preference is a bounded adjustment. It is smaller than the urgent-need bonus (3.0)
-    /// and cannot close a major projection gap (≥ 4 pts). Context must be reasonably similar
-    /// (same positional depth, not merely the same scoring format) before anything applies.
+    /// Personal preference is a bounded adjustment. One recorded player-vs-player decision from
+    /// an imported draft is enough to move a close call, including offsetting a single positional
+    /// need bonus. It still cannot close a major projection gap (≥ 4 pts). Same league type +
+    /// scoring + size is similar enough to apply; matching roster depth/round only increases weight.
     /// </summary>
-    public const decimal MaxAdjustment = 1.8m;
+    public const decimal MaxAdjustment = 3.0m;
     public const decimal MajorObjectiveGap = 4.0m;
-    public const decimal MinSimilarityToApply = 0.6m;
+    public const decimal MinSimilarityToApply = 0.5m;
 
     public static HistoricalEvidenceStrength Strength(int n) => n switch
     {
@@ -359,7 +360,7 @@ public static class PersonalDraftLearningPolicy
             return 0m;
         }
 
-        var sameScoring = string.Equals(observed.ScoringFormat, current.ScoringFormat, StringComparison.OrdinalIgnoreCase);
+        var sameScoring = ScoringFormatsCompatible(observed.ScoringFormat, current.ScoringFormat);
         var sameSize = observed.LeagueSize == current.LeagueSize;
         var sameDepth = DepthFingerprint(observed) == DepthFingerprint(current);
         var sameRound = RoundBucket(observed.Round) == RoundBucket(current.Round);
@@ -371,16 +372,35 @@ public static class PersonalDraftLearningPolicy
 
         if (sameScoring && sameSize && sameDepth)
         {
+            return 0.85m;
+        }
+
+        // Same league shape is similar enough. An uploaded ideal draft is used while the live
+        // mock's roster is still being built — requiring the exact same positional depth dropped
+        // every real preference after pick 1.
+        if (sameScoring && sameSize)
+        {
             return 0.6m;
         }
 
-        if (sameScoring && sameSize)
+        return sameScoring ? 0.3m : 0m;
+    }
+
+    internal static bool ScoringFormatsCompatible(string? observed, string? current)
+    {
+        if (string.Equals(observed, current, StringComparison.OrdinalIgnoreCase))
         {
-            return 0.25m;
+            return true;
         }
 
-        return sameScoring ? 0.15m : 0m;
+        // Pre-fix league-mock imports stored "Unknown" because scoring_settings were empty.
+        // Re-import of the same draft id is idempotent, so those records must still apply.
+        return IsUnknownScoring(observed) || IsUnknownScoring(current);
     }
+
+    private static bool IsUnknownScoring(string? format) =>
+        string.IsNullOrWhiteSpace(format)
+        || string.Equals(format, "Unknown", StringComparison.OrdinalIgnoreCase);
 
     public static PersonalPreferenceContext LiveContext(
         League league, int teamCount, int round, int pickNumber, IReadOnlyDictionary<string, int> rosterBefore,
@@ -401,9 +421,11 @@ public static class PersonalDraftLearningPolicy
 
     internal static decimal StrengthWeight(int observationCount) => Strength(observationCount) switch
     {
-        HistoricalEvidenceStrength.Insufficient => 0.15m,
-        HistoricalEvidenceStrength.Limited => 0.75m,
-        HistoricalEvidenceStrength.Moderate => 1.2m,
+        // One imported ranking is a real decision, not noise. Treating 1–2 observations as 0.15
+        // left every uploaded ideal draft too weak to change a live recommendation.
+        HistoricalEvidenceStrength.Insufficient => 1.8m,
+        HistoricalEvidenceStrength.Limited => 2.2m,
+        HistoricalEvidenceStrength.Moderate => 2.6m,
         HistoricalEvidenceStrength.Strong => MaxAdjustment,
         _ => 0m
     };
