@@ -99,7 +99,13 @@ public static class PersonalDraftLearningPolicy
             var matches = owners.Where(o => o.RosterId == rosterId).ToList();
             if (matches.Count == 1)
             {
-                byRoster = matches[0];
+                // Sleeper league mocks publish slot_to_roster_id as an identity map and leave
+                // pick.roster_id null. Matching that fabricated roster id would attribute the
+                // human's picks to a different league roster that happens to share the slot number.
+                if ((draft.Picks ?? []).Any(p => p.RosterId == rosterId))
+                {
+                    byRoster = matches[0];
+                }
             }
             else if (matches.Count > 1)
             {
@@ -470,7 +476,7 @@ public static class PersonalDraftLearningPolicy
         return owner.RosterId is int rosterId && pick.RosterId == rosterId;
     }
 
-    private static int CountOwnerDecisions(HistoricalLeagueDraft draft, HistoricalOwner owner)
+    public static int CountOwnerDecisions(HistoricalLeagueDraft draft, HistoricalOwner owner)
     {
         var ownerKey = OwnerKey(owner);
         return (draft.Picks ?? []).Count(p => PickBelongsTo(p, owner, ownerKey) && !p.IsKeeper);

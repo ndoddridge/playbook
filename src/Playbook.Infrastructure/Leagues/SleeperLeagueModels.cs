@@ -159,6 +159,12 @@ internal sealed class SleeperDraftMetadataDto
 
     [JsonPropertyName("league_type")]
     public string? LeagueType { get; set; }
+
+    /// <summary>
+    /// Present on Sleeper league mocks when the top-level draft.league_id is omitted.
+    /// </summary>
+    [JsonPropertyName("league_id")]
+    public string? LeagueId { get; set; }
 }
 
 internal sealed class SleeperDraftSettingsDto
