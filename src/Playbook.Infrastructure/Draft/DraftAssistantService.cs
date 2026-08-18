@@ -654,6 +654,13 @@ public sealed class DraftAssistantService : IDraftAssistantService
             if (adjustment.Factor is not null)
             {
                 candidate.Factors = [.. candidate.Factors, adjustment.Factor];
+                if (!string.IsNullOrWhiteSpace(adjustment.Factor.Detail)
+                    && !candidate.Reasoning.Contains(adjustment.Factor.Detail, StringComparison.Ordinal))
+                {
+                    candidate.Reasoning = string.IsNullOrWhiteSpace(candidate.Reasoning)
+                        ? adjustment.Factor.Detail
+                        : candidate.Reasoning.TrimEnd('.') + ". " + adjustment.Factor.Detail;
+                }
             }
         }
     }
@@ -1307,7 +1314,15 @@ public sealed class DraftAssistantService : IDraftAssistantService
         }
 
         return string.Join(" — ", parts.Take(2)) +
-               (parts.Count > 2 ? " " + parts[2] : "") + ".";
+               (parts.Count > 2 ? " " + parts[2] : "") + "."
+               + PersonalHistorySuffix(top);
+    }
+
+    private static string PersonalHistorySuffix(DraftRecommendation top)
+    {
+        var history = top.Factors.FirstOrDefault(f =>
+            string.Equals(f.Label, "Personal history", StringComparison.Ordinal) && f.Available);
+        return history?.Detail is { Length: > 0 } detail ? " " + detail : "";
     }
 
     /// <summary>
@@ -1539,7 +1554,7 @@ public sealed class DraftAssistantService : IDraftAssistantService
         public required decimal? ValueOverReplacement { get; init; }
         public required decimal TeamFitScore { get; set; }
         public required IReadOnlyList<DraftRecommendationFactor> Factors { get; set; }
-        public required string Reasoning { get; init; }
+        public required string Reasoning { get; set; }
         public int BestPlayerAvailableRank { get; set; }
         public int TeamFitRank { get; set; }
         public AvailabilityRisk AvailabilityRisk { get; init; } = AvailabilityRisk.Unknown;

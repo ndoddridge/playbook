@@ -219,6 +219,58 @@ public class PersonalDraftLearningTests : IDisposable
         Assert.True(forB.ScoreDelta > 0);
         Assert.True(forA.ScoreDelta < 0);
         Assert.True(15.0m + forB.ScoreDelta > 15.2m + forA.ScoreDelta);
+        Assert.Equal(
+            PersonalDraftLearningPolicy.HistorySentence("B", "A", 8),
+            forB.Factor!.Detail);
+    }
+
+    [Fact]
+    public void Dissimilar_Roster_Context_Does_Not_Apply_The_Preference()
+    {
+        var knowledge = KnowledgeWithPreference("b", "B", "a", "A", observations: 8);
+        var available = new List<(string Key, string Name, decimal Projection)>
+        {
+            ("a", "A", 15.0m),
+            ("b", "B", 15.0m)
+        };
+
+        var adjustment = PersonalDraftLearningPolicy.Adjust(
+            "b", "B", 15.0m, available, knowledge, Context(wr: 3));
+
+        Assert.Equal(0m, adjustment.ScoreDelta);
+        Assert.Null(adjustment.Factor);
+    }
+
+    [Fact]
+    public void Contextual_Contradiction_Applies_Only_The_Matching_Roster_Preference()
+    {
+        var knowledge = new PersonalDraftKnowledge
+        {
+            LeagueId = "lg1",
+            TeamId = "1",
+            LeagueName = "Boys League",
+            TeamName = "Alpha",
+            DraftCount = 2,
+            DecisionCount = 8,
+            Preferences =
+            [
+                new PersonalPlayerPreference("a", "A", "b", "B", Context(wr: 0), 4, ["d-low"]),
+                new PersonalPlayerPreference("b", "B", "a", "A", Context(wr: 3), 4, ["d-high"])
+            ]
+        };
+        var available = new List<(string Key, string Name, decimal Projection)>
+        {
+            ("a", "A", 15.0m),
+            ("b", "B", 15.0m)
+        };
+
+        var atLowWr = PersonalDraftLearningPolicy.Adjust("a", "A", 15.0m, available, knowledge, Context(wr: 0));
+        var atHighWr = PersonalDraftLearningPolicy.Adjust("a", "A", 15.0m, available, knowledge, Context(wr: 3));
+
+        Assert.True(atLowWr.ScoreDelta > 0);
+        Assert.Contains("You selected A over B", atLowWr.Factor!.Detail);
+        Assert.True(atHighWr.ScoreDelta < 0);
+        Assert.Contains("You selected B over A", atHighWr.Factor!.Detail);
     }
 
     public void Dispose()

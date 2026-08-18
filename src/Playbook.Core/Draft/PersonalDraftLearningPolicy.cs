@@ -19,10 +19,12 @@ public static class PersonalDraftLearningPolicy
 
     /// <summary>
     /// Personal preference is a bounded adjustment. It is smaller than the urgent-need bonus (3.0)
-    /// and cannot close a major projection gap (≥ 4 pts).
+    /// and cannot close a major projection gap (≥ 4 pts). Context must be reasonably similar
+    /// (same positional depth, not merely the same scoring format) before anything applies.
     /// </summary>
     public const decimal MaxAdjustment = 1.8m;
     public const decimal MajorObjectiveGap = 4.0m;
+    public const decimal MinSimilarityToApply = 0.6m;
 
     public static HistoricalEvidenceStrength Strength(int n) => n switch
     {
@@ -282,7 +284,7 @@ public static class PersonalDraftLearningPolicy
         foreach (var pref in knowledge.Preferences)
         {
             var similarity = ContextSimilarity(pref.Context, current);
-            if (similarity <= 0)
+            if (similarity < MinSimilarityToApply)
             {
                 continue;
             }
@@ -325,16 +327,23 @@ public static class PersonalDraftLearningPolicy
             return new PersonalPreferenceAdjustment(0, null);
         }
 
+        var sentence = HistorySentence(strongest.PreferredPlayerName, strongest.PassedPlayerName, strongest.ObservationCount);
         var factor = new DraftRecommendationFactor
         {
-            Label = "Personal preference",
-            Detail = net > 0
-                ? $"Previously took {strongest.PreferredPlayerName} over {strongest.PassedPlayerName} in a similar roster context ({strongest.ObservationCount} time{(strongest.ObservationCount == 1 ? "" : "s")})."
-                : $"Previously passed {candidateName} for {strongest.PreferredPlayerName} in a similar roster context ({strongest.ObservationCount} time{(strongest.ObservationCount == 1 ? "" : "s")}).",
+            Label = "Personal history",
+            Detail = sentence,
             Direction = net > 0 ? FactorDirection.Positive : FactorDirection.Negative,
             Available = true
         };
         return new PersonalPreferenceAdjustment(net, factor);
+    }
+
+    public static string HistorySentence(string preferredName, string passedName, int observations)
+    {
+        var count = Math.Max(1, observations);
+        return count == 1
+            ? $"Personal history: You selected {preferredName} over {passedName} in 1 similar decision."
+            : $"Personal history: You selected {preferredName} over {passedName} in {count} similar decisions.";
     }
 
     public static decimal ContextSimilarity(PersonalPreferenceContext observed, PersonalPreferenceContext current)
@@ -386,7 +395,7 @@ public static class PersonalDraftLearningPolicy
 
     internal static decimal StrengthWeight(int observationCount) => Strength(observationCount) switch
     {
-        HistoricalEvidenceStrength.Insufficient => 0.35m,
+        HistoricalEvidenceStrength.Insufficient => 0.15m,
         HistoricalEvidenceStrength.Limited => 0.75m,
         HistoricalEvidenceStrength.Moderate => 1.2m,
         HistoricalEvidenceStrength.Strong => MaxAdjustment,
