@@ -53,7 +53,13 @@ public sealed class HistoricalLeagueIntelligenceService : IHistoricalLeagueIntel
         if (!draft.Status.Equals("complete", StringComparison.OrdinalIgnoreCase))
             return Fail("This draft is still in progress — use Follow in the Draft Assistant to track it live instead of importing it as a completed draft.");
         var picks = await _sleeper.GetDraftPicksAsync(draftId, cancellationToken);
-        var league = await _sleeper.GetLeagueSnapshotAsync(draft.LeagueId, cancellationToken) ?? BuildFallbackLeagueSnapshot(draft);
+        // Sleeper omits the top-level league_id for a mock draft's auto-created league (mapped to
+        // "" by SleeperLeagueClient) — GetLeagueSnapshotAsync throws ArgumentException on a blank
+        // id, so only attempt the lookup when there is actually an id to look up.
+        var league = string.IsNullOrWhiteSpace(draft.LeagueId)
+            ? null
+            : await _sleeper.GetLeagueSnapshotAsync(draft.LeagueId, cancellationToken);
+        league ??= BuildFallbackLeagueSnapshot(draft);
         return await ImportAsync(BuildSleeperDraft(league, draft, picks, source: "url-import"), cancellationToken);
     }
 
@@ -78,7 +84,11 @@ public sealed class HistoricalLeagueIntelligenceService : IHistoricalLeagueIntel
             }).ToList();
         return new SleeperLeagueSnapshot
         {
-            ExternalLeagueId = draft.LeagueId,
+            // Sleeper omits league_id entirely for a mock draft's auto-created league. Fall back to
+            // a stable id scoped to this draft — same "draft:{DraftId}" convention
+            // DraftAssistantService.BuildLeagueFromDraft already uses for the same situation —
+            // rather than leaving history keyed to a blank league id.
+            ExternalLeagueId = string.IsNullOrWhiteSpace(draft.LeagueId) ? $"draft:{draft.DraftId}" : draft.LeagueId,
             Name = string.IsNullOrWhiteSpace(draft.Name) ? "Sleeper draft" : draft.Name!,
             Season = draft.Season,
             Status = draft.Status,

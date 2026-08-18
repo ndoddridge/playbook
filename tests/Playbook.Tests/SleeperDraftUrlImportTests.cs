@@ -86,10 +86,36 @@ public class SleeperDraftUrlImportTests
         File.Delete(store.StorePath);
     }
 
-    private static SleeperDraftSnapshot Draft(string status) => new()
+    /// <summary>
+    /// Regression for a real crash: Sleeper omits the top-level league_id for a mock draft's
+    /// auto-created league (SleeperLeagueClient maps that to ""), and the real
+    /// SleeperLeagueClient.GetLeagueSnapshotAsync throws ArgumentException on a blank id. Verified
+    /// against a real completed mock draft (sleeper.app/draft/nfl/1395528272707612672) that
+    /// reproduced "An unhandled error has occurred" in the UI before this fix.
+    /// </summary>
+    [Fact]
+    public async Task Imports_A_Mock_Draft_Whose_League_Id_Is_Blank_Without_Throwing()
+    {
+        var store = NewStore();
+        var draft = Draft(status: "complete", leagueId: "");
+        var sleeper = new FakeSleeper { Draft = draft, Picks = TwoPicks() };
+        var service = NewService(store, sleeper);
+
+        var result = await service.ImportSleeperDraftByIdAsync("123456789012");
+
+        Assert.True(result.Succeeded, string.Join("; ", result.Errors));
+        Assert.Equal(2, result.Draft!.Picks.Count);
+        // Never fabricated: with no roster/owner data published by Sleeper for this pick shape,
+        // ownership is reported as unresolved rather than guessed.
+        Assert.All(result.Draft.Picks, p => Assert.StartsWith("unresolved:", p.OwnerKey, StringComparison.Ordinal));
+
+        File.Delete(store.StorePath);
+    }
+
+    private static SleeperDraftSnapshot Draft(string status, string leagueId = "league-x") => new()
     {
         DraftId = "123456789012",
-        LeagueId = "league-x",
+        LeagueId = leagueId,
         Season = "2024",
         Status = status,
         Type = "snake",
@@ -121,8 +147,12 @@ public class SleeperDraftUrlImportTests
         public IReadOnlyList<SleeperDraftPickSnapshot> Picks { get; set; } = [];
         public SleeperLeagueSnapshot? LeagueSnapshot { get; set; }
 
-        public Task<SleeperLeagueSnapshot?> GetLeagueSnapshotAsync(string leagueId, CancellationToken cancellationToken = default) =>
-            Task.FromResult(LeagueSnapshot);
+        public Task<SleeperLeagueSnapshot?> GetLeagueSnapshotAsync(string leagueId, CancellationToken cancellationToken = default)
+        {
+            // Mirrors the real SleeperLeagueClient: ArgumentException.ThrowIfNullOrWhiteSpace(leagueId).
+            ArgumentException.ThrowIfNullOrWhiteSpace(leagueId);
+            return Task.FromResult(LeagueSnapshot);
+        }
         public Task<IReadOnlyList<SleeperDraftSummary>> GetDraftsForLeagueAsync(string leagueId, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<SleeperDraftSummary>>([]);
         public Task<SleeperDraftSnapshot?> GetDraftAsync(string draftId, CancellationToken cancellationToken = default) =>

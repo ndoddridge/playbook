@@ -153,6 +153,13 @@
                 await OnImported.InvokeAsync();
             }
         }
+        catch (Exception)
+        {
+            // Never let an import failure surface as Blazor's generic "unhandled error" overlay —
+            // always leave the user with an actionable message and a re-enabled button.
+            urlSucceeded = false;
+            urlMessage = "Could not import that draft. Double-check the link and try again, or try again in a moment if Sleeper is unreachable.";
+        }
         finally
         {
             urlBusy = false;
