@@ -122,7 +122,8 @@ public sealed class SleeperLeagueClient : ISleeperLeagueClient
                 ? new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase)
                 : new Dictionary<string, double>(league.ScoringSettings, StringComparer.OrdinalIgnoreCase),
             RosterPositions = league.RosterPositions ?? [],
-            Rosters = rosterSnapshots
+            Rosters = rosterSnapshots,
+            PreviousLeagueId = league.PreviousLeagueId
         };
     }
 
@@ -230,6 +231,12 @@ public sealed class SleeperLeagueClient : ISleeperLeagueClient
                 RosterId = p.RosterId,
                 PickedByUserId = p.PickedBy,
                 SleeperPlayerId = p.PlayerId,
+                PlayerName = string.Join(' ', new[] { p.Metadata?.FirstName, p.Metadata?.LastName }
+                    .Where(value => !string.IsNullOrWhiteSpace(value))),
+                Position = p.Metadata?.Position,
+                NflTeam = p.Metadata?.Team,
+                PickedAtUtc = p.PickedAt is long timestamp && timestamp > 0
+                    ? DateTimeOffset.FromUnixTimeMilliseconds(timestamp) : null,
                 IsKeeper = p.IsKeeper ?? false
             })
             .ToList();

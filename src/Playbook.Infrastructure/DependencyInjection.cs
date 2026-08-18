@@ -2,6 +2,7 @@ using Playbook.Application.Abstractions;
 using Playbook.Application.Draft;
 using Playbook.Application.Replay;
 using Playbook.Application.Injuries;
+using Playbook.Application.Historical;
 using Playbook.Application.Injuries.Interfaces;
 using Playbook.Application.Intelligence;
 using Playbook.Application.Intelligence.Interfaces;
@@ -29,6 +30,7 @@ using Playbook.Infrastructure.Replay.Nflverse;
 using Playbook.Infrastructure.Replay.Reconstruction;
 using Playbook.Infrastructure.Hosting;
 using Playbook.Infrastructure.Injuries;
+using Playbook.Infrastructure.Historical;
 using Playbook.Infrastructure.Intelligence.Services;
 using Playbook.Infrastructure.Leagues;
 using Playbook.Infrastructure.News;
@@ -94,6 +96,8 @@ public static class DependencyInjection
 
         services.AddSingleton<IPlayerContextService, MockPlayerContextService>();
         RegisterLeagues(services);
+        services.AddSingleton<IHistoricalLeagueDraftStore, HistoricalLeagueDraftStore>();
+        services.AddSingleton<IHistoricalLeagueIntelligenceService, HistoricalLeagueIntelligenceService>();
         services.AddSingleton<IRecommendationService, MockRecommendationService>();
         // Bye weeks from the real published schedule (same nflverse cache, no new dependency).
         services.AddSingleton<IByeWeekProvider, NflverseByeWeekProvider>();

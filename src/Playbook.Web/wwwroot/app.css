@@ -12,6 +12,7 @@
 @import url("css/team-intelligence.css");
 @import url("css/game-plan.css");
 @import url("css/draft-assistant.css");
+@import url("css/historical-intelligence.css");
 
 h1:focus {
     outline: none;

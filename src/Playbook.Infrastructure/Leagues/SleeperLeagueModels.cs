@@ -30,6 +30,9 @@ internal sealed class SleeperLeagueDto
 
     [JsonPropertyName("settings")]
     public SleeperLeagueSettingsDto? Settings { get; set; }
+
+    [JsonPropertyName("previous_league_id")]
+    public string? PreviousLeagueId { get; set; }
 }
 
 internal sealed class SleeperLeagueSettingsDto
@@ -242,4 +245,18 @@ internal sealed class SleeperDraftPickDto
 
     [JsonPropertyName("is_keeper")]
     public bool? IsKeeper { get; set; }
+
+    [JsonPropertyName("metadata")]
+    public SleeperDraftPickMetadataDto? Metadata { get; set; }
+
+    [JsonPropertyName("picked_at")]
+    public long? PickedAt { get; set; }
+}
+
+internal sealed class SleeperDraftPickMetadataDto
+{
+    [JsonPropertyName("first_name")] public string? FirstName { get; set; }
+    [JsonPropertyName("last_name")] public string? LastName { get; set; }
+    [JsonPropertyName("position")] public string? Position { get; set; }
+    [JsonPropertyName("team")] public string? Team { get; set; }
 }

@@ -81,6 +81,10 @@ public sealed class SleeperDraftPickSnapshot
     public int? RosterId { get; init; }
     public string? PickedByUserId { get; init; }
     public string? SleeperPlayerId { get; init; }
+    public string? PlayerName { get; init; }
+    public string? Position { get; init; }
+    public string? NflTeam { get; init; }
+    public DateTimeOffset? PickedAtUtc { get; init; }
     public bool IsKeeper { get; init; }
 }
 
@@ -96,6 +100,7 @@ public sealed class SleeperLeagueSnapshot
     public required IReadOnlyDictionary<string, double> ScoringSettings { get; init; }
     public required IReadOnlyList<string> RosterPositions { get; init; }
     public required IReadOnlyList<SleeperRosterSnapshot> Rosters { get; init; }
+    public string? PreviousLeagueId { get; init; }
 }
 
 public sealed class SleeperRosterSnapshot
