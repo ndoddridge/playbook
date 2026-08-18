@@ -70,13 +70,50 @@ public class HistoricalLeagueIntelligenceTests
         Assert.Equal(HistoricalEvidenceStrength.Insufficient, history.EvidenceStrength);
     }
 
-    private static HistoricalLeagueDraft Draft(string season = "2024", string ownerId = "owner-a", string ownerName = "A", LeagueType type = LeagueType.Redraft) => new()
+    [Fact]
+    public async Task Time_Correct_Snapshot_Joins_Picks_And_Newer_Adp_Cannot_Leak_Backward()
+    {
+        var service = NewService(NewStore());
+        await service.ImportAsync(Draft("2024", draftedAt: new DateTimeOffset(2024, 8, 20, 0, 0, 0, TimeSpan.Zero)));
+        await service.ImportAdpSnapshotAsync(Snapshot("2024", new DateTimeOffset(2024, 8, 10, 0, 0, 0, TimeSpan.Zero), 12));
+        var comparison = service.GetPickMarketComparisons("league-a").First(x => x.PlayerKey == "player-1");
+        Assert.Equal(12, comparison.Adp);
+        Assert.Equal(HistoricalMarketValueClassification.Reach, comparison.Classification);
+        await service.ImportAdpSnapshotAsync(Snapshot("2024", new DateTimeOffset(2024, 9, 10, 0, 0, 0, TimeSpan.Zero), 99));
+        comparison = service.GetPickMarketComparisons("league-a").First(x => x.PlayerKey == "player-1");
+        Assert.Equal(12, comparison.Adp); // Current/later data is never substituted into a past draft.
+    }
+
+    [Fact]
+    public async Task Range_Owner_Signal_And_Availability_Remain_Descriptive_And_Require_Three_Drafts()
+    {
+        var service = NewService(NewStore());
+        foreach (var season in new[] { "2022", "2023", "2024" }) await service.ImportAsync(Draft(season, draftedAt: new DateTimeOffset(int.Parse(season), 8, 20, 0, 0, 0, TimeSpan.Zero)));
+        var range = Assert.Single(service.GetLeaguePlayerRanges("league-a"), x => x.PlayerKey == "player-1");
+        Assert.Equal(3, range.DraftCount); Assert.Equal(1, range.MinimumPick); Assert.Equal(1, range.MaximumPick);
+        var target = service.QueryTargetPlayer("league-a", "player-1", 1, 12);
+        Assert.Equal(HistoricalAvailabilityAssessment.Low, target.Availability.Assessment);
+        Assert.Contains(service.GetOwnerMarketSignals("league-a"), x => x.OwnerKey == "owner-a" && x.SelectionCount >= 3);
+    }
+
+    [Fact]
+    public async Task Snapshot_Rejects_Unidentified_Players_And_Does_Not_Mix_Dynasty()
+    {
+        var service = NewService(NewStore()); await service.ImportAsync(Draft("2024", type: LeagueType.Dynasty, draftedAt: new DateTimeOffset(2024, 8, 20, 0, 0, 0, TimeSpan.Zero)));
+        var result = await service.ImportAdpSnapshotAsync(Snapshot("2024", new DateTimeOffset(2024, 8, 10, 0, 0, 0, TimeSpan.Zero), 12, LeagueType.Redraft));
+        Assert.False(result.Succeeded);
+        var invalid = new HistoricalAdpSnapshot { LeagueId = "league-a", Season = "2024", Source = "test", SnapshotDateUtc = DateTimeOffset.UtcNow, LeagueType = LeagueType.Dynasty, ScoringFormat = "HalfPPR", Players = [new HistoricalAdpRecord { PlayerName = "X", Position = "RB", Adp = 1 }] };
+        Assert.False((await service.ImportAdpSnapshotAsync(invalid)).Succeeded);
+    }
+
+    private static HistoricalLeagueDraft Draft(string season = "2024", string ownerId = "owner-a", string ownerName = "A", LeagueType type = LeagueType.Redraft, DateTimeOffset? draftedAt = null) => new()
     {
         HistoricalDraftId = $"draft-{season}-{ownerId}", LeagueId = "league-a", Season = season, LeagueName = "Boys League", LeagueType = type, DraftType = "snake",
         TeamCount = 2, RoundCount = 2, ScoringSettings = new Dictionary<string, double> { ["rec"] = .5 }, RosterSettings = ["QB", "RB", "WR", "FLEX"],
         Owners = [new HistoricalOwner { SleeperUserId = ownerId, DisplayName = ownerName, RosterId = 1 }, new HistoricalOwner { SleeperUserId = "owner-c", DisplayName = "C", RosterId = 2 }],
-        Picks = [Pick(1, 1, ownerId, "RB", ownerName), Pick(2, 1, "owner-c", "WR", "C", "player-2"), Pick(3, 2, ownerId, "WR", ownerName, "player-3")], IsComplete = true
+        Picks = [Pick(1, 1, ownerId, "RB", ownerName), Pick(2, 1, "owner-c", "WR", "C", "player-2"), Pick(3, 2, ownerId, "WR", ownerName, "player-3")], IsComplete = true, DraftedAtUtc = draftedAt
     };
+    private static HistoricalAdpSnapshot Snapshot(string season, DateTimeOffset at, double adp, LeagueType type = LeagueType.Redraft) => new() { LeagueId = "league-a", Season = season, Source = "test", SnapshotDateUtc = at, LeagueType = type, ScoringFormat = "HalfPPR", SourceQuality = HistoricalSourceQuality.Established, Players = [new HistoricalAdpRecord { SleeperPlayerId = "player-1", PlayerName = "Player 1", Position = "RB", OverallRank = 12, PositionRank = 4, Adp = adp }] };
     private static HistoricalDraftPick Pick(int number, int round, string owner, string position, string name = "A", string? sleeperPlayerId = "player-1") => new()
     { PickNumber = number, Round = round, DraftSlot = number % 2 == 0 ? 2 : 1, OwnerKey = owner, OwnerName = name, SleeperUserId = owner, SleeperPlayerId = sleeperPlayerId, PlayerName = $"Player {number}", Position = position };
     private static HistoricalLeagueDraftStore NewStore() => new(NullLogger<HistoricalLeagueDraftStore>.Instance, $"historical-tests-{Guid.NewGuid():N}.json");

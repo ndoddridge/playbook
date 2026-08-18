@@ -21,6 +21,8 @@ public sealed class HistoricalLeagueDraft
     public string Source { get; init; } = "import";
     public bool IsComplete { get; init; }
     public DateTimeOffset ImportedAtUtc { get; init; } = DateTimeOffset.UtcNow;
+    /// <summary>Imported market snapshots for this league/season. They are never inferred from current ADP.</summary>
+    public IReadOnlyList<HistoricalAdpSnapshot> HistoricalAdpSnapshots { get; init; } = [];
 }
 
 public sealed class HistoricalOwner
@@ -57,6 +59,62 @@ public sealed class HistoricalDraftPick
 }
 
 public enum HistoricalEvidenceStrength { Unavailable, Insufficient, Limited, Moderate, Strong }
+public enum HistoricalSourceQuality { Unknown, Community, Established, Primary }
+public enum HistoricalAvailabilityAssessment { Unknown, High, Medium, Low }
+public enum HistoricalMarketValueClassification { Unavailable, MajorReach, Reach, Market, Value, MajorValue }
+
+public sealed class HistoricalAdpSnapshot
+{
+    public required string LeagueId { get; init; }
+    public required string Season { get; init; }
+    public required string Source { get; init; }
+    /// <summary>Publisher/export timestamp. A snapshot without it is retained nowhere and cannot evaluate a pick.</summary>
+    public required DateTimeOffset SnapshotDateUtc { get; init; }
+    public required LeagueType LeagueType { get; init; }
+    /// <summary>Explicit source label such as PPR, HalfPPR, or Standard. Never silently inferred from another format.</summary>
+    public required string ScoringFormat { get; init; }
+    public int? TeamCount { get; init; }
+    public HistoricalSourceQuality SourceQuality { get; init; } = HistoricalSourceQuality.Unknown;
+    public required IReadOnlyList<HistoricalAdpRecord> Players { get; init; }
+}
+
+public sealed class HistoricalAdpRecord
+{
+    public string? SleeperPlayerId { get; init; }
+    public Guid? PlaybookPlayerId { get; init; }
+    public required string PlayerName { get; init; }
+    public required string Position { get; init; }
+    public int? OverallRank { get; init; }
+    public int? PositionRank { get; init; }
+    public double? Adp { get; init; }
+}
+
+public sealed record HistoricalPickMarketComparison(
+    string HistoricalDraftId, int PickNumber, string PlayerKey, double? Adp, int? OverallRank,
+    int? PositionRank, DateTimeOffset? SnapshotDateUtc, HistoricalMarketValueClassification Classification,
+    string? UnavailableReason);
+
+public sealed record HistoricalLeaguePlayerRange(
+    string PlayerKey, string PlayerName, string Position, int DraftCount, int SeasonCount,
+    int MinimumPick, double MedianPick, double AveragePick, int MaximumPick, int DistinctOwnerCount,
+    IReadOnlyList<string> OwnerKeys, IReadOnlyList<int> RecentPicks, HistoricalEvidenceStrength EvidenceStrength);
+
+public sealed record HistoricalAvailabilityResult(
+    string PlayerKey, int CurrentPick, int NextPick, HistoricalAvailabilityAssessment Assessment,
+    HistoricalLeaguePlayerRange? LeagueRange, HistoricalAdpRecord? HistoricalAdp,
+    HistoricalEvidenceStrength EvidenceStrength, string Explanation);
+
+public sealed record HistoricalTargetPlayerQuery(
+    HistoricalLeaguePlayerRange? LeagueRange, HistoricalAdpRecord? HistoricalAdp,
+    IReadOnlyList<HistoricalPickMarketComparison> PickComparisons, HistoricalAvailabilityResult Availability);
+
+public sealed record HistoricalLeaguePositionTendency(
+    string Position, int DraftCount, int? FirstSelectedPick, double AveragePick,
+    IReadOnlyDictionary<int, int> SelectionsByRound, HistoricalEvidenceStrength EvidenceStrength);
+
+public sealed record HistoricalOwnerMarketSignal(
+    string OwnerKey, string OwnerName, string Position, int SelectionCount, int SeasonCount,
+    double? AveragePick, double? AverageAdpDelta, HistoricalEvidenceStrength EvidenceStrength);
 
 public sealed record HistoricalOwnerTendency(
     string LeagueId, string OwnerKey, string OwnerName, LeagueType LeagueType,
