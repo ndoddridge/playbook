@@ -169,7 +169,8 @@ public sealed class SleeperLeagueClient : ISleeperLeagueClient
         return new SleeperDraftSnapshot
         {
             DraftId = draft.DraftId!,
-            LeagueId = draft.LeagueId ?? string.Empty,
+            // League mocks omit top-level league_id and put the source league on metadata instead.
+            LeagueId = FirstNonEmpty(draft.LeagueId, draft.Metadata?.LeagueId) ?? string.Empty,
             Season = draft.Season ?? "unknown",
             Status = draft.Status ?? "unknown",
             Type = string.IsNullOrWhiteSpace(draft.Type) ? "snake" : draft.Type!,
@@ -287,4 +288,7 @@ public sealed class SleeperLeagueClient : ISleeperLeagueClient
         var result = await GetAsync<List<T>>(client, relativeUrl, cancellationToken).ConfigureAwait(false);
         return result ?? [];
     }
+
+    private static string? FirstNonEmpty(params string?[] values) =>
+        values.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v));
 }

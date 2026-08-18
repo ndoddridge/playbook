@@ -166,7 +166,7 @@ public sealed class HistoricalLeagueIntelligenceService : IHistoricalLeagueIntel
             TeamCount = draft.Teams,
             CurrentWeek = 1,
             SleeperLeagueType = int.TryParse(draft.LeagueTypeRaw, out var t) ? t : 0,
-            ScoringSettings = new Dictionary<string, double>(),
+            ScoringSettings = ScoringSettingsFromDraft(draft),
             RosterPositions = draft.RosterPositions,
             Rosters = rosters
         };
@@ -375,6 +375,11 @@ public sealed class HistoricalLeagueIntelligenceService : IHistoricalLeagueIntel
             return null;
         }
 
+        if (PersonalDraftLearningPolicy.CountOwnerDecisions(draft, owner) == 0)
+        {
+            return null;
+        }
+
         var incoming = PersonalDraftLearningPolicy.ExtractPreferences(draft, owner);
         lock (_gate)
         {
@@ -501,4 +506,16 @@ public sealed class HistoricalLeagueIntelligenceService : IHistoricalLeagueIntel
     private static LeagueType MapType(string? raw, int fallback) => raw switch { "2" => LeagueType.Dynasty, "1" => LeagueType.Keeper, "bestball" => LeagueType.BestBall, _ => fallback switch { 2 => LeagueType.Dynasty, 1 => LeagueType.Keeper, _ => LeagueType.Redraft } };
     private static HistoricalImportResult Fail(string error) => new(false, [error], []);
     private static HistoricalImportResult Success(HistoricalLeagueDraft draft, IReadOnlyList<string> warnings) => new(true, [], warnings, draft);
+
+    private static Dictionary<string, double> ScoringSettingsFromDraft(SleeperDraftSnapshot draft)
+    {
+        var format = SleeperScoringMapper.MapScoringTypeFromName(draft.ScoringType);
+        var rec = format switch
+        {
+            ScoringType.Ppr => 1.0,
+            ScoringType.HalfPpr => 0.5,
+            _ => 0.0
+        };
+        return new Dictionary<string, double> { ["rec"] = rec };
+    }
 }
