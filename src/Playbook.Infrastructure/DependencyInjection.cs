@@ -99,6 +99,7 @@ public static class DependencyInjection
         services.AddSingleton<IPlayerContextService, MockPlayerContextService>();
         RegisterLeagues(services);
         services.AddSingleton<IHistoricalLeagueDraftStore, HistoricalLeagueDraftStore>();
+        services.AddSingleton<IPersonalDraftKnowledgeStore, PersonalDraftKnowledgeStore>();
         services.AddSingleton<IHistoricalLeagueIntelligenceService, HistoricalLeagueIntelligenceService>();
         services.AddSingleton<IRecommendationService, MockRecommendationService>();
         // Bye weeks from the real published schedule (same nflverse cache, no new dependency).

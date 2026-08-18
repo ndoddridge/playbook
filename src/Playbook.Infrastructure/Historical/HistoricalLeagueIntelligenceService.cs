@@ -13,11 +13,22 @@ public sealed class HistoricalLeagueIntelligenceService : IHistoricalLeagueIntel
     private readonly IHistoricalLeagueDraftStore _store;
     private readonly ISleeperLeagueClient _sleeper;
     private readonly IPlayerIdentityDirectory _identities;
+    private readonly IPersonalDraftKnowledgeStore? _personal;
     private readonly object _gate = new();
     private List<HistoricalLeagueDraft>? _drafts;
+    private List<PersonalDraftKnowledge>? _personalKnowledge;
 
-    public HistoricalLeagueIntelligenceService(IHistoricalLeagueDraftStore store, ISleeperLeagueClient sleeper, IPlayerIdentityDirectory identities)
-    { _store = store; _sleeper = sleeper; _identities = identities; }
+    public HistoricalLeagueIntelligenceService(
+        IHistoricalLeagueDraftStore store,
+        ISleeperLeagueClient sleeper,
+        IPlayerIdentityDirectory identities,
+        IPersonalDraftKnowledgeStore? personal = null)
+    {
+        _store = store;
+        _sleeper = sleeper;
+        _identities = identities;
+        _personal = personal;
+    }
 
     public async Task<HistoricalImportResult> ImportSleeperLeagueHistoryAsync(string leagueId, CancellationToken cancellationToken = default)
     {
@@ -61,6 +72,66 @@ public sealed class HistoricalLeagueIntelligenceService : IHistoricalLeagueIntel
             : await _sleeper.GetLeagueSnapshotAsync(draft.LeagueId, cancellationToken);
         league ??= BuildFallbackLeagueSnapshot(draft);
         return await ImportAsync(BuildSleeperDraft(league, draft, picks, source: "url-import"), cancellationToken);
+    }
+
+    public async Task<HistoricalImportResult> ImportSleeperDraftForPersonalLearningAsync(
+        string draftUrlOrId, PersonalDraftLearningRequest? scope, CancellationToken cancellationToken = default)
+    {
+        if (scope is null || !scope.HasLeagueAndTeam)
+        {
+            return Fail(PersonalDraftLearningPolicy.MissingScopeMessage);
+        }
+
+        var imported = await ImportSleeperDraftByIdAsync(draftUrlOrId, cancellationToken);
+        if (!imported.Succeeded || imported.Draft is null)
+        {
+            return imported;
+        }
+
+        var knowledge = LearnFromImportedDraft(imported.Draft, scope);
+        if (knowledge is null)
+        {
+            return imported with
+            {
+                Warnings = [.. imported.Warnings, PersonalDraftLearningPolicy.UnknownOwnerMessage]
+            };
+        }
+
+        return imported with { PersonalKnowledge = knowledge };
+    }
+
+    public async Task<DraftImportSummary> ImportFromImageForPersonalLearningAsync(
+        DraftImageParseResult parsed, DraftImportContext context, PersonalDraftLearningRequest? scope, CancellationToken cancellationToken = default)
+    {
+        if (scope is null || !scope.HasLeagueAndTeam)
+        {
+            return new DraftImportSummary(
+                0, 0, [PersonalDraftLearningPolicy.MissingScopeMessage], null, null, null,
+                PersonalDraftLearningPolicy.MissingScopeMessage);
+        }
+
+        var summary = await ImportFromImageAsync(parsed, context, cancellationToken);
+        var source = summary.SavedDraft ?? summary.UnsavedMockDraft;
+        if (source is null)
+        {
+            return summary;
+        }
+
+        var knowledge = LearnFromImportedDraft(source, scope);
+        if (knowledge is null)
+        {
+            return summary with
+            {
+                PersonalLearningMessage = PersonalDraftLearningPolicy.UnknownOwnerMessage,
+                FlaggedDetails = [.. summary.FlaggedDetails, PersonalDraftLearningPolicy.UnknownOwnerMessage]
+            };
+        }
+
+        return summary with
+        {
+            PersonalKnowledge = knowledge,
+            PersonalLearningMessage = $"{knowledge.DraftCount} draft{(knowledge.DraftCount == 1 ? "" : "s")} · {knowledge.DecisionCount} decision{(knowledge.DecisionCount == 1 ? "" : "s")} learned for {knowledge.LeagueName} — {knowledge.TeamName}."
+        };
     }
 
     private static SleeperLeagueSnapshot BuildFallbackLeagueSnapshot(SleeperDraftSnapshot draft)
@@ -279,6 +350,50 @@ public sealed class HistoricalLeagueIntelligenceService : IHistoricalLeagueIntel
     public IReadOnlyList<HistoricalPickMarketComparison> GetPickMarketComparisons(string leagueId, LeagueType leagueType = LeagueType.Redraft) =>
         GetDrafts(leagueId, leagueType).SelectMany(d => d.Picks.Select(p => Comparison(d, p))).ToList();
 
+    public PersonalDraftKnowledge? GetPersonalKnowledge(string leagueId, string teamId)
+    {
+        if (string.IsNullOrWhiteSpace(leagueId) || string.IsNullOrWhiteSpace(teamId) || _personal is null)
+        {
+            return null;
+        }
+
+        return LoadPersonalMutable().FirstOrDefault(k =>
+            string.Equals(k.LeagueId, leagueId, StringComparison.Ordinal)
+            && string.Equals(k.TeamId, teamId, StringComparison.Ordinal));
+    }
+
+    public PersonalDraftKnowledge? LearnFromImportedDraft(HistoricalLeagueDraft draft, PersonalDraftLearningRequest? scope)
+    {
+        if (scope is null || !scope.HasLeagueAndTeam || _personal is null)
+        {
+            return null;
+        }
+
+        var owner = PersonalDraftLearningPolicy.ResolveOwner(draft, scope);
+        if (owner is null)
+        {
+            return null;
+        }
+
+        var incoming = PersonalDraftLearningPolicy.ExtractPreferences(draft, owner);
+        lock (_gate)
+        {
+            var all = LoadPersonalMutable();
+            var existing = all.FirstOrDefault(k =>
+                string.Equals(k.LeagueId, scope.LeagueId, StringComparison.Ordinal)
+                && string.Equals(k.TeamId, scope.TeamId, StringComparison.Ordinal))
+                ?? PersonalDraftLearningPolicy.Empty(scope, owner);
+            var merged = PersonalDraftLearningPolicy.Merge(existing, draft, owner, scope, incoming);
+            all.RemoveAll(k =>
+                string.Equals(k.LeagueId, scope.LeagueId, StringComparison.Ordinal)
+                && string.Equals(k.TeamId, scope.TeamId, StringComparison.Ordinal));
+            all.Add(merged);
+            _personal.Save(all);
+            _personalKnowledge = all;
+            return merged;
+        }
+    }
+
     public HistoricalTargetPlayerQuery QueryTargetPlayer(string leagueId, string playerKey, int currentPick, int nextPick, LeagueType leagueType = LeagueType.Redraft)
     {
         var range = GetLeaguePlayerRanges(leagueId, leagueType).FirstOrDefault(x => x.PlayerKey.Equals(playerKey, StringComparison.OrdinalIgnoreCase) || (Guid.TryParse(playerKey, out var id) && GetDrafts(leagueId, leagueType).SelectMany(d => d.Picks).Any(p => p.PlaybookPlayerId == id && PlayerKey(p).Equals(x.PlayerKey, StringComparison.OrdinalIgnoreCase))));
@@ -373,6 +488,13 @@ public sealed class HistoricalLeagueIntelligenceService : IHistoricalLeagueIntel
     private static double Median(IReadOnlyList<int> values) => values.Count % 2 == 1 ? values[values.Count / 2] : (values[values.Count / 2 - 1] + values[values.Count / 2]) / 2d;
     private static double? AverageOrNull(IEnumerable<double> values) { var v = values.ToList(); return v.Count == 0 ? null : v.Average(); }
     private List<HistoricalLeagueDraft> LoadMutable() { lock (_gate) { return _drafts ??= _store.Load().ToList(); } }
+    private List<PersonalDraftKnowledge> LoadPersonalMutable()
+    {
+        lock (_gate)
+        {
+            return _personalKnowledge ??= _personal?.Load().ToList() ?? [];
+        }
+    }
     private static string PlayerKey(HistoricalDraftPick p) => p.SleeperPlayerId ?? p.PlaybookPlayerId?.ToString() ?? p.PlayerName;
     private static bool MatchesPlayer(HistoricalDraftPick p, string key) => PlayerKey(p).Equals(key, StringComparison.OrdinalIgnoreCase) || p.PlaybookPlayerId?.ToString().Equals(key, StringComparison.OrdinalIgnoreCase) == true;
     private static HistoricalEvidenceStrength Strength(int n) => n switch { <= 0 => HistoricalEvidenceStrength.Unavailable, 1 or 2 => HistoricalEvidenceStrength.Insufficient, <= 5 => HistoricalEvidenceStrength.Limited, <= 11 => HistoricalEvidenceStrength.Moderate, _ => HistoricalEvidenceStrength.Strong };

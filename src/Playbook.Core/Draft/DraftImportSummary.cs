@@ -13,4 +13,6 @@ public sealed record DraftImportSummary(
     int FlaggedCount,
     IReadOnlyList<string> FlaggedDetails,
     HistoricalLeagueDraft? SavedDraft,
-    HistoricalLeagueDraft? UnsavedMockDraft);
+    HistoricalLeagueDraft? UnsavedMockDraft,
+    PersonalDraftKnowledge? PersonalKnowledge = null,
+    string? PersonalLearningMessage = null);

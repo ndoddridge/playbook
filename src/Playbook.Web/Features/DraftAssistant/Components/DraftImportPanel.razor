@@ -9,13 +9,21 @@
 @inject IDraftImageIngestionService ImageIngestion
 @inject ILeagueState LeagueState
 @inject IOptions<AnthropicVisionOptions> VisionOptions
+@implements IDisposable
 
 <section class="da-import" aria-labelledby="da-import-title">
     <h2 id="da-import-title" class="ti-section__title">Import a draft</h2>
+    <p class="da-learn">
+        <strong>@LearningStatus.ScopeLabel</strong>
+        @if (!string.IsNullOrEmpty(LearningStatus.CountsLabel))
+        {
+            <span class="da-learn__counts">@LearningStatus.CountsLabel</span>
+        }
+    </p>
 
     <div class="da-import__block">
         <label class="da-attach__label" for="da-import-url-input">
-            Paste a completed Sleeper draft's link to add it to league history
+            Paste a completed Sleeper draft's link to add it to this team's personal learning
         </label>
         <div class="da-attach__row">
             <input id="da-import-url-input"
@@ -70,7 +78,7 @@
                 <label>Team/owner names (one per line)
                     <textarea rows="4" @bind="ownerNamesInput"></textarea>
                 </label>
-                <label>Which team is yours? (optional, must match a name above exactly)
+                <label>Which team in this screenshot is the selected roster? (must match a name above exactly)
                     <input type="text" @bind="myOwnerName" />
                 </label>
             </div>
@@ -84,6 +92,10 @@
                 <p class="da-attach__status">
                     Saved @imageSummary.SavedCount pick@(imageSummary.SavedCount == 1 ? "" : "s")
                     @(imageSummary.FlaggedCount > 0 ? $" — {imageSummary.FlaggedCount} flagged, could not confidently identify" : "").
+                    @if (!string.IsNullOrWhiteSpace(imageSummary.PersonalLearningMessage))
+                    {
+                        <span> @imageSummary.PersonalLearningMessage</span>
+                    }
                 </p>
                 @if (imageSummary.FlaggedDetails.Count > 0)
                 {
@@ -127,6 +139,18 @@
 
     protected override void OnInitialized()
     {
+        LeagueState.Changed += OnLeagueChanged;
+        PrefillFromSelection();
+    }
+
+    private void OnLeagueChanged() => InvokeAsync(() =>
+    {
+        PrefillFromSelection();
+        StateHasChanged();
+    });
+
+    private void PrefillFromSelection()
+    {
         if (LeagueState.CurrentLeague is { } league)
         {
             leagueName = league.Name;
@@ -134,6 +158,36 @@
             teamCount = league.NumberOfTeams;
             leagueType = league.LeagueType;
         }
+
+        if (LeagueState.CurrentUserTeam is { } team && string.IsNullOrWhiteSpace(myOwnerName))
+        {
+            myOwnerName = string.IsNullOrWhiteSpace(team.TeamName) ? team.DisplayName : team.TeamName;
+        }
+    }
+
+    private PersonalDraftKnowledgeStatus LearningStatus
+    {
+        get
+        {
+            var league = LeagueState.CurrentLeague;
+            var team = LeagueState.CurrentUserTeam;
+            var request = PersonalDraftLearningRequest.From(league, team);
+            var knowledge = request is null ? null : Historical.GetPersonalKnowledge(request.LeagueId, request.TeamId);
+            return PersonalDraftLearningPolicy.Status(league, team, knowledge);
+        }
+    }
+
+    private PersonalDraftLearningRequest? RequireScope(out string error)
+    {
+        var scope = PersonalDraftLearningRequest.From(LeagueState.CurrentLeague, LeagueState.CurrentUserTeam);
+        if (scope is null || !scope.HasLeagueAndTeam)
+        {
+            error = PersonalDraftLearningPolicy.MissingScopeMessage;
+            return null;
+        }
+
+        error = "";
+        return scope;
     }
 
     private async Task ImportUrlAsync()
@@ -142,10 +196,21 @@
         urlMessage = null;
         try
         {
-            var result = await Historical.ImportSleeperDraftByIdAsync(urlInput);
+            var scope = RequireScope(out var missing);
+            if (scope is null)
+            {
+                urlSucceeded = false;
+                urlMessage = missing;
+                return;
+            }
+
+            var result = await Historical.ImportSleeperDraftForPersonalLearningAsync(urlInput, scope);
             urlSucceeded = result.Succeeded;
             urlMessage = result.Succeeded
-                ? $"Saved {result.Draft?.Picks.Count ?? 0} picks to history."
+                ? $"Saved {result.Draft?.Picks.Count ?? 0} picks."
+                  + (result.PersonalKnowledge is { } k
+                      ? $" Personal draft knowledge: {k.DraftCount} draft{(k.DraftCount == 1 ? "" : "s")} · {k.DecisionCount} decision{(k.DecisionCount == 1 ? "" : "s")}."
+                      : result.Warnings.Count > 0 ? " " + string.Join(" ", result.Warnings) : "")
                 : string.Join(" ", result.Errors);
             if (result.Succeeded)
             {
@@ -199,6 +264,13 @@
         imageSummary = null;
         try
         {
+            var scope = RequireScope(out var missing);
+            if (scope is null)
+            {
+                imageError = missing;
+                return;
+            }
+
             var parsed = await ImageIngestion.ParseDraftScreenshotAsync(selectedImageBytes, selectedImageMediaType);
             if (parsed.Unparseable)
             {
@@ -211,7 +283,7 @@
                 .ToList();
 
             var context = new DraftImportContext(
-                LeagueId: LeagueState.CurrentLeague?.ExternalId ?? Guid.NewGuid().ToString("N"),
+                LeagueId: LeagueState.CurrentLeague?.ExternalId ?? LeagueState.CurrentLeague!.Id.ToString("N"),
                 Season: season,
                 LeagueName: string.IsNullOrWhiteSpace(leagueName) ? "Imported draft" : leagueName,
                 LeagueType: leagueType,
@@ -222,10 +294,23 @@
                 RosterSettings: [],
                 OwnerNames: owners,
                 IsCompleteDraft: isCompleteDraft.Value,
-                MyOwnerName: string.IsNullOrWhiteSpace(myOwnerName) ? null : myOwnerName);
+                MyOwnerName: string.IsNullOrWhiteSpace(myOwnerName) ? scope.OwnerDisplayName : myOwnerName);
 
-            imageSummary = await Historical.ImportFromImageAsync(parsed, context);
-            if (imageSummary.SavedDraft is not null)
+            var learnScope = string.IsNullOrWhiteSpace(context.MyOwnerName)
+                ? scope
+                : scope with { OwnerDisplayName = context.MyOwnerName };
+            imageSummary = await Historical.ImportFromImageForPersonalLearningAsync(parsed, context, learnScope);
+            if (!string.IsNullOrWhiteSpace(imageSummary.PersonalLearningMessage)
+                && imageSummary.PersonalKnowledge is null
+                && imageSummary.SavedDraft is null
+                && imageSummary.UnsavedMockDraft is null)
+            {
+                imageError = imageSummary.PersonalLearningMessage;
+                imageSummary = null;
+                return;
+            }
+
+            if (imageSummary.SavedDraft is not null || imageSummary.PersonalKnowledge is not null)
             {
                 await OnImported.InvokeAsync();
             }
@@ -239,4 +324,6 @@
             imageBusy = false;
         }
     }
+
+    public void Dispose() => LeagueState.Changed -= OnLeagueChanged;
 }

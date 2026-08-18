@@ -57,4 +57,13 @@ public sealed class DraftAssistantReport
     /// attached/ingested mock. Null until the user has made at least one pick. Never persisted
     /// and never blended into league-wide historical intelligence.</summary>
     public PersonalDraftTendencies? MyTendencies { get; init; }
+
+    /// <summary>
+    /// Persisted personal draft knowledge for the currently selected league + team only.
+    /// Null when no league/team is selected or nothing has been learned for that scope.
+    /// </summary>
+    public PersonalDraftKnowledge? PersonalKnowledge { get; init; }
+
+    /// <summary>Always reflects the active Draft Assistant league/team selection, including when empty.</summary>
+    public PersonalDraftKnowledgeStatus? PersonalKnowledgeStatus { get; init; }
 }
