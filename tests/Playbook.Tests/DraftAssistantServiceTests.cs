@@ -776,6 +776,37 @@ public class DraftAssistantServiceTests
     }
 
     [Fact]
+    public async Task One_Imported_Preference_Moves_A_Close_Call_Even_When_Roster_Depth_Differs()
+    {
+        var playerA = MakePlayer(Position.RB, "Player A");
+        var playerB = MakePlayer(Position.RB, "Player B");
+        var wrOwned = MakeSleeperMappedPlayer(Position.WR, "Already Drafted WR", "wr-owned");
+        var (league, sleeper, team) = BuildOnTheClockScenario(nextPickGoesToUser: true);
+        sleeper.Picks =
+        [
+            Pick(1, 1, 1, 100, "wr-owned", "Already Drafted WR", "WR"),
+            Pick(2, 1, 2, 200, "rb-rival", "Rival RB", "RB")
+        ];
+
+        var report = await CreateService(
+            league, team, sleeper,
+            [playerA, playerB, wrOwned],
+            new Dictionary<Guid, PlayerProjection>
+            {
+                [playerA.Id] = MakeProjection(playerA.Id, 14.9m, 50),
+                [playerB.Id] = MakeProjection(playerB.Id, 15.1m, 50)
+            },
+            historical: HistoricalWith(PersonalKnowledge("lg1", "100", playerA, playerB, observations: 1)))
+            .GetReportAsync();
+
+        Assert.Equal(1, report.RosterNeeds.Single(n => n.PositionLabel == "WR").CurrentCount);
+        Assert.Equal(playerA.Id, report.Recommended!.PlayerId);
+        Assert.Contains(report.Recommended.Factors, f => f.Label == "Personal history");
+        Assert.Equal(playerA.Id, report.RouteTree!.BestCurrentMove!.PlayerId);
+        Assert.Contains("Personal history:", report.DecisionSummary);
+    }
+
+    [Fact]
     public async Task ScenarioA_Repeated_Preference_Moves_A_Above_B_When_Both_Are_Available()
     {
         var playerA = MakePlayer(Position.RB, "Player A");

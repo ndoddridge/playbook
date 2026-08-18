@@ -161,6 +161,51 @@ public class PersonalLearningValidationTests : IDisposable
     }
 
     [Fact]
+    public async Task Imported_Cook_Over_AmonRa_Is_Recognized_When_Live_Roster_Is_Only_Similar()
+    {
+        var (_, _, historical) = NewImport(withSourceLeague: true);
+        await historical.ImportSleeperDraftForPersonalLearningAsync(MockDraftId, NeuhaScope());
+        var knowledge = historical.GetPersonalKnowledge(BoysLeagueId, "3");
+        Assert.NotNull(knowledge);
+
+        var cookKey = "sleeper:8138";
+        var amonKey = "sleeper:7547";
+        var league = new League
+        {
+            Id = Guid.NewGuid(),
+            Name = "Boys League",
+            Platform = LeaguePlatform.Sleeper,
+            LeagueType = LeagueType.Redraft,
+            ScoringType = ScoringType.Ppr,
+            NumberOfTeams = 10,
+            CurrentWeek = 1,
+            Season = 2026,
+            IsActive = true,
+            DataSource = LeagueDataSource.Sleeper,
+            ExternalId = BoysLeagueId,
+            RosterPositions = ["QB", "RB", "WR", "TE"]
+        };
+        var live = PersonalDraftLearningPolicy.LiveContext(
+            league, 10, 2, 13,
+            new Dictionary<string, int> { ["WR"] = 1, ["RB"] = 0, ["TE"] = 0, ["QB"] = 0 },
+            [cookKey, amonKey]);
+        var available = new List<(string Key, string Name, decimal Projection)>
+        {
+            (amonKey, "Amon-Ra St. Brown", 15.1m),
+            (cookKey, "James Cook", 14.9m)
+        };
+
+        var forCook = PersonalDraftLearningPolicy.Adjust(
+            cookKey, "James Cook", 14.9m, available, knowledge!, live);
+        var forAmon = PersonalDraftLearningPolicy.Adjust(
+            amonKey, "Amon-Ra St. Brown", 15.1m, available, knowledge!, live);
+
+        Assert.True(forCook.ScoreDelta > 0);
+        Assert.True(14.9m + forCook.ScoreDelta > 15.1m + forAmon.ScoreDelta);
+        Assert.Contains("James Cook over Amon-Ra St. Brown", forCook.Factor!.Detail);
+    }
+
+    [Fact]
     public async Task Weak_Personal_History_Does_Not_Overturn_A_Major_Projection_Gap()
     {
         var (_, _, historical) = NewImport(withSourceLeague: true);
