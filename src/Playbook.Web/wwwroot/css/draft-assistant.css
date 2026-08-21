@@ -319,3 +319,152 @@
     display: block;
     margin-top: 0.15rem;
 }
+
+/* --- Compact YOUR PICK companion module --- */
+.da-companion {
+    max-width: 320px;
+    width: 100%;
+}
+
+.da-slate {
+    padding: 0.75rem 0.85rem;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+    background:
+        linear-gradient(165deg, rgba(255, 255, 255, 0.06), transparent 45%),
+        rgba(18, 22, 30, 0.92);
+    backdrop-filter: blur(10px);
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28);
+}
+
+.da-slate__brand {
+    margin: 0 0 0.15rem;
+    font-size: 0.65rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: rgba(125, 255, 192, 0.85);
+    font-weight: 700;
+}
+
+.da-slate__title {
+    margin: 0 0 0.65rem;
+    font-size: 0.78rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgba(230, 233, 240, 0.72);
+    font-weight: 600;
+}
+
+.da-slate__list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+}
+
+.da-slate__item {
+    padding: 0;
+    border: 0;
+    background: transparent;
+}
+
+.da-slate__row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+.da-slate__name {
+    font-size: 0.95rem;
+    font-weight: 650;
+    color: #f2f4f8;
+    line-height: 1.2;
+}
+
+.da-slate__tag {
+    flex: 0 0 auto;
+    font-size: 0.58rem;
+    letter-spacing: 0.06em;
+    font-weight: 700;
+    color: rgba(125, 255, 192, 0.9);
+}
+
+.da-slate__item--alternative .da-slate__tag {
+    color: rgba(160, 190, 255, 0.9);
+}
+
+.da-slate__item--upside .da-slate__tag {
+    color: rgba(255, 190, 120, 0.95);
+}
+
+.da-slate__meta {
+    margin: 0.12rem 0 0;
+    font-size: 0.72rem;
+    color: rgba(180, 188, 204, 0.85);
+}
+
+.da-slate__why {
+    margin-top: 0.75rem;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: rgba(230, 233, 240, 0.7);
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-weight: 650;
+    cursor: pointer;
+}
+
+.da-slate__why:hover {
+    color: #7dffc0;
+}
+
+.da-slate__why-panel {
+    margin-top: 0.65rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.7rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    padding-top: 0.65rem;
+}
+
+.da-slate__why-heading {
+    margin: 0 0 0.3rem;
+    font-size: 0.7rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: rgba(230, 233, 240, 0.8);
+}
+
+.da-slate__bullets,
+.da-slate__look {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.da-slate__bullets li,
+.da-slate__look li {
+    font-size: 0.74rem;
+    line-height: 1.35;
+    color: rgba(200, 208, 222, 0.9);
+}
+
+.da-slate__look-label {
+    margin: 0.4rem 0 0.15rem;
+    font-size: 0.62rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgba(139, 147, 167, 0.95);
+    font-weight: 650;
+}
+
+.da-slate__empty {
+    margin: 0;
+    font-size: 0.8rem;
+    color: rgba(180, 188, 204, 0.85);
+}

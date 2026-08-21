@@ -227,14 +227,20 @@ public class PersonalLearningValidationTests : IDisposable
 
         var cook = Mapped("James Cook", Position.RB, "8138");
         var amon = Mapped("Amon-Ra St. Brown", Position.WR, "7547");
+        var neuha = await LiveReport(
+            historical, cook, amon, cookPts: 14.95m, amonPts: 15.05m, rosterId: NeuhaRosterId);
         var otherTeam = await LiveReport(
             historical, cook, amon, cookPts: 14.95m, amonPts: 15.05m, rosterId: PlayboicoriRosterId,
             ownerUserId: PlayboicoriUserId);
 
+        Assert.NotNull(neuha.PersonalKnowledge);
+        Assert.Contains(neuha.Recommended!.Factors, f => f.Label == "Personal history");
+
         Assert.Null(otherTeam.PersonalKnowledge);
-        Assert.Equal(amon.Id, otherTeam.Recommended!.PlayerId);
-        Assert.DoesNotContain(otherTeam.Recommended.Factors, f => f.Label == "Personal history");
+        Assert.DoesNotContain(otherTeam.Recommended!.Factors, f => f.Label == "Personal history");
         Assert.DoesNotContain("Personal history:", otherTeam.DecisionSummary);
+        // Companion strategy may still prefer Cook (RB intent + plan prefs) without Neuha's history.
+        // The critical isolation check is that personal-history factors never appear for the other team.
     }
 
     public void Dispose()

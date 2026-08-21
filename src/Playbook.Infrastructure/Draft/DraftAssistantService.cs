@@ -12,6 +12,7 @@ using Playbook.Core.Historical;
 using Playbook.Core.Leagues;
 using Playbook.Core.Players;
 using Playbook.Core.Projections.Models;
+using Playbook.Infrastructure.Draft.Decision;
 using Playbook.Infrastructure.Players;
 
 namespace Playbook.Infrastructure.Draft;
@@ -449,7 +450,24 @@ public sealed class DraftAssistantService : IDraftAssistantService
             byTeamFit[i].TeamFitRank = i + 1;
         }
 
-        var recommendations = BuildDiverseRecommendations(byTeamFit);
+        // Rebuild strategy from the CURRENT roster every cycle — never reuse a prior slate.
+        var round = DraftOrderCalculator.RoundForPick(board.NextPickNumber, board.TeamCount);
+        var positionalCounts = rosterNeeds.ToDictionary(
+            n => n.PositionLabel,
+            n => n.CurrentCount,
+            StringComparer.OrdinalIgnoreCase);
+        var strategyPlan = DraftStrategyPlan.DefaultCompanion();
+        var strategyState = DraftStrategyState.Build(
+            strategyPlan,
+            round,
+            board.NextPickNumber,
+            draftPhase,
+            positionalCounts,
+            userDraftedPlayers);
+
+        var pickSlate = BuildPickSlate(byTeamFit, strategyState, positionalCounts);
+        var recommendations = pickSlate.Select(p => p.Player).ToList();
+
         // Nobody is on the clock before the draft begins, even though slot 1 technically resolves.
         var isOnTheClock = status != DraftStatus.NotStarted && board.IsUserOnTheClock;
 
@@ -467,6 +485,8 @@ public sealed class DraftAssistantService : IDraftAssistantService
             IsOnTheClock = isOnTheClock,
             Recommended = recommendations.FirstOrDefault(),
             Alternatives = recommendations.Skip(1).ToList(),
+            PickSlate = pickSlate,
+            StrategyState = strategyState,
             RosterNeeds = rosterNeeds,
             StatusMessage = status switch
             {
@@ -498,6 +518,35 @@ public sealed class DraftAssistantService : IDraftAssistantService
             PersonalKnowledge = personalKnowledge,
             PersonalKnowledgeStatus = personalStatus
         };
+    }
+
+    /// <summary>
+    /// Staged decision layer over scored candidates. Always evaluates against the current roster
+    /// strategy state; quality over filling three slots.
+    /// </summary>
+    private static IReadOnlyList<DraftPickRecommendation> BuildPickSlate(
+        IReadOnlyList<ScoredCandidate> byTeamFit,
+        DraftStrategyState strategyState,
+        IReadOnlyDictionary<string, int> positionalCounts)
+    {
+        if (byTeamFit.Count == 0)
+        {
+            return [];
+        }
+
+        var pool = byTeamFit.Take(Math.Max(DraftDecisionEngine.MaxRecommendations * 8, 24)).ToList();
+        var inputs = pool.Select(c => new DraftDecisionEngine.CandidateInput
+        {
+            Player = c.Player,
+            BaseRecommendation = BuildRecommendation(c),
+            TeamFitScore = c.TeamFitScore,
+            UpsideCeiling = c.ProjectionDetail?.Ceiling ?? c.Projection ?? 0m,
+            Floor = c.ProjectionDetail?.Floor ?? c.Projection ?? 0m,
+            AvailabilityRisk = c.AvailabilityRisk,
+            ValueOverReplacement = c.ValueOverReplacement
+        }).ToList();
+
+        return DraftDecisionEngine.Select(inputs, strategyState, positionalCounts);
     }
 
     /// <summary>
