@@ -1,0 +1,76 @@
+@using Playbook.Core.Draft
+
+<aside class="da-slate" aria-labelledby="da-slate-title">
+    <p class="da-slate__brand">Playbook</p>
+    <h2 id="da-slate-title" class="da-slate__title">Your pick</h2>
+
+    @if (Slate.Count == 0)
+    {
+        <p class="da-slate__empty">No strong recommendation right now.</p>
+    }
+    else
+    {
+        <ol class="da-slate__list">
+            @foreach (var pick in Slate)
+            {
+                <li class="da-slate__item da-slate__item--@pick.Role.ToString().ToLowerInvariant()">
+                    <div class="da-slate__row">
+                        <span class="da-slate__name">@pick.Player.PlayerName</span>
+                        <span class="da-slate__tag">@RecommendationRolePolicy.ShortLabel(pick.Role)</span>
+                    </div>
+                    <p class="da-slate__meta">@pick.Player.PositionLabel · @pick.Player.Team</p>
+                </li>
+            }
+        </ol>
+
+        <button type="button"
+                class="da-slate__why"
+                @onclick="ToggleWhy"
+                aria-expanded="@whyOpen">
+            @(whyOpen ? "Why ↑" : "Why →")
+        </button>
+
+        @if (whyOpen)
+        {
+            <div class="da-slate__why-panel">
+                @foreach (var pick in Slate)
+                {
+                    <section class="da-slate__why-block">
+                        <h3 class="da-slate__why-heading">Why @LastName(pick.Player.PlayerName)?</h3>
+                        <ul class="da-slate__bullets">
+                            @foreach (var bullet in pick.WhyBullets)
+                            {
+                                <li>+ @bullet</li>
+                            }
+                        </ul>
+                        @if (pick.LookAhead.Count > 0)
+                        {
+                            <p class="da-slate__look-label">Look ahead</p>
+                            <ul class="da-slate__look">
+                                @foreach (var step in pick.LookAhead.Take(3))
+                                {
+                                    <li>R@(step.Round) → @step.TargetPosition</li>
+                                }
+                            </ul>
+                        }
+                    </section>
+                }
+            </div>
+        }
+    }
+</aside>
+
+@code {
+    [Parameter, EditorRequired]
+    public IReadOnlyList<DraftPickRecommendation> Slate { get; set; } = [];
+
+    private bool whyOpen;
+
+    private void ToggleWhy() => whyOpen = !whyOpen;
+
+    private static string LastName(string fullName)
+    {
+        var parts = fullName.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length == 0 ? fullName : parts[^1].ToUpperInvariant();
+    }
+}

@@ -12,6 +12,16 @@ public sealed class DraftAssistantReport
 
     public required IReadOnlyList<DraftRecommendation> Alternatives { get; init; }
 
+    /// <summary>
+    /// Compact YOUR PICK slate (Primary / Alternative / Upside) with look-ahead. Empty when
+    /// nothing can be responsibly recommended. Prefer this over flattening into Recommended/
+    /// Alternatives when rendering the companion UI.
+    /// </summary>
+    public IReadOnlyList<DraftPickRecommendation> PickSlate { get; init; } = [];
+
+    /// <summary>Strategy snapshot rebuilt this cycle from the live roster. Null when unavailable.</summary>
+    public DraftStrategyState? StrategyState { get; init; }
+
     public required IReadOnlyList<PositionalNeed> RosterNeeds { get; init; }
 
     public required string StatusMessage { get; init; }

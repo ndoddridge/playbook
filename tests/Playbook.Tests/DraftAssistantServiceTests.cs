@@ -566,34 +566,30 @@ public class DraftAssistantServiceTests
         Assert.Equal(10m, report.Recommended!.ProjectedPoints);
     }
 
-    // ---------------------------------------------------------------- recommendation diversity
+    // ---------------------------------------------------------------- pick slate roles
 
     [Fact]
-    public async Task GetReportAsync_Surfaces_Distinct_Strategic_Categories_Not_Five_Copies_Of_The_Same_Pick()
+    public async Task GetReportAsync_Surfaces_Distinct_PickSlate_Roles_Not_Clones()
     {
         var league = MakeLeague(numberOfTeams: 2, rosterPositions: ["QB", "RB", "WR", "TE"]);
         var team = MakeTeam(100);
 
-        var rb1 = MakePlayer(Position.RB, "RB Elite"); // dominant raw fit -> Best overall
+        var rb1 = MakePlayer(Position.RB, "Jonathan Taylor");
         var rb2 = MakePlayer(Position.RB, "RB Replacement");
-        var te1 = MakePlayer(Position.TE, "TE Scarce"); // biggest VOR -> Best value
-        var te2 = MakePlayer(Position.TE, "TE Replacement");
-        var wr1 = MakePlayer(Position.WR, "WR Boom"); // highest ceiling -> Best upside
-        var wr2 = MakePlayer(Position.WR, "WR Replacement");
-        var qb1 = MakePlayer(Position.QB, "QB Steady"); // highest floor -> Safest floor
-        var qb2 = MakePlayer(Position.QB, "QB Replacement");
+        var wr1 = MakePlayer(Position.WR, "Wan'Dale Robinson");
+        var wr2 = MakePlayer(Position.WR, "WR Boom");
+        var te1 = MakePlayer(Position.TE, "George Kittle");
+        var qb1 = MakePlayer(Position.QB, "Justin Herbert");
 
-        var players = new List<Player> { rb1, rb2, te1, te2, wr1, wr2, qb1, qb2 };
+        var players = new List<Player> { rb1, rb2, wr1, wr2, te1, qb1 };
         var projections = new Dictionary<Guid, PlayerProjection>
         {
-            [rb1.Id] = MakeProjectionWithRange(rb1.Id, points: 25m, floor: 20m, ceiling: 30m, confidence: 70),
+            [rb1.Id] = MakeProjectionWithRange(rb1.Id, points: 22m, floor: 18m, ceiling: 28m, confidence: 70),
             [rb2.Id] = MakeProjectionWithRange(rb2.Id, points: 8m, floor: 6m, ceiling: 15m, confidence: 50),
-            [te1.Id] = MakeProjectionWithRange(te1.Id, points: 15m, floor: 5m, ceiling: 20m, confidence: 55),
-            [te2.Id] = MakeProjectionWithRange(te2.Id, points: 4m, floor: 2m, ceiling: 8m, confidence: 40),
-            [wr1.Id] = MakeProjectionWithRange(wr1.Id, points: 14m, floor: 8m, ceiling: 26m, confidence: 50),
-            [wr2.Id] = MakeProjectionWithRange(wr2.Id, points: 13m, floor: 9m, ceiling: 15m, confidence: 50),
-            [qb1.Id] = MakeProjectionWithRange(qb1.Id, points: 13m, floor: 12m, ceiling: 14m, confidence: 60),
-            [qb2.Id] = MakeProjectionWithRange(qb2.Id, points: 12m, floor: 6m, ceiling: 13m, confidence: 55)
+            [wr1.Id] = MakeProjectionWithRange(wr1.Id, points: 14m, floor: 10m, ceiling: 20m, confidence: 55),
+            [wr2.Id] = MakeProjectionWithRange(wr2.Id, points: 13m, floor: 8m, ceiling: 26m, confidence: 50),
+            [te1.Id] = MakeProjectionWithRange(te1.Id, points: 12m, floor: 8m, ceiling: 18m, confidence: 60),
+            [qb1.Id] = MakeProjectionWithRange(qb1.Id, points: 18m, floor: 14m, ceiling: 24m, confidence: 65)
         };
 
         var sleeper = new FakeSleeperLeagueClient
@@ -607,28 +603,16 @@ public class DraftAssistantServiceTests
         };
 
         var service = CreateService(league, team, sleeper, players, projections);
-
         var report = await service.GetReportAsync();
 
-        Assert.NotNull(report.Recommended);
-        Assert.Equal(RecommendationCategory.BestOverall, report.Recommended!.Category);
-        Assert.Equal(rb1.Id, report.Recommended.PlayerId);
-
-        var categorized = new[] { report.Recommended }.Concat(report.Alternatives)
-            .Where(r => r!.Category != RecommendationCategory.None)
-            .ToList();
-
-        // Every categorized recommendation must be a genuinely different player.
-        Assert.Equal(categorized.Count, categorized.Select(r => r!.PlayerId).Distinct().Count());
-
-        var byCategory = categorized.ToDictionary(r => r!.Category, r => r!.PlayerId);
-        Assert.Equal(rb1.Id, byCategory[RecommendationCategory.BestOverall]);
-        Assert.Equal(te1.Id, byCategory[RecommendationCategory.BestValue]);
-        Assert.Equal(wr1.Id, byCategory[RecommendationCategory.BestUpside]);
-        Assert.Equal(qb1.Id, byCategory[RecommendationCategory.SafestFloor]);
-
-        // Every categorized card must carry a plain-language reason, not a bare label.
-        Assert.All(categorized, r => Assert.False(string.IsNullOrWhiteSpace(r!.CategoryRationale)));
+        Assert.NotEmpty(report.PickSlate);
+        Assert.Equal(RecommendationRole.Primary, report.PickSlate[0].Role);
+        Assert.True(report.PickSlate.Count <= 3);
+        Assert.Equal(report.PickSlate.Count, report.PickSlate.Select(p => p.Player.PlayerId).Distinct().Count());
+        Assert.Equal(report.PickSlate.Count, report.PickSlate.Select(p => p.Role).Distinct().Count());
+        Assert.All(report.PickSlate, p => Assert.NotEmpty(p.WhyBullets));
+        Assert.All(report.PickSlate, p => Assert.NotEmpty(p.LookAhead));
+        Assert.NotNull(report.StrategyState);
     }
 
     // ---------------------------------------------------------------- continuous updates (Part XIX)
