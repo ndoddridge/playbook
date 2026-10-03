@@ -17,7 +17,7 @@
 
     private static readonly NavItem[] Items =
     [
-        new("/", "🏠", "Dashboard", NavLinkMatch.All),
+        new("/dashboard", "🏠", "Dashboard", NavLinkMatch.Prefix),
         new("/game-plan", "🎯", "Game Plan", NavLinkMatch.Prefix),
         new("/team", "🧠", "My Team", NavLinkMatch.Prefix),
         new("/my-teams", "🏈", "Rosters", NavLinkMatch.Prefix),
@@ -26,8 +26,7 @@
         new("/draft-assistant", "📈", "Draft Assistant", NavLinkMatch.Prefix),
         new("/historical-intelligence", "📚", "League History", NavLinkMatch.Prefix),
         new("/player-explorer", "🔍", "Player Explorer", NavLinkMatch.Prefix),
-        new("/replay-lab", "🔄", "Replay Lab", NavLinkMatch.Prefix),
-        new("/settings", "⚙", "Settings", NavLinkMatch.Prefix)
+        new("/account", "👤", "Account", NavLinkMatch.Prefix)
     ];
 
     private async Task HandleNavigate()

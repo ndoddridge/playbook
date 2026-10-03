@@ -1,4 +1,6 @@
 using Playbook.Application.Abstractions;
+using Playbook.Application.Access;
+using Playbook.Infrastructure.Access;
 using Playbook.Application.Draft;
 using Playbook.Application.Replay;
 using Playbook.Application.Injuries;
@@ -41,6 +43,8 @@ using Playbook.Infrastructure.Recommendations;
 using Playbook.Infrastructure.Stats;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Playbook.Application.Users;
 
 namespace Playbook.Infrastructure;
 
@@ -68,6 +72,7 @@ public static class DependencyInjection
             services.PostConfigure<PropLineOptions>(PropLineCredentialResolver.ApplyAliasEnvironmentVariables);
             services.Configure<LeagueOptions>(configuration.GetSection(LeagueOptions.SectionName));
             services.Configure<AnthropicVisionOptions>(configuration.GetSection(AnthropicVisionOptions.SectionName));
+            services.Configure<AccessOptions>(configuration.GetSection(AccessOptions.SectionName));
         }
         else
         {
@@ -84,6 +89,7 @@ public static class DependencyInjection
             services.PostConfigure<PropLineOptions>(PropLineCredentialResolver.ApplyAliasEnvironmentVariables);
             services.Configure<LeagueOptions>(_ => { });
             services.Configure<AnthropicVisionOptions>(_ => { });
+            services.Configure<AccessOptions>(o => o.Mode = AccessMode.Open);
         }
 
         RegisterPlayerData(services);
@@ -96,15 +102,16 @@ public static class DependencyInjection
         RegisterResearch(services);
         RegisterQuickPicks(services);
 
-        services.AddSingleton<IPlayerContextService, MockPlayerContextService>();
+        services.TryAddScoped<IUserContext, LocalUserContext>();
+        services.AddScoped<IPlayerContextService, MockPlayerContextService>();
         RegisterLeagues(services);
-        services.AddSingleton<IHistoricalLeagueDraftStore, HistoricalLeagueDraftStore>();
-        services.AddSingleton<IPersonalDraftKnowledgeStore, PersonalDraftKnowledgeStore>();
-        services.AddSingleton<IHistoricalLeagueIntelligenceService, HistoricalLeagueIntelligenceService>();
-        services.AddSingleton<IRecommendationService, MockRecommendationService>();
+        services.AddScoped<IHistoricalLeagueDraftStore, HistoricalLeagueDraftStore>();
+        services.AddScoped<IPersonalDraftKnowledgeStore, PersonalDraftKnowledgeStore>();
+        services.AddScoped<IHistoricalLeagueIntelligenceService, HistoricalLeagueIntelligenceService>();
+        services.AddScoped<IRecommendationService, MockRecommendationService>();
         // Bye weeks from the real published schedule (same nflverse cache, no new dependency).
         services.AddSingleton<IByeWeekProvider, NflverseByeWeekProvider>();
-        services.AddSingleton<IDraftAssistantService, DraftAssistantService>();
+        services.AddScoped<IDraftAssistantService, DraftAssistantService>();
 
         // Draft screenshot ingestion — quietly unavailable (throws only when actually invoked)
         // until DraftImageIngestion__ApiKey is configured; no Mock/Live switch since there's no
@@ -119,17 +126,33 @@ public static class DependencyInjection
         });
         services.AddSingleton<IDraftImageIngestionService, AnthropicDraftImageIngestionService>();
 
+        RegisterAccess(services);
+
         services.AddHostedService<DataRefreshBackgroundService>();
-        services.AddHostedService<LeagueAutoReconnectHostedService>();
         return services;
+    }
+
+    private static void RegisterAccess(IServiceCollection services)
+    {
+        services.AddHttpClient(LemonSqueezyLicenseService.HttpClientName, (sp, client) =>
+        {
+            var options = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<AccessOptions>>().Value;
+            var baseUrl = string.IsNullOrWhiteSpace(options.ApiBaseUrl) ? "https://api.lemonsqueezy.com/" : options.ApiBaseUrl;
+            client.BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/");
+            client.Timeout = TimeSpan.FromSeconds(15);
+        });
+        services.AddSingleton<ILicenseService, LemonSqueezyLicenseService>();
+        services.AddSingleton<ILicenseRevocationStore, LicenseRevocationStore>();
+        services.AddSingleton<LemonSqueezyWebhook>();
     }
 
     private static void RegisterLeagues(IServiceCollection services)
     {
-        services.AddSingleton<LeagueSyncStatus>();
-        services.AddSingleton<ILeagueSyncStatus>(sp => sp.GetRequiredService<LeagueSyncStatus>());
-        services.AddSingleton<MockLeagueService>();
-        services.AddSingleton<ILeagueUserTeamStore, LeagueUserTeamStore>();
+        services.AddSingleton<LeagueSnapshotCache>();
+        services.AddScoped<LeagueSyncStatus>();
+        services.AddScoped<ILeagueSyncStatus>(sp => sp.GetRequiredService<LeagueSyncStatus>());
+        services.AddScoped<MockLeagueService>();
+        services.AddScoped<ILeagueUserTeamStore, LeagueUserTeamStore>();
 
         services.AddHttpClient(SleeperLeagueClient.HttpClientName, (sp, client) =>
         {
@@ -146,7 +169,7 @@ public static class DependencyInjection
         });
 
         services.AddSingleton<ISleeperLeagueClient, SleeperLeagueClient>();
-        services.AddSingleton<ILeagueService, CompositeLeagueService>();
+        services.AddScoped<ILeagueService, CompositeLeagueService>();
     }
 
     private static void RegisterIntelligence(IServiceCollection services)
@@ -156,15 +179,15 @@ public static class DependencyInjection
         services.AddSingleton<IIntelligenceAnalyzer, IntelligenceAnalyzer>();
         services.AddSingleton<IIntelligenceAggregator, IntelligenceAggregator>();
         services.AddSingleton<IIntelligenceService, IntelligenceService>();
-        services.AddSingleton<IPlayerIntelligenceAssessmentService, PlayerIntelligenceAssessmentService>();
+        services.AddScoped<IPlayerIntelligenceAssessmentService, PlayerIntelligenceAssessmentService>();
         services.AddSingleton<IDecisionRecordStore, InMemoryDecisionRecordStore>();
-        services.AddSingleton<IPlayerKnowledgeComposer, PlayerKnowledgeComposer>();
+        services.AddScoped<IPlayerKnowledgeComposer, PlayerKnowledgeComposer>();
         services.AddSingleton<ConfidenceAwareDecisionPolicyState>();
         services.AddSingleton<IConfidenceAwareDecisionPolicy, ConfidenceAwareDecisionPolicyApplicator>();
         services.AddSingleton<IDecisionEngine, DecisionEngine>();
-        services.AddSingleton<IFantasyTeamIntelligenceService, FantasyTeamIntelligenceService>();
-        services.AddSingleton<IWeeklyMatchupGamePlanService, WeeklyMatchupGamePlanService>();
-        services.AddSingleton<IDropPickupService, DropPickupService>();
+        services.AddScoped<IFantasyTeamIntelligenceService, FantasyTeamIntelligenceService>();
+        services.AddScoped<IWeeklyMatchupGamePlanService, WeeklyMatchupGamePlanService>();
+        services.AddScoped<IDropPickupService, DropPickupService>();
         RegisterHistoricalReplay(services);
     }
 
@@ -220,7 +243,12 @@ public static class DependencyInjection
         services.AddSingleton<IMatchupContextProvider, UnavailableMatchupContextProvider>();
         services.AddSingleton<IGameEnvironmentProvider, UnavailableGameEnvironmentProvider>();
         services.AddSingleton<IProjectionEngine, ProjectionEngine>();
-        services.AddSingleton<IProjectionService, ProjectionService>();
+        services.AddSingleton<ProjectionCache>();
+        // Per-user: follows that user's current league (scoring, week). Shared singletons use the
+        // league-independent instance below instead.
+        services.AddScoped<IProjectionService, ProjectionService>();
+        services.AddSingleton<IGlobalProjectionService>(sp => ActivatorUtilities.CreateInstance<ProjectionService>(
+            sp, (ILeagueState)new NoLeagueState()));
     }
 
     private static void RegisterResearch(IServiceCollection services)

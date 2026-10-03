@@ -1,19 +1,42 @@
+@inject IConfiguration Configuration
+
 <!DOCTYPE html>
 <html lang="en">
 
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0b0d10" />
     <base href="/" />
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
     <link rel="stylesheet" href="@Assets["app.css"]" />
     <link rel="stylesheet" href="@Assets["Playbook.Web.styles.css"]" />
     <ImportMap />
-    <HeadOutlet @rendermode="InteractiveServer" />
+    <HeadOutlet @rendermode="PageRenderMode" />
+    @if (!string.IsNullOrWhiteSpace(PlausibleDomain))
+    {
+        <script defer data-domain="@PlausibleDomain" src="https://plausible.io/js/script.js"></script>
+    }
 </head>
 
 <body>
-    <Routes @rendermode="InteractiveServer" />
+    <Routes @rendermode="PageRenderMode" />
     <script src="_framework/blazor.web.js"></script>
 </body>
 
 </html>
+
+@code {
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    // Marketing, legal and sign-in pages are plain server-rendered HTML (fast, indexable, no circuit);
+    // the product itself runs as an interactive Blazor Server app. Prerender is off for the product
+    // so each user's state is created once, in their circuit, after their sign-in is known.
+    private static readonly IComponentRenderMode InteractiveNoPrerender = new InteractiveServerRenderMode(prerender: false);
+
+    private IComponentRenderMode? PageRenderMode =>
+        HttpContext.AcceptsInteractiveRouting() ? InteractiveNoPrerender : null;
+
+    private string? PlausibleDomain => Configuration["Analytics:PlausibleDomain"];
+}

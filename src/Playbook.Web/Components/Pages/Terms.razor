@@ -1,0 +1,48 @@
+@page "/terms"
+@attribute [ExcludeFromInteractiveRouting]
+@attribute [Microsoft.AspNetCore.Authorization.AllowAnonymous]
+@layout Layout.PublicLayout
+@using Microsoft.Extensions.Options
+@using Playbook.Application.Access
+@inject IOptions<AccessOptions> Access
+
+<PageTitle>Terms of Service — Playbook</PageTitle>
+
+<section class="pub-section pub-narrow pub-legal">
+    <h1>Terms of Service</h1>
+    <p class="pub-fine">Last updated: October 2026</p>
+
+    <h2>The service</h2>
+    <p>Playbook is a web application that analyzes publicly available NFL data and your fantasy football league
+       to produce recommendations. By purchasing a license or using Playbook you agree to these terms.</p>
+
+    <h2>License</h2>
+    <p>Your one-time purchase gives one person a personal, non-transferable license to use Playbook for as long
+       as the service is offered. You may use your license key on your own devices; you may not share, resell or
+       publish it. We may deactivate keys that are shared or abused.</p>
+
+    <h2>Information only</h2>
+    <p>Recommendations, projections and market analysis are informational and based on imperfect data and models.
+       They are not guarantees, and they are not gambling, betting, investment or professional advice. Playbook does
+       not place wagers or take actions in your fantasy league. You are solely responsible for your decisions.</p>
+
+    <h2>Third-party data</h2>
+    <p>Playbook relies on third-party sources (for example Sleeper, ESPN, nflverse and sportsbook odds feeds). We don't
+       control them and they may be unavailable, delayed or inaccurate. Playbook is not affiliated with or endorsed by
+       the NFL, Sleeper or any fantasy platform.</p>
+
+    <h2>Availability and changes</h2>
+    <p>We work to keep Playbook running but provide it "as is" without warranty of uninterrupted or error-free
+       operation. We may change or retire features. If we discontinue the service entirely we will give reasonable notice.</p>
+
+    <h2>Liability</h2>
+    <p>To the extent permitted by law, our total liability for any claim relating to Playbook is limited to the amount
+       you paid for your license, and we are not liable for indirect or consequential losses, including lost
+       fantasy-league winnings or entry fees.</p>
+
+    <h2>Payments and refunds</h2>
+    <p>Payments are processed by Lemon Squeezy, our merchant of record. See the <a href="/refunds">refund policy</a>.</p>
+
+    <h2>Contact</h2>
+    <p>@if (!string.IsNullOrWhiteSpace(Access.Value.SupportEmail)) { <a href="mailto:@Access.Value.SupportEmail">@Access.Value.SupportEmail</a> } else { <text>Use the contact option on your Lemon Squeezy receipt.</text> }</p>
+</section>

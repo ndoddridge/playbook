@@ -1,0 +1,25 @@
+@page "/not-found"
+@attribute [ExcludeFromInteractiveRouting]
+@attribute [Microsoft.AspNetCore.Authorization.AllowAnonymous]
+@layout Layout.PublicLayout
+
+<PageTitle>Page not found — Playbook</PageTitle>
+<HeadContent><meta name="robots" content="noindex" /></HeadContent>
+
+<section class="pub-section pub-narrow">
+    <h1>Page not found</h1>
+    <p>That page doesn't exist. <a href="/" data-enhance-nav="false">Back to Playbook</a>.</p>
+</section>
+
+@code {
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    protected override void OnInitialized()
+    {
+        if (HttpContext is { Response.HasStarted: false } ctx)
+        {
+            ctx.Response.StatusCode = StatusCodes.Status404NotFound;
+        }
+    }
+}

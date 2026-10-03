@@ -2,7 +2,31 @@
 
 All notable project changes are recorded here.
 
-## [Unreleased] — Draft Assistant foundation (live Sleeper draft board + recommendations)
+## [Unreleased] — Commercial launch readiness (paid access, per-customer isolation)
+
+### Added
+
+- **Paid access** via Lemon Squeezy license keys: public landing/pricing page, `/unlock`, `/welcome`
+  (post-purchase), Terms / Privacy / Refund pages, encrypted sign-in cookie, periodic re-validation,
+  HMAC-verified `/webhooks/lemonsqueezy` for instant revocation, rate-limited unlock endpoint.
+  Product pages are default-deny (`[Authorize]` on everything under `Features/`).
+- **Per-customer isolation**: connected leagues, selected team, historical drafts and personal draft
+  learning are now scoped and stored per customer (`/data/users/<id>`); previously one process-wide
+  league state was shared by every visitor. Shared football data (players, stats, news, Quick Picks)
+  stays shared. `IGlobalProjectionService` + `ProjectionCache` keep projections shared across users.
+  Quick Picks week selection is per user.
+- `/healthz`, security headers, first-run onboarding card, Account page, favicon, optional Plausible analytics.
+- CI workflow (build + tests) gating the Fly deploy; `docs/DEPLOYMENT.md`.
+
+### Changed
+
+- Dashboard moved to `/dashboard` (`/` is the public landing page). The provider/sync "Developer Monitor"
+  is operator-only (`Access__AdminUserIds`). Removed Developer Mode badge, fake clock/sync pill, hard-coded
+  "Trending Players" placeholder, and the "Coming Soon" Replay Lab / Settings pages.
+- Always-on single Fly machine with health check; NFL data caches now live on the persistent volume.
+- Production start-up fails fast if payment settings are missing.
+
+## Draft Assistant foundation (live Sleeper draft board + recommendations)
 
 ### Added
 

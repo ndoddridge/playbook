@@ -1,3 +1,4 @@
+using Playbook.Application.Users;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO.Compression;
@@ -47,7 +48,7 @@ public sealed class NflversePlayerStatsProvider : IHistoricalPlayerStatsProvider
         _identities = identities;
         _options = options.Value;
         _logger = logger;
-        _cacheDir = Path.Combine(AppContext.BaseDirectory, "data", "nflverse-player-stats");
+        _cacheDir = Path.Combine(UserDataPaths.DataRoot(), "nflverse-player-stats");
         Directory.CreateDirectory(_cacheDir);
     }
 

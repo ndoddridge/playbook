@@ -1,4 +1,4 @@
-@page "/"
+@page "/dashboard"
 @using Playbook.Application.Intelligence
 @using Playbook.Application.Intelligence.Interfaces
 @using Playbook.Application.Leagues
@@ -36,6 +36,9 @@
 @inject IInjurySyncStatus InjurySyncStatus
 @inject INewsProvider NewsProvider
 @inject INewsSyncStatus NewsSyncStatus
+@inject Microsoft.Extensions.Hosting.IHostEnvironment HostEnvironment
+@inject Playbook.Application.Users.IUserContext CurrentUser
+@inject Microsoft.Extensions.Options.IOptions<Playbook.Application.Access.AccessOptions> AccessOptions
 @implements IDisposable
 
 <PageTitle>Dashboard — Playbook</PageTitle>
@@ -114,6 +117,24 @@
         }
     </header>
 
+    @if (LeagueState.CurrentLeague is null)
+    {
+        <article class="pb-card" style="margin-bottom: var(--pb-space-5);" aria-labelledby="first-run-heading">
+            <h2 id="first-run-heading" class="pb-card__title">Get started: connect your Sleeper league</h2>
+            <div class="pb-card__body">
+                <ol class="pub-list" style="padding-left: 1.2rem;">
+                    <li>Open the <strong>league menu</strong> in the top-left corner (“No League Selected”).</li>
+                    <li>Paste your <strong>Sleeper league ID</strong> — the number in your league's web address
+                        (<code>sleeper.com/leagues/<em>123456789012345678</em></code>) — and press Connect.</li>
+                    <li>Pick your team. Recommendations, game plan and drop/pickup help appear right away.</li>
+                </ol>
+                <p class="player-section__muted">Only public league data is read. Playbook never asks for your Sleeper password.</p>
+            </div>
+        </article>
+    }
+
+    @if (ShowMonitor)
+    {
     <section class="dashboard-monitor" aria-labelledby="dev-monitor-heading">
         <div class="dashboard-monitor__header">
             <h2 id="dev-monitor-heading" class="pb-card__title" style="margin-bottom: 0;">Developer Monitor</h2>
@@ -489,6 +510,7 @@
             </div>
         </article>
     </section>
+    }
 
     <section class="dashboard-news" aria-labelledby="top-intelligence-heading">
         <h2 id="top-intelligence-heading" class="pb-card__title">Top Player Intelligence Changes</h2>
@@ -551,21 +573,6 @@
             </div>
         }
     </section>
-
-    <div class="dashboard-grid dashboard-grid--stack">
-        <article class="pb-card">
-            <h2 class="pb-card__title">Trending Players</h2>
-            <div class="pb-card__body">
-                @foreach (var item in Trending)
-                {
-                    <div class="pb-meta-row">
-                        <span class="pb-meta-label">@item.Name</span>
-                        <span class="pb-meta-value">@item.Trend</span>
-                    </div>
-                }
-            </div>
-        </article>
-    </div>
 </section>
 
 @code {
@@ -686,7 +693,7 @@
 
     private async Task RunAutoRefreshAsync(CancellationToken cancellationToken)
     {
-        refreshTimer = new PeriodicTimer(TimeSpan.FromSeconds(30));
+        refreshTimer = new PeriodicTimer(TimeSpan.FromSeconds(ShowMonitor ? 30 : 120));
 
         try
         {
@@ -695,11 +702,14 @@
                 RefreshDashboard();
                 await InvokeAsync(StateHasChanged);
 
-                heartbeatTick = true;
-                await InvokeAsync(StateHasChanged);
-                await Task.Delay(450, cancellationToken);
-                heartbeatTick = false;
-                await InvokeAsync(StateHasChanged);
+                if (ShowMonitor)
+                {
+                    heartbeatTick = true;
+                    await InvokeAsync(StateHasChanged);
+                    await Task.Delay(450, cancellationToken);
+                    heartbeatTick = false;
+                    await InvokeAsync(StateHasChanged);
+                }
             }
         }
         catch (OperationCanceledException)
@@ -708,7 +718,22 @@
         }
     }
 
+    // The operations monitor (provider status, sync internals) is for the operator only; customers
+    // see recommendations and intelligence.
+    private bool ShowMonitor =>
+        HostEnvironment.IsDevelopment() || AccessOptions.Value.IsAdmin(CurrentUser.UserId);
+
     private void RefreshDashboard()
+    {
+        topProfiles = IntelligenceService.GetTopProfiles(8);
+        recommendations = RecommendationService.GetTopRecommendations();
+        if (ShowMonitor)
+        {
+            RefreshMonitor();
+        }
+    }
+
+    private void RefreshMonitor()
     {
         var now = DateTime.Now;
         refreshCount++;
@@ -756,7 +781,6 @@
             ? $"{newsElapsed.TotalMilliseconds:0} ms"
             : "—";
 
-        topProfiles = IntelligenceService.GetTopProfiles(8);
         intelArticlesProcessed = IntelligenceSyncStatus.ArticlesProcessed.ToString();
         intelFactsGenerated = IntelligenceSyncStatus.FactsGenerated.ToString();
         intelRuntime = IntelligenceSyncStatus.AnalyzerRuntime is { } runtime
@@ -880,8 +904,6 @@
         injuryLastError = string.IsNullOrWhiteSpace(InjurySyncStatus.LastInjuryError)
             ? "None"
             : InjurySyncStatus.LastInjuryError;
-
-        recommendations = RecommendationService.GetTopRecommendations();
     }
 
     private string ResolvePlayerName(Guid playerId) =>
@@ -919,13 +941,5 @@
         refreshTimer?.Dispose();
     }
 
-    private static readonly TrendingItem[] Trending =
-    [
-        new("Jordan Love", "↑ Usage"),
-        new("Brian Thomas Jr.", "↑ Targets"),
-        new("Bucky Irving", "↑ Snap share")
-    ];
-
-    private sealed record TrendingItem(string Name, string Trend);
     private sealed record EngineStatusItem(string Name, string State);
 }

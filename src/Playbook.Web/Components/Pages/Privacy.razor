@@ -1,0 +1,38 @@
+@page "/privacy"
+@attribute [ExcludeFromInteractiveRouting]
+@attribute [Microsoft.AspNetCore.Authorization.AllowAnonymous]
+@layout Layout.PublicLayout
+@using Microsoft.Extensions.Options
+@using Playbook.Application.Access
+@inject IOptions<AccessOptions> Access
+
+<PageTitle>Privacy Policy — Playbook</PageTitle>
+
+<section class="pub-section pub-narrow pub-legal">
+    <h1>Privacy Policy</h1>
+    <p class="pub-fine">Last updated: October 2026</p>
+
+    <h2>What we collect</h2>
+    <ul class="pub-list">
+        <li><strong>License key.</strong> To sign you in we validate your key with Lemon Squeezy and keep it in an encrypted sign-in cookie in your browser. On our servers your data is filed under an irreversible identifier derived from the key, not the key itself.</li>
+        <li><strong>League data you connect.</strong> The Sleeper league IDs you enter, the roster you pick as yours, and any historical drafts or draft-board images you import, so Playbook can personalize recommendations and remember them next time.</li>
+        <li><strong>Technical logs.</strong> Standard server logs (IP address, requests, errors) used to keep the service running and fix bugs.</li>
+        <li><strong>Usage analytics.</strong> If enabled, privacy-friendly, cookie-less page-view analytics (Plausible) with no personal profiles.</li>
+    </ul>
+    <p>We don't collect your Sleeper password. Your email address and payment details are handled by Lemon Squeezy and are not stored by Playbook.</p>
+
+    <h2>Who we share it with</h2>
+    <ul class="pub-list">
+        <li><strong>Lemon Squeezy</strong> — payments and license keys.</li>
+        <li><strong>Sleeper</strong> — we request public league data using the IDs you provide.</li>
+        <li><strong>Anthropic</strong> — only when you use draft-screenshot import: the image you upload is sent to Anthropic's API to read the draft board, and isn't kept by Playbook afterwards.</li>
+        <li><strong>Hosting provider</strong> (Fly.io) — stores the data above on our behalf.</li>
+    </ul>
+    <p>We don't sell your data or use it for advertising.</p>
+
+    <h2>Retention and deletion</h2>
+    <p>League and draft data stays until you ask us to delete it. @if (!string.IsNullOrWhiteSpace(Access.Value.SupportEmail)) { <text>Email <a href="mailto:@Access.Value.SupportEmail">@Access.Value.SupportEmail</a></text> } else { <text>Contact us</text> } with your license key to have it removed.</p>
+
+    <h2>Cookies</h2>
+    <p>Playbook sets one essential cookie to keep you signed in. It is not used for tracking.</p>
+</section>

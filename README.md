@@ -51,7 +51,8 @@ See [docs/RESEARCH_WORKBENCH.md](docs/RESEARCH_WORKBENCH.md). Production remains
 | UI | Blazor Server (Interactive Server render mode) |
 | Player data | Mock catalog **or** live Sleeper NFL API (config switch) |
 | News | Mock wire **or** live ESPN NFL news (config switch) |
-| Data access | Entity Framework Core + PostgreSQL *(planned; not wired yet)* |
+| Access / payments | Lemon Squeezy license keys + encrypted cookie (`Playbook.Web/Features/Access`) |
+| Data access | Per-customer JSON files on a persistent volume (database planned) |
 | Testing | xUnit |
 
 ## Prerequisites
@@ -184,7 +185,9 @@ Then open the URL shown in the console (typically `https://localhost:7xxx`). Use
 
 ## Production deployment
 
-The Blazor Server app runs on Fly.io (persistent process + WebSocket support, required for Blazor Server's SignalR circuit) at **https://playbook-genie.fly.dev**. `main` is the production branch — every push triggers `.github/workflows/fly-deploy.yml`, which builds the `Dockerfile` (Core/Application/Infrastructure/Web only — the Research CLI is excluded from the deployed image) and deploys via `flyctl deploy --remote-only`.
+The Blazor Server app runs on Fly.io (persistent process + WebSocket support, required for Blazor Server's SignalR circuit) at **https://playbook-genie.fly.dev**. `main` is the production branch — every push triggers `.github/workflows/fly-deploy.yml`, which builds, runs the tests, then builds the `Dockerfile` (Core/Application/Infrastructure/Web only — the Research CLI is excluded from the deployed image) and deploys via `flyctl deploy --remote-only`.
+
+Access is paid (Lemon Squeezy license keys, one-time purchase) and every customer's leagues/drafts are private to them. **See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** for the payment configuration, Fly secrets and launch checklist. Locally (`Development`) the paywall is off (`Access:Mode=Open`).
 
 ## Run tests
 
@@ -200,5 +203,6 @@ dotnet test
 
 - [Design](docs/DESIGN.md) — product vision, pages, and engines
 - [Architecture](docs/ARCHITECTURE.md) — layered structure, providers, and future engine pipeline
+- [Deployment & payments](docs/DEPLOYMENT.md) — Lemon Squeezy setup, Fly secrets, launch checklist
 - [Development Rules](docs/DEVELOPMENT_RULES.md) — engineering standards for this repo
 - [Changelog](docs/CHANGELOG.md) — notable project changes

@@ -9,11 +9,14 @@ namespace Playbook.Application.Leagues;
 public sealed class LeagueStateService : ILeagueState
 {
     private readonly ILeagueService _leagueService;
+    private readonly ILeagueUserTeamStore? _userTeamStore;
     private League? _currentLeague;
+    private int _restoreStarted;
 
-    public LeagueStateService(ILeagueService leagueService)
+    public LeagueStateService(ILeagueService leagueService, ILeagueUserTeamStore? userTeamStore = null)
     {
         _leagueService = leagueService;
+        _userTeamStore = userTeamStore;
         _currentLeague = leagueService.GetCurrentLeague();
     }
 
@@ -71,6 +74,32 @@ public sealed class LeagueStateService : ILeagueState
         _currentLeague = _leagueService.GetCurrentLeague();
         Changed?.Invoke();
         return true;
+    }
+
+    public async Task RestoreSavedLeaguesAsync(CancellationToken cancellationToken = default)
+    {
+        if (_userTeamStore is null || Interlocked.Exchange(ref _restoreStarted, 1) == 1)
+        {
+            return;
+        }
+
+        foreach (var externalId in _userTeamStore.GetConnectedExternalLeagueIds())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                await ConnectSleeperLeagueAsync(externalId, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch
+            {
+                // A league that can't be reached right now simply stays disconnected until the
+                // user reconnects it; never block the app on it.
+            }
+        }
     }
 
     public async Task<LeagueConnectResult> ConnectSleeperLeagueAsync(

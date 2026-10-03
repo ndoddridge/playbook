@@ -1,0 +1,17 @@
+name: CI
+on:
+  pull_request:
+  workflow_call:
+jobs:
+  test:
+    name: Build and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+      - run: dotnet build playbook.sln -c Release
+      # Excludes tests that call live third-party APIs (Sleeper, ESPN, nflverse) and the multi-minute
+      # official research runs; those are run manually (see docs/RESEARCH_WORKBENCH.md).
+      - run: dotnet test tests/Playbook.Tests -c Release --no-build --filter "FullyQualifiedName!~Official&FullyQualifiedName!~Live_"

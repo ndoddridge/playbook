@@ -33,5 +33,5 @@ public static class NflverseReleaseCatalog
     public const string SchedulesUrl =
         "https://github.com/nflverse/nflverse-data/releases/download/schedules/games.csv";
 
-    public static string CacheRoot => Path.Combine(AppContext.BaseDirectory, "data", "nflverse-historical");
+    public static string CacheRoot => Path.Combine(Playbook.Application.Users.UserDataPaths.DataRoot(), "nflverse-historical");
 }

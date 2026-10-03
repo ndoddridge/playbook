@@ -23,7 +23,7 @@ public sealed class DataRefreshBackgroundService : BackgroundService
     private readonly INewsProvider _news;
     private readonly IPlayerInjuryService _injuries;
     private readonly IIntelligenceService _intelligence;
-    private readonly IProjectionService _projections;
+    private readonly IGlobalProjectionService _projections;
     private readonly IQuickPicksService _quickPicks;
     private readonly IHistoricalGameScoreProvider _gameScores;
     private readonly IQuarterbackFormProvider _quarterbackForm;
@@ -38,7 +38,7 @@ public sealed class DataRefreshBackgroundService : BackgroundService
         INewsProvider news,
         IPlayerInjuryService injuries,
         IIntelligenceService intelligence,
-        IProjectionService projections,
+        IGlobalProjectionService projections,
         IQuickPicksService quickPicks,
         IHistoricalGameScoreProvider gameScores,
         IQuarterbackFormProvider quarterbackForm,

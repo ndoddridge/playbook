@@ -5,41 +5,80 @@ using Playbook.Web.Features.QuickPicks.Interfaces;
 
 namespace Playbook.Web.Features.QuickPicks.Services;
 
+/// <summary>
+/// Per-user (scoped) view over the shared Quick Picks engine. The engine tracks one "selected week";
+/// each user's board remembers their own choice and re-applies it, under a shared gate, before every
+/// read — so one customer switching weeks never changes what another customer sees.
+/// </summary>
 public sealed class QuickPicksBoard : IQuickPicksBoard
 {
+    private static readonly object Gate = new();
+
     private readonly IQuickPicksService _service;
+    private NflWeekRef? _myWeek;
 
     public QuickPicksBoard(IQuickPicksService service)
     {
         _service = service;
     }
 
-    public NflWeekRef? SelectedWeek => _service.SelectedWeek;
+    private T Read<T>(Func<T> read)
+    {
+        lock (Gate)
+        {
+            if (_myWeek is not null && !Equals(_service.SelectedWeek, _myWeek))
+            {
+                _service.TrySelectWeek(_myWeek);
+            }
 
-    public IReadOnlyList<NflSlate> AvailableSlates => _service.AvailableSlates;
+            return read();
+        }
+    }
 
-    public IReadOnlyList<NflWeekRef> AvailableWeeks => _service.AvailableWeeks;
+    public NflWeekRef? SelectedWeek => Read(() => _service.SelectedWeek);
 
-    public IReadOnlyList<NflWeekRef> CanonicalWeeks => _service.CanonicalWeeks;
+    public IReadOnlyList<NflSlate> AvailableSlates => Read(() => _service.AvailableSlates);
 
-    public NflSeasonContext? SeasonContext => _service.SeasonContext;
+    public IReadOnlyList<NflWeekRef> AvailableWeeks => Read(() => _service.AvailableWeeks);
 
-    public IReadOnlyList<Prediction> GetTopPicks(int count) => _service.GetTopPicks(count);
+    public IReadOnlyList<NflWeekRef> CanonicalWeeks => Read(() => _service.CanonicalWeeks);
+
+    public NflSeasonContext? SeasonContext => Read(() => _service.SeasonContext);
+
+    public IReadOnlyList<Prediction> GetTopPicks(int count) => Read(() => _service.GetTopPicks(count));
 
     public IReadOnlyList<Prediction> GetWatchPicks(int count, int topCount) =>
-        _service.GetWatchPicks(count, topCount);
+        Read(() => _service.GetWatchPicks(count, topCount));
 
-    public IReadOnlyList<Prediction> SlatePredictions => _service.GetSlatePredictions();
+    public IReadOnlyList<Prediction> SlatePredictions => Read(() => _service.GetSlatePredictions());
 
-    public IReadOnlyList<FootballEvent> Upcoming => _service.GetUpcomingEvents();
+    public IReadOnlyList<FootballEvent> Upcoming => Read(() => _service.GetUpcomingEvents());
 
     public (int GameMarketLines, int PlayerPropLines) GetSlateMarketCounts() =>
-        _service.GetSlateMarketCounts();
+        Read(() => _service.GetSlateMarketCounts());
 
     public IReadOnlyList<Playbook.Core.Predictions.Models.GameMarketAnalysis> GetGameMarketAnalyses() =>
-        _service.GetGameMarketAnalyses();
+        Read(() => _service.GetGameMarketAnalyses());
 
-    public bool TrySelectWeek(NflWeekRef week) => _service.TrySelectWeek(week);
+    public bool TrySelectWeek(NflWeekRef week)
+    {
+        lock (Gate)
+        {
+            var ok = _service.TrySelectWeek(week);
+            if (ok)
+            {
+                _myWeek = week;
+            }
 
-    public void Refresh() => _service.Refresh();
+            return ok;
+        }
+    }
+
+    public void Refresh()
+    {
+        lock (Gate)
+        {
+            _service.Refresh();
+        }
+    }
 }

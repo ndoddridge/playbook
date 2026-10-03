@@ -26,6 +26,7 @@
     <ProjectReference Include="..\..\src\Playbook.Core\Playbook.Core.csproj" />
     <ProjectReference Include="..\..\src\Playbook.Application\Playbook.Application.csproj" />
     <ProjectReference Include="..\..\src\Playbook.Infrastructure\Playbook.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\Playbook.Web\Playbook.Web.csproj" />
   </ItemGroup>
 
 </Project>

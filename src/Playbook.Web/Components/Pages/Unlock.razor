@@ -1,0 +1,64 @@
+@page "/unlock"
+@attribute [ExcludeFromInteractiveRouting]
+@attribute [Microsoft.AspNetCore.Authorization.AllowAnonymous]
+@layout Layout.PublicLayout
+@using Microsoft.Extensions.Options
+@using Playbook.Application.Access
+@inject IOptions<AccessOptions> Access
+
+<PageTitle>Unlock Playbook</PageTitle>
+<HeadContent><meta name="robots" content="noindex" /></HeadContent>
+
+<section class="pub-section pub-narrow">
+    <h1>Unlock Playbook</h1>
+    <p>Enter the license key from your purchase email.</p>
+
+    @if (ErrorMessage is { } message)
+    {
+        <p class="pub-alert" role="alert">@message</p>
+    }
+
+    <form method="post" action="/access/unlock" class="pub-form">
+        <AntiforgeryToken />
+        <input type="hidden" name="returnUrl" value="@ReturnUrl" />
+        <label for="licenseKey">License key</label>
+        <input id="licenseKey" name="licenseKey" type="text" autocomplete="off" autocapitalize="off"
+               spellcheck="false" required maxlength="200" placeholder="XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX" />
+        <button type="submit" class="pub-btn pub-btn--primary pub-btn--lg">Unlock</button>
+    </form>
+
+    <p class="pub-fine">
+        Didn't get a key? Check your spam folder, or find it in your Lemon Squeezy receipt.
+        @if (!string.IsNullOrWhiteSpace(Access.Value.SupportEmail))
+        {
+            <text> Still stuck? <a href="mailto:@Access.Value.SupportEmail">@Access.Value.SupportEmail</a>.</text>
+        }
+    </p>
+    @if (!string.IsNullOrWhiteSpace(Access.Value.CheckoutUrl))
+    {
+        <p class="pub-fine">No license yet? <a href="@Access.Value.CheckoutUrl">Get access for @Access.Value.PriceLabel</a>.</p>
+    }
+</section>
+
+@code {
+    [SupplyParameterFromQuery(Name = "error")]
+    private string? Error { get; set; }
+
+    [SupplyParameterFromQuery(Name = "ReturnUrl")]
+    private string? ReturnUrlQuery { get; set; }
+
+    private string ReturnUrl =>
+        !string.IsNullOrEmpty(ReturnUrlQuery) && ReturnUrlQuery[0] == '/' && !ReturnUrlQuery.StartsWith("//") && !ReturnUrlQuery.StartsWith("/\\")
+            ? ReturnUrlQuery
+            : "/dashboard";
+
+    private string? ErrorMessage => Error switch
+    {
+        "invalid" => "That license key isn't valid. Check it and try again.",
+        "activationlimit" => "This license key is already in use on the maximum number of devices. Contact support and we'll free one up.",
+        "expired" => "That page was open too long. Please enter your key again.",
+        "unavailable" => "We couldn't reach the license server. Please try again in a minute.",
+        null or "" => null,
+        _ => "Something went wrong. Please try again."
+    };
+}

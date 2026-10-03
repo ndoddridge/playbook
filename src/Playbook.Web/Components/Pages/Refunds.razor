@@ -1,0 +1,17 @@
+@page "/refunds"
+@attribute [ExcludeFromInteractiveRouting]
+@attribute [Microsoft.AspNetCore.Authorization.AllowAnonymous]
+@layout Layout.PublicLayout
+@using Microsoft.Extensions.Options
+@using Playbook.Application.Access
+@inject IOptions<AccessOptions> Access
+
+<PageTitle>Refund Policy — Playbook</PageTitle>
+
+<section class="pub-section pub-narrow pub-legal">
+    <h1>Refund Policy</h1>
+    <p>If Playbook isn't right for you, ask for a refund within <strong>14 days</strong> of purchase and you'll get your
+       money back — no questions asked.</p>
+    <p>Request it from your Lemon Squeezy receipt email, or @if (!string.IsNullOrWhiteSpace(Access.Value.SupportEmail)) { <text>email <a href="mailto:@Access.Value.SupportEmail">@Access.Value.SupportEmail</a></text> } else { <text>contact us</text> }.
+       When a purchase is refunded, its license key is deactivated automatically.</p>
+</section>

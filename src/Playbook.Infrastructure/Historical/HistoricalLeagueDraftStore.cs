@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Playbook.Application.Historical;
+using Playbook.Application.Users;
 using Playbook.Core.Historical;
 
 namespace Playbook.Infrastructure.Historical;
@@ -10,16 +11,18 @@ public sealed class HistoricalLeagueDraftStore : IHistoricalLeagueDraftStore
 {
     private static readonly JsonSerializerOptions Options = new() { WriteIndented = true, PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
     private readonly ILogger<HistoricalLeagueDraftStore> _logger;
-    private readonly object _gate = new();
+    private readonly object _gate;
     public string StorePath { get; }
 
-    public HistoricalLeagueDraftStore(ILogger<HistoricalLeagueDraftStore> logger, string? fileName = null)
+    public HistoricalLeagueDraftStore(
+        ILogger<HistoricalLeagueDraftStore> logger,
+        string? fileName = null,
+        IUserContext? userContext = null,
+        string? rootOverride = null)
     {
         _logger = logger;
-        var root = Environment.GetEnvironmentVariable("PLAYBOOK_DATA_DIR");
-        root = string.IsNullOrWhiteSpace(root) ? Path.Combine(AppContext.BaseDirectory, "data") : root;
-        Directory.CreateDirectory(root);
-        StorePath = Path.Combine(root, fileName ?? "historical-league-drafts.json");
+        StorePath = UserDataPaths.UserFile(rootOverride ?? UserDataPaths.DataRoot(), userContext, fileName ?? "historical-league-drafts.json");
+        _gate = UserDataPaths.LockFor(StorePath);
     }
 
     public IReadOnlyList<HistoricalLeagueDraft> Load()

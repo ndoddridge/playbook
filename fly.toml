@@ -9,30 +9,42 @@ primary_region = 'iad'
 [build]
 
 [deploy]
-  # Single-machine personal app with one volume — "immediate" stops the old
-  # machine before starting the new one, so only one volume is ever needed
-  # (a rolling deploy would briefly run two machines, each wanting its own).
+  # Single machine with one volume — "immediate" stops the old machine before starting the new
+  # one, so only one volume is ever needed (a rolling deploy would briefly run two machines, each
+  # wanting its own). Per-customer data lives on that volume, so do NOT scale to >1 machine
+  # without first moving the file-backed stores to a shared database.
   strategy = 'immediate'
 
 [env]
   # Persistent volume mount (below) — survives redeploys/restarts, unlike the container's own
-  # ephemeral filesystem. Uploaded/connected league data lives here.
+  # ephemeral filesystem. Customers' connected leagues/drafts, sign-in keys, revocations and the
+  # downloaded NFL data caches all live here.
   PLAYBOOK_DATA_DIR = '/data'
+  ASPNETCORE_ENVIRONMENT = 'Production'
+  # Non-secret payment settings. Secrets (Access__WebhookSecret etc.) are set with `fly secrets set`.
+  # See docs/DEPLOYMENT.md.
 
 [http_service]
   internal_port = 8080
   force_https = true
-  auto_stop_machines = 'stop'
+  # Always on: customers' sessions are WebSocket circuits, and a paid product shouldn't cold-start.
+  auto_stop_machines = 'off'
   auto_start_machines = true
-  min_machines_running = 0
+  min_machines_running = 1
   processes = ['app']
+
+  [[http_service.checks]]
+    method = 'GET'
+    path = '/healthz'
+    interval = '15s'
+    timeout = '5s'
+    grace_period = '60s'
 
 [[mounts]]
   source = 'playbook_data'
   destination = '/data'
 
 [[vm]]
-  memory = '1gb'
   cpu_kind = 'shared'
   cpus = 1
   memory_mb = 1024

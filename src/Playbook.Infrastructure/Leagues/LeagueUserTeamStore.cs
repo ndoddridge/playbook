@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Playbook.Application.Leagues;
+using Playbook.Application.Users;
 
 namespace Playbook.Infrastructure.Leagues;
 
@@ -17,21 +18,21 @@ public sealed class LeagueUserTeamStore : ILeagueUserTeamStore
 
     private readonly ILogger<LeagueUserTeamStore> _logger;
     private readonly string _path;
-    private readonly object _gate = new();
+    private readonly object _gate;
 
-    public LeagueUserTeamStore(ILogger<LeagueUserTeamStore> logger, string? fileName = null)
+    public LeagueUserTeamStore(
+        ILogger<LeagueUserTeamStore> logger,
+        string? fileName = null,
+        IUserContext? userContext = null,
+        string? rootOverride = null)
     {
         _logger = logger;
-        // PLAYBOOK_DATA_DIR points at a mounted persistent volume in production (see fly.toml) so
-        // connected leagues survive redeploys; falls back to the app's own directory locally.
-        var configuredRoot = Environment.GetEnvironmentVariable("PLAYBOOK_DATA_DIR");
-        var root = string.IsNullOrWhiteSpace(configuredRoot)
-            ? Path.Combine(AppContext.BaseDirectory, "data")
-            : configuredRoot;
-        Directory.CreateDirectory(root);
-        _path = Path.Combine(root, string.IsNullOrWhiteSpace(fileName)
-            ? "league-user-teams.json"
-            : fileName);
+        // Per-user file under PLAYBOOK_DATA_DIR (a persistent volume in production).
+        _path = UserDataPaths.UserFile(
+            rootOverride ?? UserDataPaths.DataRoot(),
+            userContext,
+            string.IsNullOrWhiteSpace(fileName) ? "league-user-teams.json" : fileName);
+        _gate = UserDataPaths.LockFor(_path);
     }
 
     public string StorePath => _path;

@@ -1,0 +1,21 @@
+@page "/welcome"
+@attribute [ExcludeFromInteractiveRouting]
+@attribute [Microsoft.AspNetCore.Authorization.AllowAnonymous]
+@layout Layout.PublicLayout
+
+<PageTitle>Thanks — your license is on its way</PageTitle>
+<HeadContent><meta name="robots" content="noindex" /></HeadContent>
+
+<section class="pub-section pub-narrow">
+    <h1>Thank you!</h1>
+    <p>
+        Your purchase went through. Lemon Squeezy is emailing your <strong>license key</strong> now — it usually
+        arrives within a minute (check spam if not).
+    </p>
+    <ol class="pub-list pub-steps">
+        <li>Copy the license key from the email.</li>
+        <li>Open the unlock page and paste it in.</li>
+        <li>Connect your Sleeper league and start getting recommendations.</li>
+    </ol>
+    <p><a class="pub-btn pub-btn--primary pub-btn--lg" href="/unlock" data-enhance-nav="false">Enter my license key</a></p>
+</section>

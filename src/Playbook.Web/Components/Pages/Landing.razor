@@ -1,0 +1,99 @@
+@page "/"
+@attribute [ExcludeFromInteractiveRouting]
+@attribute [Microsoft.AspNetCore.Authorization.AllowAnonymous]
+@layout Layout.PublicLayout
+@using Microsoft.Extensions.Options
+@using Playbook.Application.Access
+@inject IOptions<AccessOptions> Access
+
+<PageTitle>Playbook — explainable fantasy football decisions</PageTitle>
+<HeadContent>
+    <meta name="description" content="Playbook turns live NFL data into start/sit, waiver, draft and matchup recommendations for your Sleeper league — and shows its reasoning for every one. One-time purchase." />
+    <meta property="og:title" content="Playbook — explainable fantasy football decisions" />
+    <meta property="og:description" content="Connect your Sleeper league and get clear, explained recommendations. One-time purchase." />
+    <meta property="og:type" content="website" />
+</HeadContent>
+
+<section class="pub-hero">
+    <p class="pub-eyebrow">Fantasy football intelligence</p>
+    <h1>Know the highest-impact move in your league — and exactly why.</h1>
+    <p class="pub-lede">
+        Playbook connects to your Sleeper league, reads live NFL stats, injuries and news, and tells you what to do
+        with your roster this week. No black boxes: every recommendation comes with its evidence and a confidence level.
+    </p>
+    <div class="pub-cta">
+        <AuthorizeView>
+            <Authorized>
+                <a class="pub-btn pub-btn--primary pub-btn--lg" href="/dashboard" data-enhance-nav="false">Open Playbook</a>
+            </Authorized>
+            <NotAuthorized>
+                @if (!string.IsNullOrWhiteSpace(Access.Value.CheckoutUrl))
+                {
+                    <a class="pub-btn pub-btn--primary pub-btn--lg" href="@Access.Value.CheckoutUrl">Get access · @Access.Value.PriceLabel one-time</a>
+                }
+                <a class="pub-btn pub-btn--lg" href="/unlock" data-enhance-nav="false">I already have a key</a>
+            </NotAuthorized>
+        </AuthorizeView>
+    </div>
+    <p class="pub-fine">Secure checkout by Lemon Squeezy · License key delivered by email · 14-day refund</p>
+</section>
+
+<section class="pub-section">
+    <h2>What you get</h2>
+    <div class="pub-grid">
+        <article class="pub-card">
+            <h3>Start / sit &amp; game plan</h3>
+            <p>Your lineup decisions for the week, scored against your league's scoring and your opponent's actual roster.</p>
+        </article>
+        <article class="pub-card">
+            <h3>Drop / pickup</h3>
+            <p>Who to cut and who to add, with the trade-off spelled out — including dynasty and taxi-squad leagues.</p>
+        </article>
+        <article class="pub-card">
+            <h3>Draft assistant</h3>
+            <p>Follow a live Sleeper draft by link. Get best-available guidance that respects roster construction, bye weeks and how your leaguemates actually draft.</p>
+        </article>
+        <article class="pub-card">
+            <h3>Player intelligence</h3>
+            <p>Injuries, usage, opportunity and news distilled into a health, usage and trend profile for every relevant player.</p>
+        </article>
+        <article class="pub-card">
+            <h3>League history</h3>
+            <p>Import past drafts to learn your league's tendencies and how likely a target is to still be there at your next pick.</p>
+        </article>
+        <article class="pub-card">
+            <h3>Market analysis</h3>
+            <p>Game-line and player-prop analysis built on the same projections. Information only — Playbook never places bets.</p>
+        </article>
+    </div>
+</section>
+
+<section class="pub-section">
+    <h2>Built to be trusted</h2>
+    <ul class="pub-list">
+        <li><strong>Explainable.</strong> Every recommendation lists the facts behind it and how confident Playbook is.</li>
+        <li><strong>Honest about gaps.</strong> If the data isn't there, Playbook says so instead of inventing a number.</li>
+        <li><strong>Evaluated against history.</strong> Projection and decision logic is back-tested on past NFL seasons before it ships.</li>
+        <li><strong>Private.</strong> Playbook reads your league through Sleeper's public API. We never ask for your Sleeper password.</li>
+    </ul>
+</section>
+
+<section class="pub-section" id="faq">
+    <h2>Questions</h2>
+    <details class="pub-faq"><summary>How does payment and access work?</summary>
+        <p>You pay once through Lemon Squeezy's secure checkout. They email you a license key; enter it on the unlock page and you're in — on up to several of your devices. There's no subscription and no account to create.</p></details>
+    <details class="pub-faq"><summary>Which platforms are supported?</summary>
+        <p>Sleeper leagues (redraft and dynasty) and Sleeper mock drafts. Other platforms aren't supported yet.</p></details>
+    <details class="pub-faq"><summary>Does Playbook guarantee wins?</summary>
+        <p>No. Football is uncertain and Playbook gives you better-informed, clearly explained options — not guarantees. Nothing here is gambling or financial advice.</p></details>
+    <details class="pub-faq"><summary>What if it isn't for me?</summary>
+        <p>Request a refund within 14 days and your license is deactivated. See the <a href="/refunds">refund policy</a>.</p></details>
+</section>
+
+<section class="pub-section pub-final">
+    <h2>Make better calls this week.</h2>
+    @if (!string.IsNullOrWhiteSpace(Access.Value.CheckoutUrl))
+    {
+        <a class="pub-btn pub-btn--primary pub-btn--lg" href="@Access.Value.CheckoutUrl">Get access · @Access.Value.PriceLabel</a>
+    }
+</section>

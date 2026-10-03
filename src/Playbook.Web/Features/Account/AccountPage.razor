@@ -1,0 +1,60 @@
+@page "/account"
+@using Microsoft.Extensions.Options
+@using Playbook.Application.Access
+@using Playbook.Application.Users
+@inject IUserContext User
+@inject IOptions<AccessOptions> Access
+
+<PageTitle>Account — Playbook</PageTitle>
+
+<section class="pb-page">
+    <header class="pb-page__header">
+        <h1 class="pb-page__title">Account</h1>
+        <p class="pb-page__subtitle">Your Playbook license and data.</p>
+    </header>
+
+    <article class="pb-card account-card">
+        <h2 class="pb-card__title">License</h2>
+        <div class="pb-card__body">
+            <div class="pb-meta-row">
+                <span class="pb-meta-label">Plan</span>
+                <span class="pb-meta-value pb-meta-value--live">Playbook — one-time purchase</span>
+            </div>
+            @if (Access.Value.Mode == AccessMode.LicenseRequired)
+            {
+                <div class="pb-meta-row">
+                    <span class="pb-meta-label">Account ID</span>
+                    <span class="pb-meta-value"><code>@User.UserId</code></span>
+                </div>
+                <form method="post" action="/access/logout">
+                    <button type="submit" class="pub-btn">Sign out of this device</button>
+                </form>
+            }
+            else
+            {
+                <p class="player-section__muted">Running without a paywall (local mode).</p>
+            }
+        </div>
+    </article>
+
+    <article class="pb-card account-card" style="margin-top: var(--pb-space-4);">
+        <h2 class="pb-card__title">Help &amp; legal</h2>
+        <div class="pb-card__body">
+            <p>
+                @if (!string.IsNullOrWhiteSpace(Access.Value.SupportEmail))
+                {
+                    <text>Questions or problems? <a href="mailto:@Access.Value.SupportEmail">@Access.Value.SupportEmail</a>. Include your Account ID above.</text>
+                }
+                else
+                {
+                    <text>Questions or problems? Use the contact option on your Lemon Squeezy receipt.</text>
+                }
+            </p>
+            <p>
+                <a href="/terms" target="_blank" rel="noopener">Terms</a> ·
+                <a href="/privacy" target="_blank" rel="noopener">Privacy</a> ·
+                <a href="/refunds" target="_blank" rel="noopener">Refunds</a>
+            </p>
+        </div>
+    </article>
+</section>

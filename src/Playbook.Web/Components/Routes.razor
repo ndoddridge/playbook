@@ -1,6 +1,18 @@
-﻿<Router AppAssembly="typeof(Program).Assembly">
+<Router AppAssembly="typeof(Program).Assembly">
     <Found Context="routeData">
-        <RouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)" />
+        <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)">
+            <NotAuthorized>
+                <RedirectToUnlock />
+            </NotAuthorized>
+        </AuthorizeRouteView>
         <FocusOnNavigate RouteData="routeData" Selector="h1" />
     </Found>
+    <NotFound>
+        <LayoutView Layout="typeof(Layout.PublicLayout)">
+            <section class="pub-section pub-narrow">
+                <h1>Page not found</h1>
+                <p>That page doesn't exist. <a href="/" data-enhance-nav="false">Back to Playbook</a>.</p>
+            </section>
+        </LayoutView>
+    </NotFound>
 </Router>

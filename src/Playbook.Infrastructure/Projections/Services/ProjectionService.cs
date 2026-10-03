@@ -17,7 +17,7 @@ namespace Playbook.Infrastructure.Projections.Services;
 /// statistics + intelligence + optional matchup/environment + league context.
 /// Invalidates automatically when the active league/team context changes.
 /// </summary>
-public sealed class ProjectionService : IProjectionService, IDisposable
+public sealed class ProjectionService : IGlobalProjectionService, IDisposable
 {
     private readonly IProjectionEngine _engine;
     private readonly IPlayerProductionProvider _production;
@@ -30,9 +30,11 @@ public sealed class ProjectionService : IProjectionService, IDisposable
     private readonly ILeagueState _leagueState;
     private readonly ProjectionSyncStatus _status;
     private readonly ILogger<ProjectionService> _logger;
+    private readonly ProjectionCache _cache;
     private readonly object _gate = new();
 
     private IReadOnlyList<PlayerProjection> _projections = [];
+    private int _loadedVersion;
     private Dictionary<Guid, PlayerProjection> _byPlayer = new();
     private bool _loaded;
     private Guid? _projectedLeagueId;
@@ -49,8 +51,10 @@ public sealed class ProjectionService : IProjectionService, IDisposable
         IPlayerService players,
         ILeagueState leagueState,
         ProjectionSyncStatus status,
-        ILogger<ProjectionService> logger)
+        ILogger<ProjectionService> logger,
+        ProjectionCache? cache = null)
     {
+        _cache = cache ?? new ProjectionCache();
         _engine = engine;
         _production = production;
         _intelligence = intelligence;
@@ -150,6 +154,7 @@ public sealed class ProjectionService : IProjectionService, IDisposable
 
     public void Refresh()
     {
+        _cache.BumpVersion();
         lock (_gate)
         {
             ProjectLocked();
@@ -177,6 +182,7 @@ public sealed class ProjectionService : IProjectionService, IDisposable
         var week = league?.CurrentWeek ?? 1;
 
         if (_loaded &&
+            _loadedVersion == _cache.Version &&
             _projectedLeagueId == leagueId &&
             _scoringSnapshot.ScoringType == scoring &&
             _scoringSnapshot.Week == week)
@@ -187,6 +193,7 @@ public sealed class ProjectionService : IProjectionService, IDisposable
         lock (_gate)
         {
             if (_loaded &&
+                _loadedVersion == _cache.Version &&
                 _projectedLeagueId == leagueId &&
                 _scoringSnapshot.ScoringType == scoring &&
                 _scoringSnapshot.Week == week)
@@ -203,13 +210,27 @@ public sealed class ProjectionService : IProjectionService, IDisposable
     {
         var league = _leagueState.CurrentLeague;
         var context = ProjectionLeagueContext.FromLeague(league);
-        var (projections, watch) = BuildProjectionsTimed(context);
+        var version = _cache.Version;
+        var key = (context.LeagueId, context.ScoringType, context.CurrentWeek, context.Season, context.NumberOfTeams);
+        IReadOnlyList<PlayerProjection> projections;
+        if (_cache.TryGet(key, version, out var shared))
+        {
+            // Another user (or this one earlier) already projected this exact league context.
+            projections = shared;
+        }
+        else
+        {
+            Stopwatch watch;
+            (projections, watch) = BuildProjectionsTimed(context);
+            _cache.Set(key, version, projections);
+            RecordStatus(projections, watch);
+        }
 
+        _loadedVersion = version;
         _projections = projections;
         _byPlayer = projections.ToDictionary(p => p.PlayerId);
         _projectedLeagueId = context.LeagueId;
         _scoringSnapshot = new ScoringTypeSnapshot(context.ScoringType, context.CurrentWeek);
-        RecordStatus(projections, watch);
     }
 
     /// <summary>
@@ -319,4 +340,50 @@ public sealed class ProjectionService : IProjectionService, IDisposable
     }
 
     private readonly record struct ScoringTypeSnapshot(Core.Leagues.ScoringType ScoringType, int Week);
+}
+
+/// <summary>
+/// Shared (singleton) store of computed projections per league context, so concurrent users in the
+/// same scoring/week don't each recompute every player. <see cref="BumpVersion"/> (called on every
+/// data refresh) invalidates all entries.
+/// </summary>
+public sealed class ProjectionCache
+{
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<
+        (Guid? LeagueId, Core.Leagues.ScoringType Scoring, int Week, int Season, int Teams),
+        (int Version, IReadOnlyList<PlayerProjection> Projections)> _entries = new();
+
+    private int _version;
+
+    public int Version => Volatile.Read(ref _version);
+
+    public void BumpVersion() => Interlocked.Increment(ref _version);
+
+    internal bool TryGet(
+        (Guid? LeagueId, Core.Leagues.ScoringType Scoring, int Week, int Season, int Teams) key,
+        int version,
+        out IReadOnlyList<PlayerProjection> projections)
+    {
+        if (_entries.TryGetValue(key, out var entry) && entry.Version == version)
+        {
+            projections = entry.Projections;
+            return true;
+        }
+
+        projections = [];
+        return false;
+    }
+
+    internal void Set(
+        (Guid? LeagueId, Core.Leagues.ScoringType Scoring, int Week, int Season, int Teams) key,
+        int version,
+        IReadOnlyList<PlayerProjection> projections)
+    {
+        if (_entries.Count > 64)
+        {
+            _entries.Clear();
+        }
+
+        _entries[key] = (version, projections);
+    }
 }

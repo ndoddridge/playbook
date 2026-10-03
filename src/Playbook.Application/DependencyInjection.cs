@@ -11,8 +11,8 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddApplication(this IServiceCollection services)
     {
-        services.AddSingleton<ILeagueState, LeagueStateService>();
-        services.AddSingleton<IPlayerOverlayState, PlayerOverlayState>();
+        services.AddScoped<ILeagueState, LeagueStateService>();
+        services.AddScoped<IPlayerOverlayState, PlayerOverlayState>();
         return services;
     }
 }

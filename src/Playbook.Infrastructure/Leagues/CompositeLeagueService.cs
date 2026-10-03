@@ -23,8 +23,13 @@ public sealed class CompositeLeagueService : ILeagueService
     private readonly ILogger<CompositeLeagueService> _logger;
     private readonly bool _mockEnabled;
     private readonly object _gate = new();
-    private readonly ConcurrentDictionary<string, Guid> _externalIdToLeagueId =
+
+    // Shared across users: one stable Guid per Sleeper league id, and a short-lived snapshot cache so
+    // a new circuit restoring saved leagues doesn't re-hit Sleeper for each one. All user-specific
+    // state (connected leagues, current league, roster choice) lives on the instance (scoped).
+    private static readonly ConcurrentDictionary<string, Guid> _externalIdToLeagueId =
         new(StringComparer.Ordinal);
+    private readonly LeagueSnapshotCache _snapshotCache;
 
     private readonly List<League> _liveLeagues = [];
     private readonly Dictionary<Guid, IReadOnlyList<FantasyTeam>> _liveTeams = new();
@@ -36,8 +41,10 @@ public sealed class CompositeLeagueService : ILeagueService
         ILeagueUserTeamStore userTeamStore,
         LeagueSyncStatus syncStatus,
         IOptions<LeagueOptions> options,
-        ILogger<CompositeLeagueService> logger)
+        ILogger<CompositeLeagueService> logger,
+        LeagueSnapshotCache? snapshotCache = null)
     {
+        _snapshotCache = snapshotCache ?? new LeagueSnapshotCache();
         _mock = mock;
         _sleeperClient = sleeperClient;
         _userTeamStore = userTeamStore;
@@ -198,9 +205,7 @@ public sealed class CompositeLeagueService : ILeagueService
 
         try
         {
-            var snapshot = await _sleeperClient
-                .GetLeagueSnapshotAsync(normalizedId, cancellationToken)
-                .ConfigureAwait(false);
+            var snapshot = await GetSnapshotAsync(normalizedId, cancellationToken).ConfigureAwait(false);
 
             if (snapshot is null)
             {
@@ -325,6 +330,22 @@ public sealed class CompositeLeagueService : ILeagueService
         }
     }
 
+    private async Task<SleeperLeagueSnapshot?> GetSnapshotAsync(string externalId, CancellationToken cancellationToken)
+    {
+        if (_snapshotCache.TryGet(externalId, out var cached))
+        {
+            return cached;
+        }
+
+        var fresh = await _sleeperClient.GetLeagueSnapshotAsync(externalId, cancellationToken).ConfigureAwait(false);
+        if (fresh is not null)
+        {
+            _snapshotCache.Set(externalId, fresh);
+        }
+
+        return fresh;
+    }
+
     private static League CloneWithSelectedRoster(League league, int rosterId) =>
         new()
         {
@@ -373,4 +394,38 @@ public sealed class CompositeLeagueService : ILeagueService
             .Select(SleeperPlayerIds.ToPlaybookId)
             .Distinct()
             .ToList();
+}
+
+/// <summary>
+/// Short-lived shared cache of Sleeper league snapshots, so each new session restoring a customer's
+/// saved leagues (and several customers in the same league) don't each re-hit Sleeper.
+/// </summary>
+public sealed class LeagueSnapshotCache
+{
+    private static readonly TimeSpan Ttl = TimeSpan.FromMinutes(3);
+
+    private readonly ConcurrentDictionary<string, (DateTimeOffset At, SleeperLeagueSnapshot Snapshot)> _entries =
+        new(StringComparer.Ordinal);
+
+    public bool TryGet(string externalId, out SleeperLeagueSnapshot snapshot)
+    {
+        if (_entries.TryGetValue(externalId, out var entry) && DateTimeOffset.UtcNow - entry.At < Ttl)
+        {
+            snapshot = entry.Snapshot;
+            return true;
+        }
+
+        snapshot = null!;
+        return false;
+    }
+
+    public void Set(string externalId, SleeperLeagueSnapshot snapshot)
+    {
+        if (_entries.Count > 500)
+        {
+            _entries.Clear();
+        }
+
+        _entries[externalId] = (DateTimeOffset.UtcNow, snapshot);
+    }
 }

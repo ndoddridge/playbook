@@ -326,3 +326,11 @@
         max-width: 8.5rem;
     }
 }
+
+.app-sidebar__footer a {
+    color: var(--pb-color-text-muted);
+}
+
+.app-sidebar__footer a:hover {
+    color: var(--pb-color-text);
+}

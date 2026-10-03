@@ -21,7 +21,8 @@ internal static class TestServiceFactory
         string propLinesProvider = "Mock",
         string? oddsApiKey = "",
         string? oddsApiBaseUrl = null,
-        bool allowMockFallback = true)
+        bool allowMockFallback = true,
+        bool validateScopes = false)
     {
         var values = new Dictionary<string, string?>
         {
@@ -68,7 +69,9 @@ internal static class TestServiceFactory
         return services.BuildServiceProvider(new ServiceProviderOptions
         {
             ValidateOnBuild = true,
-            ValidateScopes = true
+            // Most tests resolve per-user (scoped) services straight from the root provider, i.e. one
+            // implicit user. DependencyInjectionTests turns this on to prove no singleton captures them.
+            ValidateScopes = validateScopes
         });
     }
 }

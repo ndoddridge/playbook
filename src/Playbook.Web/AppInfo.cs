@@ -1,11 +1,11 @@
 namespace Playbook.Web;
 
 /// <summary>
-/// Shared application identity for developer-facing chrome (footer, status cards).
+/// Shared application identity for footer chrome and diagnostics.
 /// </summary>
 public static class AppInfo
 {
-    public const string Version = "0.1.0-dev";
+    public const string Version = "1.0.0";
 
     public const string DisplayName = "Playbook";
 

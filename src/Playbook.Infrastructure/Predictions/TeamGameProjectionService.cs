@@ -30,7 +30,7 @@ namespace Playbook.Infrastructure.Predictions;
 public sealed class TeamGameProjectionService : ITeamGameProjectionService
 {
     private readonly IPlayerService _playerService;
-    private readonly IProjectionService _projectionService;
+    private readonly IGlobalProjectionService _projectionService;
     private readonly IPlayerInjuryService _injuryService;
     private readonly IIntelligenceService _intelligenceService;
     private readonly IPlayerStatisticalContextService _statsService;
@@ -47,7 +47,7 @@ public sealed class TeamGameProjectionService : ITeamGameProjectionService
 
     public TeamGameProjectionService(
         IPlayerService playerService,
-        IProjectionService projectionService,
+        IGlobalProjectionService projectionService,
         IPlayerInjuryService injuryService,
         IIntelligenceService intelligenceService,
         IPlayerStatisticalContextService statsService,

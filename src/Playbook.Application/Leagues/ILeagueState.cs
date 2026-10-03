@@ -3,7 +3,7 @@ using Playbook.Core.Leagues;
 namespace Playbook.Application.Leagues;
 
 /// <summary>
-/// Global application state for the currently selected fantasy league.
+/// Per-user (scoped) application state for the currently selected fantasy league.
 /// Engines and UI subscribe to <see cref="Changed"/> for live updates.
 /// </summary>
 public interface ILeagueState
@@ -35,4 +35,10 @@ public interface ILeagueState
     Task<LeagueConnectResult> ConnectSleeperLeagueAsync(
         string sleeperLeagueId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Re-connects the Sleeper leagues this user connected before (ids are persisted per user), so
+    /// their teams are back after a new session, restart or redeploy. Default: nothing to restore.
+    /// </summary>
+    Task RestoreSavedLeaguesAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
 }

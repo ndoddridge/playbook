@@ -1,0 +1,44 @@
+@inherits LayoutComponentBase
+@using Microsoft.Extensions.Options
+@using Playbook.Application.Access
+@inject IOptions<AccessOptions> Access
+
+<div class="pub-shell">
+    <header class="pub-header">
+        <a class="pub-brand" href="/" data-enhance-nav="false">
+            <span class="app-sidebar__mark">PB</span>
+            <span class="app-sidebar__name">Playbook</span>
+        </a>
+        <nav class="pub-nav" aria-label="Site">
+            <AuthorizeView>
+                <Authorized>
+                    <a class="pub-btn pub-btn--primary" href="/dashboard" data-enhance-nav="false">Open Playbook</a>
+                </Authorized>
+                <NotAuthorized>
+                    <a class="pub-link" href="/unlock" data-enhance-nav="false">I have a license key</a>
+                    @if (!string.IsNullOrWhiteSpace(Access.Value.CheckoutUrl))
+                    {
+                        <a class="pub-btn pub-btn--primary" href="@Access.Value.CheckoutUrl">Get access · @Access.Value.PriceLabel</a>
+                    }
+                </NotAuthorized>
+            </AuthorizeView>
+        </nav>
+    </header>
+
+    <main class="pub-main">
+        @Body
+    </main>
+
+    <footer class="pub-footer">
+        <span>© @DateTime.UtcNow.Year Playbook</span>
+        <nav aria-label="Legal">
+            <a href="/terms">Terms</a>
+            <a href="/privacy">Privacy</a>
+            <a href="/refunds">Refunds</a>
+            @if (!string.IsNullOrWhiteSpace(Access.Value.SupportEmail))
+            {
+                <a href="mailto:@Access.Value.SupportEmail">Support</a>
+            }
+        </nav>
+    </footer>
+</div>

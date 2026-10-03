@@ -1,3 +1,4 @@
+using Playbook.Application.Users;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Playbook.Application.Research;
@@ -32,7 +33,7 @@ public sealed class PredictionResearchStore : IPredictionResearchStore
         // AppContext.BaseDirectory/data.
         var configuredRoot = rootOverride ?? Environment.GetEnvironmentVariable("PLAYBOOK_DATA_DIR");
         var root = string.IsNullOrWhiteSpace(configuredRoot)
-            ? Path.Combine(AppContext.BaseDirectory, "data")
+            ? UserDataPaths.DataRoot()
             : configuredRoot;
         var researchRoot = Path.Combine(root, "research");
         Directory.CreateDirectory(researchRoot);

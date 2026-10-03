@@ -42,3 +42,12 @@ public interface IProjectionService
     /// </summary>
     void Invalidate();
 }
+
+/// <summary>
+/// Projection service that is independent of any customer's league (default PPR context). Shared
+/// singleton services — Quick Picks, background refresh — use this; per-user code uses
+/// <see cref="IProjectionService"/>, which follows that user's current league.
+/// </summary>
+public interface IGlobalProjectionService : IProjectionService
+{
+}

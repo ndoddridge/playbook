@@ -1,3 +1,4 @@
+using Playbook.Application.Users;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -25,7 +26,7 @@ public sealed class InjuryCacheStore
     {
         _options = options.Value;
         _logger = logger;
-        var root = Path.Combine(AppContext.BaseDirectory, "data");
+        var root = UserDataPaths.DataRoot();
         Directory.CreateDirectory(root);
         _cachePath = Path.Combine(root, string.IsNullOrWhiteSpace(_options.CacheFileName)
             ? "player-injuries-cache.json"

@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /$
+Allow: /terms
+Allow: /privacy
+Allow: /refunds
+Disallow: /

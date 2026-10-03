@@ -1,4 +1,5 @@
 @inherits LayoutComponentBase
+@using Playbook.Application.Leagues
 @using Playbook.Web.Features.Players.Components
 
 <div class="app-shell @(sidebarOpen ? "sidebar-open" : null)">
@@ -13,7 +14,9 @@
         <NavMenu OnNavigate="CloseSidebar" />
 
         <div class="app-sidebar__footer">
-            @AppInfo.FooterLabel
+            <a href="/terms" target="_blank" rel="noopener">Terms</a> ·
+            <a href="/privacy" target="_blank" rel="noopener">Privacy</a>
+            <div>@AppInfo.FooterLabel</div>
         </div>
     </aside>
 
@@ -27,13 +30,19 @@
 <PlayerOverlay />
 
 <div id="blazor-error-ui" data-nosnippet>
-    An unhandled error has occurred.
+    Something went wrong. Your data is safe.
     <a href="." class="reload">Reload</a>
     <span class="dismiss">🗙</span>
 </div>
 
+@inject ILeagueState LeagueState
+
 @code {
     private bool sidebarOpen;
+
+    // Brings back this customer's saved Sleeper leagues (their ids are stored per user) as soon
+    // as their session starts; failures are silent and leave the league unconnected.
+    protected override async Task OnInitializedAsync() => await LeagueState.RestoreSavedLeaguesAsync();
 
     private void ToggleSidebar() => sidebarOpen = !sidebarOpen;
 
