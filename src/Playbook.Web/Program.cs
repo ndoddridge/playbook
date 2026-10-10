@@ -28,6 +28,16 @@ app.UseForwardedHeaders(new ForwardedHeadersOptions
     KnownProxies = { }
 });
 
+// noahdbuilds.com/playbook forwards to this app with the /playbook prefix intact
+// (PLAYBOOK_PATH_BASE=/playbook on Fly). UsePathBase strips it so routing sees the
+// app's own paths; requests without the prefix (the bare fly.dev address, local
+// dev) are served as before. Routing must be added after it, explicitly.
+var pathBase = builder.Configuration["PLAYBOOK_PATH_BASE"]?.Trim().TrimEnd('/');
+if (!string.IsNullOrEmpty(pathBase))
+{
+    app.UsePathBase(pathBase);
+}
+
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Error", createScopeForErrors: true);
@@ -40,6 +50,7 @@ if (!app.Environment.IsDevelopment())
     app.UseHttpsRedirection();
 }
 
+app.UseRouting();
 app.UseAntiforgery();
 
 app.MapStaticAssets();

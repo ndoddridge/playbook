@@ -4,7 +4,7 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <base href="/" />
+    <base href="@BaseHref" />
     <link rel="stylesheet" href="@Assets["app.css"]" />
     <link rel="stylesheet" href="@Assets["Playbook.Web.styles.css"]" />
     <ImportMap />
@@ -17,3 +17,12 @@
 </body>
 
 </html>
+
+@code {
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    // Every URL in the app is relative to this, so it follows the path base
+    // ("/playbook/" behind noahdbuilds.com, "/" when served directly).
+    private string BaseHref => $"{HttpContext?.Request.PathBase}/";
+}

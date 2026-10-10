@@ -18,6 +18,9 @@ primary_region = 'iad'
   # Persistent volume mount (below) — survives redeploys/restarts, unlike the container's own
   # ephemeral filesystem. Uploaded/connected league data lives here.
   PLAYBOOK_DATA_DIR = '/data'
+  # Served at noahdbuilds.com/playbook, which forwards requests here with the
+  # prefix intact. The bare fly.dev address keeps working without it.
+  PLAYBOOK_PATH_BASE = '/playbook'
 
 [http_service]
   internal_port = 8080
