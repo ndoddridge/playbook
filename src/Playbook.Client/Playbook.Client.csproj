@@ -17,6 +17,13 @@
     <TrimMode>partial</TrimMode>
     <!-- Cloudflare compresses on the fly, so the .br/.gz copies would only add weight. -->
     <CompressionEnabled>false</CompressionEnabled>
+    <!--
+      Compile ahead of time to WebAssembly: startup and analysis run several times faster than in
+      the interpreter, for a larger download. Needs the workload: dotnet workload install wasm-tools
+      (wasm-tools-net9 on a newer SDK). Cloudflare Pages caps files at 25 MiB; dotnet.native.wasm is
+      the big one, and the noahdbuilds build check watches it.
+    -->
+    <RunAOTCompilation>true</RunAOTCompilation>
   </PropertyGroup>
 
   <ItemGroup>

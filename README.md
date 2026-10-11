@@ -192,6 +192,8 @@ Then open the URL shown in the console (typically `https://localhost:7xxx`). Use
 
 A browser cannot block on a network call, so the data services load asynchronously when running there (`OperatingSystem.IsBrowser()` in their `EnsureLoaded` paths), and `Boot` loads players, stats, injuries, news and the NFL calendar before the first render. MD5 ids use the managed `Playbook.Core.Hashing.Md5`, since the browser runtime has no MD5. Settings are the Web project's `appsettings.json` with `src/Playbook.Client/browser-settings.json` on top.
 
+The browser build is compiled ahead of time to WebAssembly, which needs the .NET WebAssembly build tools once: `dotnet workload install wasm-tools` (on an SDK newer than 9, `wasm-tools-net9`).
+
 To deploy a new version, build it into the site from a clean checkout of this repository:
 
 ```bash
