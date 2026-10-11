@@ -16,6 +16,8 @@ jobs:
           mkdir probe && cd probe
           dotnet new console -f net9.0 -o . --force > /dev/null
           dotnet add reference ../src/Playbook.Infrastructure/Playbook.Infrastructure.csproj ../src/Playbook.Application/Playbook.Application.csproj > /dev/null
+          dotnet add package Microsoft.Extensions.Configuration.Json --version 9.0.8 > /dev/null
+          dotnet add package Microsoft.Extensions.Logging.Console --version 9.0.8 > /dev/null
           cp ../src/Playbook.Web/appsettings.json .
           cat > Program.cs <<'CS'
           using Microsoft.Extensions.Configuration;
@@ -46,4 +48,4 @@ jobs:
           foreach (var p in qp.GetTopPicks(5)) Console.WriteLine($"  top: {p}");
           CS
           sed -i 's/^          //' Program.cs
-          dotnet run -c Release 2>&1 | tail -40
+          set -o pipefail; dotnet run -c Release 2>&1 | tail -40
