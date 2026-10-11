@@ -7,29 +7,28 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - name: ESPN scoreboard odds
+      - name: Pick a scheduled game
         run: |
           curl -sS "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard" -o sb.json
-          jq -c '.week, .season' sb.json
-          jq -c '[.events[] | {id, date, name, status: .status.type.name, comp: .competitions[0].id, teams: [.competitions[0].competitors[] | {homeAway, abbr: .team.abbreviation, id: .team.id}], odds: .competitions[0].odds}] | .[0:2]' sb.json | head -c 6000; echo
-          echo "EVENTS: $(jq '.events | length' sb.json)"
-          jq -r '.events[0].id' sb.json > eid.txt
-      - name: ESPN core odds providers
+          jq -r '[.events[] | select(.status.type.name == "STATUS_SCHEDULED")][0].id' sb.json > eid.txt
+          cat eid.txt
+          jq -c '[.events[] | {id, st: .status.type.name, oddsCount: (.competitions[0].odds | length), provider: .competitions[0].odds[0].provider.name}]' sb.json
+          jq -c '.events[0].competitions[0].odds[0] | keys' sb.json
+          curl -sS "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?seasontype=2&week=6&dates=2026" | jq -c '.week, (.events | length), [.events[] | {id, date, st: .status.type.name, odds: (.competitions[0].odds | length)}][0:3]'
+      - name: Prop bets in detail
         run: |
           E=$(cat eid.txt)
-          curl -sS "https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/events/$E/competitions/$E/odds?limit=50" -o odds.json
-          jq -c '.count, [.items[] | {provider: .provider, details, overUnder, spread, overOdds, underOdds, moneyline, pointSpread, total, awayTeamOdds: (.awayTeamOdds | {moneyLine, spreadOdds, favorite, current: .current}), homeTeamOdds: (.homeTeamOdds | {moneyLine, spreadOdds, favorite}), propBets: .propBets}]' odds.json | head -c 6000; echo
-      - name: ESPN core prop bets
-        run: |
-          E=$(cat eid.txt)
-          for P in $(jq -r '.items[].provider.id' odds.json | sort -u); do
-            echo "=== provider $P"
-            curl -sS "https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/events/$E/competitions/$E/odds/$P/propBets?lang=en&region=us&limit=1000" -o props_$P.json
-            jq -c '.count, .pageCount' props_$P.json
-            jq -c '[.items[]? | .type.name] | group_by(.) | map({t: .[0], n: length})' props_$P.json | head -c 3000; echo
-            jq -c '.items[0:4]' props_$P.json | head -c 4000; echo
+          curl -sS "https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/events/$E/competitions/$E/odds/100/propBets?lang=en&region=us&limit=1000" -o p.json
+          echo "count $(jq '.count' p.json) pageCount $(jq '.pageCount' p.json)"
+          echo "== all keys"; jq -c '[.items[] | keys[]] | group_by(.) | map({k: .[0], n: length})' p.json
+          echo "== current keys"; jq -c '[.items[] | .current | keys[]?] | group_by(.) | map({k: .[0], n: length})' p.json
+          echo "== odds keys"; jq -c '[.items[] | .odds? | keys[]?] | group_by(.) | map({k: .[0], n: length})' p.json
+          echo "== all type names"; jq -c '[.items[] | .type.name] | unique' p.json
+          for T in "Total Passing Yards (incl. overtime)" "Total Rushing Yards (incl. overtime)" "Total Receiving Yards (incl. overtime)" "Total Receptions (incl. overtime)" "Total Passing Touchdowns (incl. overtime)" "Anytime Touchdown Scorer" "Team Total Points"; do
+            echo "== $T"; jq -c --arg t "$T" '[.items[] | select(.type.name == $t)][0:3] | map(del(.competition, .provider))' p.json | head -c 2500; echo
           done
-      - name: Other keyless lines
+          echo "== athlete ref sample"; A=$(jq -r '[.items[] | select(.type.name == "Anytime Touchdown Scorer")][0].athlete["$ref"]' p.json); echo $A
+          curl -sS "${A/http:/https:}" | jq -c '{id, displayName, fullName, position: .position.abbreviation, team: .team["$ref"]}'
+      - name: Sleeper espn ids
         run: |
-          echo "=== underdog"; curl -sS -m 20 -A "Mozilla/5.0" "https://api.underdogfantasy.com/beta/v5/over_under_lines" -o ud.json -w '%{http_code}\n'; head -c 600 ud.json; echo
-          echo "=== prizepicks"; curl -sS -m 20 -A "Mozilla/5.0" "https://api.prizepicks.com/projections?league_id=9&per_page=50" -o pp.json -w '%{http_code}\n'; head -c 600 pp.json; echo
+          curl -sS "https://api.sleeper.app/v1/players/nfl?position=WR&active=true" | jq -c '[.[] | select(.espn_id != null)] | length, ([.[]] | length), ([.[] | {full_name, espn_id, team}][0:3])'
