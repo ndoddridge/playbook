@@ -27,6 +27,7 @@ jobs:
       - name: What each pick is built from
         run: |
           mkdir probe && cd probe
+          cp ../src/Playbook.Web/appsettings.json ../src/Playbook.Client/browser-settings.json .
           cat > probe.csproj <<'XML'
           <Project Sdk="Microsoft.NET.Sdk">
             <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net9.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup>
@@ -54,7 +55,7 @@ jobs:
           using Playbook.Infrastructure;
           var dir = Directory.GetCurrentDirectory();
           var config = new ConfigurationBuilder().SetBasePath(dir)
-              .AddJsonFile("../src/Playbook.Web/appsettings.json").AddJsonFile("../src/Playbook.Client/browser-settings.json").Build();
+              .AddJsonFile("appsettings.json").AddJsonFile("browser-settings.json").Build();
           var services = new ServiceCollection().AddLogging(b => b.AddSimpleConsole().SetMinimumLevel(LogLevel.Warning));
           services.AddInfrastructure(config).AddApplication();
           var sp = services.BuildServiceProvider();
