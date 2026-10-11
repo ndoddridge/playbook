@@ -38,4 +38,7 @@ public interface IQuickPicksBoard
     bool TrySelectWeek(NflWeekRef week);
 
     void Refresh();
+
+    /// <summary>Completes once the board has sportsbook lines to show.</summary>
+    Task EnsureLoadedAsync();
 }

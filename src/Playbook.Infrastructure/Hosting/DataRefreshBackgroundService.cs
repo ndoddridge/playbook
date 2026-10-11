@@ -92,7 +92,7 @@ public sealed class DataRefreshBackgroundService : BackgroundService
             RefreshIntelligence();
             RefreshProjections();
             await RefreshGameScoresAsync(stoppingToken).ConfigureAwait(false);
-            RefreshQuickPicks();
+            await RefreshQuickPicksAsync(stoppingToken).ConfigureAwait(false);
             RunPostEventReconciliation();
 
             try
@@ -216,11 +216,11 @@ public sealed class DataRefreshBackgroundService : BackgroundService
         }
     }
 
-    private void RefreshQuickPicks()
+    private async Task RefreshQuickPicksAsync(CancellationToken cancellationToken)
     {
         try
         {
-            _quickPicks.Refresh();
+            await _quickPicks.RefreshAsync(cancellationToken).ConfigureAwait(false);
             _logger.LogInformation("Background refresh: Quick Picks updated successfully");
         }
         catch (Exception ex)

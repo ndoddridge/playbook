@@ -39,6 +39,10 @@ public static class Boot
             services.GetRequiredService<IProjectionService>().Refresh();
             return Task.CompletedTask;
         });
+
+        // Sportsbook lines take a few dozen requests; fetch them without holding up the first render.
+        // The Quick Picks page waits on the same fetch if it is opened before this finishes.
+        _ = Quietly(() => services.GetRequiredService<IQuickPicksService>().EnsureLoadedAsync());
     }
 
     public static async Task StatusAsync(IServiceProvider services, string text)

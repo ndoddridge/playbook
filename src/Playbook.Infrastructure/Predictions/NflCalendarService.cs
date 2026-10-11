@@ -80,8 +80,17 @@ public sealed class NflCalendarService : INflCalendarService
             return events;
         }
 
+        // A provider that states the season and week (ESPN) is taken at its word. Inferring weeks from
+        // kickoffs numbers the earliest listed week 1, which is wrong once the season is under way.
+        var stated = events
+            .Where(ev => ev.PhaseHint is not null && ev.Season > 0 && ev.Week > 0)
+            .Select(ev => Clone(ev, ev.Season, ev.PhaseHint!.Value, ev.Week))
+            .ToList();
+        var statedIds = stated.Select(ev => ev.EventId).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
         // Assign phase from provider hint when present; otherwise infer from kickoff vs regular start.
         var withPhase = events
+            .Where(ev => !statedIds.Contains(ev.EventId))
             .Select(ev =>
             {
                 var phase = ev.PhaseHint
@@ -90,7 +99,8 @@ public sealed class NflCalendarService : INflCalendarService
             })
             .ToList();
 
-        var enriched = new List<FootballEvent>(withPhase.Count);
+        var enriched = new List<FootballEvent>(events.Count);
+        enriched.AddRange(stated);
         foreach (var phaseGroup in withPhase.GroupBy(e => e.Phase).OrderBy(g => g.Key))
         {
             enriched.AddRange(AssignWeeksInPhase(phaseGroup.ToList(), current.Season, phaseGroup.Key));

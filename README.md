@@ -158,6 +158,15 @@ Normalized football statistics power Career, Projection, and the Intelligence st
 - Game logs retained for trends; null ≠ zero
 - Developer Monitor: providers, NFL players/seasons, game logs, identity matches, sync errors
 
+## Sportsbook lines (Quick Picks)
+
+Quick Picks compares Playbook's projections with sportsbook lines. By default (`PropLines:Provider = Espn`) they come from ESPN's public APIs, which need no API key:
+
+- **Game lines**: spread, total and moneyline with prices, from ESPN's scoreboard for this week and next.
+- **Player props**: passing, rushing and receiving yards, receptions, passing touchdowns and anytime touchdown scorers, from ESPN's prop bets. ESPN publishes these lines without their prices.
+
+The lines are those of ESPN's sportsbook partner (DraftKings at the time of writing). ESPN also states each game's season and week, which Quick Picks uses as given. `Live` (The Odds API, needs `PropLines__OddsApi__ApiKey`) and `Mock` remain available.
+
 ## Projection Engine
 
 Projection Engine V1 produces numerical expected outcomes (`PlayerProjection`). It does **not** make start/sit, waiver, draft, or trade decisions.

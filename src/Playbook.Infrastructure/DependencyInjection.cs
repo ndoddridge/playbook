@@ -264,6 +264,15 @@ public static class DependencyInjection
         services.AddSingleton<LivePropLineProvider>();
         services.AddSingleton<IPropLineProvider>(sp => sp.GetRequiredService<LivePropLineProvider>());
 
+        services.AddHttpClient(EspnPropLineProvider.HttpClientName, (sp, client) =>
+        {
+            var options = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<PropLineOptions>>().Value.OddsApi;
+            client.Timeout = TimeSpan.FromSeconds(Math.Clamp(options.TimeoutSeconds, 5, 120));
+            client.DefaultRequestHeaders.TryAddWithoutValidation("Accept", "application/json");
+        });
+        services.AddSingleton<EspnPropLineProvider>();
+        services.AddSingleton<IPropLineProvider>(sp => sp.GetRequiredService<EspnPropLineProvider>());
+
         services.AddSingleton<IQuickPicksService, QuickPicksService>();
     }
 

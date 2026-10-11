@@ -9,7 +9,13 @@ public enum PropLineProviderKind
     /// Primary: The Odds API. Falls back to Mock when the API key is missing
     /// or the live request fails.
     /// </summary>
-    Live = 1
+    Live = 1,
+
+    /// <summary>
+    /// ESPN's public odds: game lines and player prop lines from its sportsbook partner, with no API
+    /// key. What appsettings.json selects. Prop prices are not published there, only the lines.
+    /// </summary>
+    Espn = 2
 }
 
 public sealed class PropLineOptions

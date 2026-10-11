@@ -15,6 +15,7 @@ public sealed class RelayHandler : DelegatingHandler
         "api.sleeper.app",
         "site.api.espn.com",
         "site.web.api.espn.com",
+        "sports.core.api.espn.com",
         "github.com",
         "raw.githubusercontent.com",
     };

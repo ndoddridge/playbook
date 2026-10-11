@@ -55,4 +55,14 @@ public interface IQuickPicksService
     bool TrySelectWeek(NflWeekRef week);
 
     void Refresh();
+
+    /// <summary>Fetches new lines and rebuilds the board. The browser build uses this, since it cannot block on I/O.</summary>
+    Task RefreshAsync(CancellationToken cancellationToken = default)
+    {
+        Refresh();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Completes once the board has been built from fetched lines (at once if it already has).</summary>
+    Task EnsureLoadedAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
 }

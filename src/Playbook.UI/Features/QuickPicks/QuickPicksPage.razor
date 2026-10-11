@@ -19,7 +19,11 @@
             <span>@SyncStatus.PropProvider</span>
             <span>Updated @(SyncStatus.LastPredictionRun?.ToLocalTime().ToString("h:mm tt") ?? "—")</span>
         </p>
-        @if (SyncStatus.UsedFallback)
+        @if (loadingLines)
+        {
+            <p class="qp-page__note">Loading sportsbook lines…</p>
+        }
+        else if (SyncStatus.UsedFallback)
         {
             <p class="qp-page__note">
                 Using mock market lines
@@ -261,7 +265,31 @@
     /// <summary>Persists for the Blazor Server circuit / session.</summary>
     private int topCount = 5;
 
-    protected override void OnInitialized() => ReloadFromBoard();
+    private bool loadingLines;
+
+    protected override async Task OnInitializedAsync()
+    {
+        ReloadFromBoard();
+
+        // Lines are fetched in the background (the browser build cannot wait on them synchronously);
+        // show what is there now and redraw once they arrive.
+        var load = Board.EnsureLoadedAsync();
+        if (!load.IsCompleted)
+        {
+            loadingLines = true;
+            try
+            {
+                await load;
+            }
+            catch (Exception)
+            {
+                // The board reports its own sync error; show whatever it has.
+            }
+
+            loadingLines = false;
+            ReloadFromBoard();
+        }
+    }
 
     private void ReloadFromBoard()
     {
