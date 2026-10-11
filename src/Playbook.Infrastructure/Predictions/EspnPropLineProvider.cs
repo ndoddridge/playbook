@@ -164,7 +164,9 @@ public sealed partial class EspnPropLineProvider : IPropLineProvider
         {
             var url = $"{CoreUrl}events/{id}/competitions/{id}/odds/{Uri.EscapeDataString(providerId)}/propBets" +
                       $"?lang=en&region=us&limit=1000&page={page}";
-            var result = await GetJsonAsync<PropBetPageDto>(client, url, cancellationToken).ConfigureAwait(false);
+            // ESPN answers 404 until the book has posted props for a game (next week's, usually).
+            var result = await GetJsonAsync<PropBetPageDto>(client, url, cancellationToken, notFoundIsEmpty: true)
+                .ConfigureAwait(false);
             items.AddRange(result?.Items ?? []);
             if (result is null || page >= (result.PageCount ?? 1))
             {
@@ -175,9 +177,18 @@ public sealed partial class EspnPropLineProvider : IPropLineProvider
         return items;
     }
 
-    private static async Task<T?> GetJsonAsync<T>(HttpClient client, string url, CancellationToken cancellationToken)
+    private static async Task<T?> GetJsonAsync<T>(
+        HttpClient client,
+        string url,
+        CancellationToken cancellationToken,
+        bool notFoundIsEmpty = false)
     {
         using var response = await client.GetAsync(url, cancellationToken).ConfigureAwait(false);
+        if (notFoundIsEmpty && response.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            return default;
+        }
+
         if (!response.IsSuccessStatusCode)
         {
             throw new HttpRequestException($"ESPN returned {(int)response.StatusCode} {response.ReasonPhrase} for {url}");

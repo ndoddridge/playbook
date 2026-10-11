@@ -162,6 +162,18 @@ public class EspnPropLineProviderTests
         Assert.DoesNotContain(lines, l => l.PlayerId is not null);
     }
 
+    [Fact]
+    public async Task Props_Not_Posted_Yet_Are_Not_An_Error()
+    {
+        // ESPN answers 404 for a game whose props the book has not posted.
+        var (provider, _) = CreateProvider(propsStatus: HttpStatusCode.NotFound);
+
+        var lines = await provider.GetPropLinesAsync();
+
+        Assert.Contains(lines, l => l.Market == PredictionMarketType.GameTotal);
+        Assert.DoesNotContain(lines, l => l.PlayerId is not null);
+    }
+
     [Theory]
     [InlineData("-7.5", -7.5)]
     [InlineData("+3", 3)]
@@ -198,10 +210,12 @@ public class EspnPropLineProviderTests
         Assert.Equal([6, 7], enriched.Select(e => e.Week));
     }
 
-    private static (EspnPropLineProvider Provider, List<string> Requested) CreateProvider(bool failProps = false)
+    private static (EspnPropLineProvider Provider, List<string> Requested) CreateProvider(
+        bool failProps = false,
+        HttpStatusCode? propsStatus = null)
     {
         var requested = new List<string>();
-        var handler = new StubHandler(url =>
+        var handler = new StubHandler(propsStatus, url =>
         {
             requested.Add(url);
             if (url.Contains("/propBets"))
@@ -250,11 +264,21 @@ public class EspnPropLineProviderTests
         };
     }
 
-    private sealed class StubHandler(Func<string, string?> respond) : HttpMessageHandler
+    private sealed class StubHandler(HttpStatusCode? propsStatus, Func<string, string?> respond) : HttpMessageHandler
     {
+        public StubHandler(Func<string, string?> respond) : this(null, respond)
+        {
+        }
+
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
-            var body = respond(request.RequestUri!.ToString());
+            var url = request.RequestUri!.ToString();
+            if (propsStatus is { } status && url.Contains("/propBets"))
+            {
+                return Task.FromResult(new HttpResponseMessage(status));
+            }
+
+            var body = respond(url);
             return Task.FromResult(body is null
                 ? new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
                 : new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(body, Encoding.UTF8, "application/json") });
