@@ -412,7 +412,7 @@ public class PlayerInjuryServiceTests
         var cssPath = Path.GetFullPath(Path.Combine(
             AppContext.BaseDirectory,
             "..", "..", "..", "..", "..",
-            "src", "Playbook.Web", "wwwroot", "css", "player-overlay.css"));
+            "src", "Playbook.UI", "wwwroot", "css", "player-overlay.css"));
         Assert.True(File.Exists(cssPath), cssPath);
         var css = File.ReadAllText(cssPath);
         Assert.True(PlayerOverlayLayoutRules.ModalClearsFixedTopBar(css));
