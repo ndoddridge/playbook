@@ -19,6 +19,8 @@ public sealed class PlayerService : IPlayerService
     private readonly PlayerDataSyncStatus _status;
     private readonly ILogger<PlayerService> _logger;
     private readonly object _gate = new();
+    private readonly SemaphoreSlim _refreshGate = new(1, 1);
+    private Task? _browserLoad;
 
     private IReadOnlyList<Player> _players = [];
     private IReadOnlyDictionary<Guid, PlayerProfile> _profiles =
@@ -97,10 +99,33 @@ public sealed class PlayerService : IPlayerService
         }
     }
 
+    public async Task RefreshAsync(CancellationToken cancellationToken = default)
+    {
+        await _refreshGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await LoadCatalogAsync().ConfigureAwait(false);
+            _loaded = true;
+        }
+        finally
+        {
+            _refreshGate.Release();
+        }
+    }
+
     private void EnsureLoaded()
     {
         if (_loaded)
         {
+            return;
+        }
+
+        // The browser build cannot block on a network call. It loads the catalog
+        // asynchronously (at startup and in the background); until then readers see
+        // an empty catalog instead of a hung page.
+        if (OperatingSystem.IsBrowser())
+        {
+            _browserLoad ??= RefreshAsync();
             return;
         }
 
@@ -116,14 +141,16 @@ public sealed class PlayerService : IPlayerService
         }
     }
 
-    private void LoadCatalog()
+    private void LoadCatalog() => LoadCatalogAsync().GetAwaiter().GetResult();
+
+    private async Task LoadCatalogAsync()
     {
         var stopwatch = Stopwatch.StartNew();
         string? error = null;
 
         try
         {
-            var players = _primary.GetPlayersAsync().GetAwaiter().GetResult();
+            var players = await _primary.GetPlayersAsync().ConfigureAwait(false);
             stopwatch.Stop();
 
             if (players.Count == 0)
@@ -164,7 +191,7 @@ public sealed class PlayerService : IPlayerService
 
         // Fallback path — never leave the app without players when live fails.
         var fallbackWatch = Stopwatch.StartNew();
-        var mockPlayers = _fallback.GetPlayersAsync().GetAwaiter().GetResult();
+        var mockPlayers = await _fallback.GetPlayersAsync().ConfigureAwait(false);
         fallbackWatch.Stop();
 
         ApplyCatalog(mockPlayers, enrichMockProfiles: true);

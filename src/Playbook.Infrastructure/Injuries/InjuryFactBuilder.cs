@@ -176,7 +176,7 @@ public static class InjuryFactBuilder
     private static Guid StableId(Guid playerId, string ruleId, string key)
     {
         var raw = $"injury-fact:{playerId:N}:{ruleId}:{key}";
-        var hash = MD5.HashData(Encoding.UTF8.GetBytes(raw));
+        var hash = Playbook.Core.Hashing.Md5.HashData(Encoding.UTF8.GetBytes(raw));
         return new Guid(hash);
     }
 }

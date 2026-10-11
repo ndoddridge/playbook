@@ -407,7 +407,7 @@ public sealed class MockRecommendationService : IRecommendationService
 
     private static Guid StableId(PersonalizedAnalysisContext context, string slot)
     {
-        var bytes = System.Security.Cryptography.MD5.HashData(
+        var bytes = Playbook.Core.Hashing.Md5.HashData(
             System.Text.Encoding.UTF8.GetBytes(
                 $"playbook:rec:{context.LeagueId:N}:{context.SelectedRosterId}:{slot}"));
         return new Guid(bytes);

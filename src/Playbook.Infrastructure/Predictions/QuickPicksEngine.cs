@@ -928,7 +928,7 @@ public sealed class QuickPicksEngine : IQuickPicksEngine
 
     private static Guid CreateId(PropLine line)
     {
-        var bytes = System.Security.Cryptography.MD5.HashData(
+        var bytes = Playbook.Core.Hashing.Md5.HashData(
             System.Text.Encoding.UTF8.GetBytes($"playbook:prediction:{line.Id}:{line.Market}:v3"));
         return new Guid(bytes);
     }

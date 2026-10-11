@@ -24,4 +24,10 @@ public interface IPlayerInjuryService
     void Refresh();
 
     Task RefreshAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Loads from the saved cache when it is still fresh, otherwise from the provider. The browser
+    /// build calls this at startup so a repeat visit does not re-download what it already has.
+    /// </summary>
+    Task EnsureLoadedAsync(CancellationToken cancellationToken = default) => RefreshAsync(cancellationToken);
 }

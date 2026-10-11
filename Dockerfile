@@ -5,12 +5,14 @@ COPY playbook.sln .
 COPY src/Playbook.Core/Playbook.Core.csproj src/Playbook.Core/
 COPY src/Playbook.Application/Playbook.Application.csproj src/Playbook.Application/
 COPY src/Playbook.Infrastructure/Playbook.Infrastructure.csproj src/Playbook.Infrastructure/
+COPY src/Playbook.UI/Playbook.UI.csproj src/Playbook.UI/
 COPY src/Playbook.Web/Playbook.Web.csproj src/Playbook.Web/
 RUN dotnet restore src/Playbook.Web/Playbook.Web.csproj
 
 COPY src/Playbook.Core/ src/Playbook.Core/
 COPY src/Playbook.Application/ src/Playbook.Application/
 COPY src/Playbook.Infrastructure/ src/Playbook.Infrastructure/
+COPY src/Playbook.UI/ src/Playbook.UI/
 COPY src/Playbook.Web/ src/Playbook.Web/
 
 RUN dotnet publish src/Playbook.Web/Playbook.Web.csproj -c Release -o /app/publish --no-restore

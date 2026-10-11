@@ -19,7 +19,7 @@ public sealed class HistoricalPlayerIdentityNormalizer : IHistoricalPlayerIdenti
         }
 
         var normalized = gsisId.Trim();
-        var bytes = MD5.HashData(Encoding.UTF8.GetBytes($"playbook:gsis:nfl:{normalized}"));
+        var bytes = Playbook.Core.Hashing.Md5.HashData(Encoding.UTF8.GetBytes($"playbook:gsis:nfl:{normalized}"));
         return new Guid(bytes);
     }
 

@@ -175,7 +175,7 @@ public sealed class LiveNewsProvider : INewsSource
 
     private static Guid ToDeterministicGuid(string value)
     {
-        var bytes = MD5.HashData(Encoding.UTF8.GetBytes($"playbook:espn:news:{value}"));
+        var bytes = Playbook.Core.Hashing.Md5.HashData(Encoding.UTF8.GetBytes($"playbook:espn:news:{value}"));
         return new Guid(bytes);
     }
 

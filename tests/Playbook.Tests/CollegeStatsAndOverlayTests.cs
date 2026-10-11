@@ -124,7 +124,7 @@ public class CollegeStatsAndOverlayTests
         var cssPath = Path.GetFullPath(Path.Combine(
             AppContext.BaseDirectory,
             "..", "..", "..", "..", "..",
-            "src", "Playbook.Web", "wwwroot", "css", "player-overlay.css"));
+            "src", "Playbook.UI", "wwwroot", "css", "player-overlay.css"));
         Assert.True(File.Exists(cssPath), $"Expected overlay CSS at {cssPath}");
 
         var css = File.ReadAllText(cssPath);

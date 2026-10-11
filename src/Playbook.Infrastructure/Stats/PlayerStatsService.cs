@@ -35,6 +35,7 @@ public sealed class PlayerStatsService : IPlayerStatsService
     private Dictionary<Guid, List<PlayerSeasonStats>> _byPlayer = new();
     private Dictionary<Guid, List<PlayerGameStats>> _gamesByPlayer = new();
     private bool _loaded;
+    private Task? _browserLoad;
     private int _identityMatches;
     private int _unresolvedPlayers;
 
@@ -392,6 +393,16 @@ public sealed class PlayerStatsService : IPlayerStatsService
         }
     }
 
+    public async Task EnsureLoadedAsync(CancellationToken cancellationToken = default)
+    {
+        // Loads a fresh cache synchronously; in the browser, a missing or stale one starts a refresh.
+        EnsureLoaded();
+        if (_browserLoad is not null)
+        {
+            await _browserLoad.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
+
     private void EnsureLoaded()
     {
         if (Volatile.Read(ref _loaded))
@@ -438,6 +449,14 @@ public sealed class PlayerStatsService : IPlayerStatsService
                     priorError: null);
                 return;
             }
+        }
+
+        // The browser build cannot block on a network call: it refreshes in the
+        // background and readers see no stats until that finishes.
+        if (OperatingSystem.IsBrowser())
+        {
+            _browserLoad ??= RefreshAsync();
+            return;
         }
 
         Refresh();

@@ -37,6 +37,7 @@ public sealed class PlayerInjuryService : IPlayerInjuryService
     private string _providerCoverage = "Not synced";
     private string _injuryProviders = "—";
     private bool _loaded;
+    private Task? _browserLoad;
     private bool _syncFailed;
     private DateTimeOffset? _lastUpdated;
 
@@ -255,6 +256,16 @@ public sealed class PlayerInjuryService : IPlayerInjuryService
         }
     }
 
+    public async Task EnsureLoadedAsync(CancellationToken cancellationToken = default)
+    {
+        // Loads a fresh cache synchronously; in the browser, a missing or stale one starts a refresh.
+        EnsureLoaded();
+        if (_browserLoad is not null)
+        {
+            await _browserLoad.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
+
     private void EnsureLoaded()
     {
         if (Volatile.Read(ref _loaded))
@@ -334,6 +345,14 @@ public sealed class PlayerInjuryService : IPlayerInjuryService
                     priorError: null);
                 return;
             }
+        }
+
+        // The browser build cannot block on a network call: it refreshes in the
+        // background and readers see no injuries until that finishes.
+        if (OperatingSystem.IsBrowser())
+        {
+            _browserLoad ??= RefreshAsync();
+            return;
         }
 
         Refresh();

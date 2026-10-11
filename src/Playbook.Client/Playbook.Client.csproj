@@ -1,0 +1,52 @@
+<Project Sdk="Microsoft.NET.Sdk.BlazorWebAssembly">
+
+  <!--
+    Playbook in the browser. The same UI and engines as Playbook.Web, compiled to WebAssembly and
+    published as static files that noahdbuilds.com serves at /playbook/. There is no server: data
+    APIs are reached through the site's relay (RelayHandler), and the data directory lives in the
+    browser (BrowserDataStore).
+  -->
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Playbook.Client</RootNamespace>
+    <!-- English-only UI: skip the ICU data download. -->
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- Trim only the framework; the app's own assemblies use reflection-based JSON. -->
+    <TrimMode>partial</TrimMode>
+    <!-- Cloudflare compresses on the fly, so the .br/.gz copies would only add weight. -->
+    <CompressionEnabled>false</CompressionEnabled>
+    <!--
+      Compile ahead of time to WebAssembly: startup and analysis run several times faster than in
+      the interpreter, for a larger download. Needs the workload: dotnet workload install wasm-tools
+      (wasm-tools-net9 on a newer SDK). Cloudflare Pages caps files at 25 MiB; dotnet.native.wasm is
+      the big one, and the noahdbuilds build check watches it.
+    -->
+    <RunAOTCompilation>true</RunAOTCompilation>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="9.0.8" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Configuration" Version="9.0.8" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="9.0.8" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Playbook.Application\Playbook.Application.csproj" />
+    <ProjectReference Include="..\Playbook.Infrastructure\Playbook.Infrastructure.csproj" />
+    <ProjectReference Include="..\Playbook.UI\Playbook.UI.csproj" />
+  </ItemGroup>
+
+  <!--
+    One set of settings for both hosts: the server's appsettings.json, then browser-settings.json
+    on top. Both are embedded and loaded in Program.cs (a file linked into wwwroot trips the
+    static web assets build).
+  -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\Playbook.Web\appsettings.json" LogicalName="appsettings.json" />
+    <Content Remove="browser-settings.json" />
+    <EmbeddedResource Include="browser-settings.json" LogicalName="browser-settings.json" />
+  </ItemGroup>
+
+</Project>

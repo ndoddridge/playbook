@@ -85,7 +85,7 @@ public sealed class DataRefreshBackgroundService : BackgroundService
         using var timer = new PeriodicTimer(interval);
         while (!stoppingToken.IsCancellationRequested)
         {
-            RefreshPlayers();
+            await RefreshPlayersAsync(stoppingToken).ConfigureAwait(false);
             await RefreshStatsAsync(stoppingToken).ConfigureAwait(false);
             await RefreshNewsAsync(stoppingToken).ConfigureAwait(false);
             await RefreshInjuriesAsync(stoppingToken).ConfigureAwait(false);
@@ -109,11 +109,11 @@ public sealed class DataRefreshBackgroundService : BackgroundService
         }
     }
 
-    private void RefreshPlayers()
+    private async Task RefreshPlayersAsync(CancellationToken cancellationToken)
     {
         try
         {
-            _players.Refresh();
+            await _players.RefreshAsync(cancellationToken).ConfigureAwait(false);
             _logger.LogInformation("Background refresh: player data updated successfully");
         }
         catch (Exception ex)

@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0b0d10" />
+    <title>Playbook</title>
+    <base href="/playbook/" />
+    <link rel="stylesheet" href="_content/Playbook.UI/app.css" />
+    <link rel="stylesheet" href="Playbook.Client.styles.css" />
+    <style>
+        .pb-boot {
+            position: fixed;
+            inset: 0;
+            display: grid;
+            place-items: center;
+            background: #0b0d10;
+            color: #eef1f4;
+            font-family: "DM Sans", "Segoe UI", sans-serif;
+        }
+        .pb-boot__card { display: grid; gap: 14px; justify-items: center; padding: 24px; text-align: center; }
+        .pb-boot__mark {
+            display: grid; place-items: center; width: 44px; height: 44px; border-radius: 12px;
+            background: rgba(62, 207, 142, 0.12); color: #3ecf8e; font-weight: 700;
+        }
+        .pb-boot__status { color: #9aa3ad; font-size: 0.9375rem; min-height: 1.5em; }
+        .pb-boot__bar { width: 180px; height: 3px; overflow: hidden; border-radius: 3px; background: rgba(255, 255, 255, 0.07); }
+        .pb-boot__bar::after {
+            content: ""; display: block; width: 40%; height: 100%; background: #3ecf8e;
+            animation: pb-boot-slide 1.2s ease-in-out infinite;
+        }
+        @keyframes pb-boot-slide { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+        @media (prefers-reduced-motion: reduce) { .pb-boot__bar::after { animation: none; width: 100%; } }
+    </style>
+</head>
+
+<body>
+    <div id="app">
+        <div class="pb-boot" role="status" aria-live="polite">
+            <div class="pb-boot__card">
+                <span class="pb-boot__mark">PB</span>
+                <strong>Playbook</strong>
+                <span class="pb-boot__status" id="pb-boot-status">Starting</span>
+                <span class="pb-boot__bar" aria-hidden="true"></span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        window.playbookBoot = {
+            status(text) {
+                const el = document.getElementById("pb-boot-status");
+                if (el) el.textContent = text;
+            }
+        };
+    </script>
+    <script src="_framework/blazor.webassembly.js"></script>
+</body>
+
+</html>

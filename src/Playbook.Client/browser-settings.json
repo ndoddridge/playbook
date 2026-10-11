@@ -1,0 +1,19 @@
+{
+  "Logging": {
+    "LogLevel": {
+      "Default": "Warning",
+      "Playbook": "Information"
+    }
+  },
+  "PlayerStats": {
+    "HistoricalSeasonCount": 3,
+    "GameLogSeasonCount": 2
+  },
+  "CollegeStats": {
+    "MaxConcurrency": 4,
+    "MaxAthletesPerSync": 60
+  },
+  "Injuries": {
+    "HistoricalSeasonCount": 3
+  }
+}
