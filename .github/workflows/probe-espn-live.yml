@@ -12,7 +12,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: main
+          ref: claude/current-season-stats
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 9.0.x
