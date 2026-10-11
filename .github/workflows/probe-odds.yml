@@ -1,0 +1,35 @@
+# Temporary: captures sample responses from keyless odds sources. Deleted after use.
+name: Probe odds sources
+on:
+  push:
+    branches: [claude/probe-odds]
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: ESPN scoreboard odds
+        run: |
+          curl -sS "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard" -o sb.json
+          jq -c '.week, .season' sb.json
+          jq -c '[.events[] | {id, date, name, status: .status.type.name, comp: .competitions[0].id, teams: [.competitions[0].competitors[] | {homeAway, abbr: .team.abbreviation, id: .team.id}], odds: .competitions[0].odds}] | .[0:2]' sb.json | head -c 6000; echo
+          echo "EVENTS: $(jq '.events | length' sb.json)"
+          jq -r '.events[0].id' sb.json > eid.txt
+      - name: ESPN core odds providers
+        run: |
+          E=$(cat eid.txt)
+          curl -sS "https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/events/$E/competitions/$E/odds?limit=50" -o odds.json
+          jq -c '.count, [.items[] | {provider: .provider, details, overUnder, spread, overOdds, underOdds, moneyline, pointSpread, total, awayTeamOdds: (.awayTeamOdds | {moneyLine, spreadOdds, favorite, current: .current}), homeTeamOdds: (.homeTeamOdds | {moneyLine, spreadOdds, favorite}), propBets: .propBets}]' odds.json | head -c 6000; echo
+      - name: ESPN core prop bets
+        run: |
+          E=$(cat eid.txt)
+          for P in $(jq -r '.items[].provider.id' odds.json | sort -u); do
+            echo "=== provider $P"
+            curl -sS "https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/events/$E/competitions/$E/odds/$P/propBets?lang=en&region=us&limit=1000" -o props_$P.json
+            jq -c '.count, .pageCount' props_$P.json
+            jq -c '[.items[]? | .type.name] | group_by(.) | map({t: .[0], n: length})' props_$P.json | head -c 3000; echo
+            jq -c '.items[0:4]' props_$P.json | head -c 4000; echo
+          done
+      - name: Other keyless lines
+        run: |
+          echo "=== underdog"; curl -sS -m 20 -A "Mozilla/5.0" "https://api.underdogfantasy.com/beta/v5/over_under_lines" -o ud.json -w '%{http_code}\n'; head -c 600 ud.json; echo
+          echo "=== prizepicks"; curl -sS -m 20 -A "Mozilla/5.0" "https://api.prizepicks.com/projections?league_id=9&per_page=50" -o pp.json -w '%{http_code}\n'; head -c 600 pp.json; echo
