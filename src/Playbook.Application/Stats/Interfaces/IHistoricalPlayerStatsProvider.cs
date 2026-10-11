@@ -33,6 +33,15 @@ public sealed class HistoricalPlayerStatsSyncRequest
 
     /// <summary>When true, re-download season files even if a local copy exists.</summary>
     public bool ForceRedownload { get; init; }
+
+    /// <summary>
+    /// The season in progress, if it is among <see cref="Seasons"/>. Its file is re-downloaded once
+    /// older than <see cref="LiveSeasonMaxAge"/> (completed seasons never change), and it contributes
+    /// game logs only: the season-to-date totals come from the season provider.
+    /// </summary>
+    public int? LiveSeason { get; init; }
+
+    public TimeSpan LiveSeasonMaxAge { get; init; } = TimeSpan.FromHours(6);
 }
 
 public sealed class HistoricalPlayerStatsBatch

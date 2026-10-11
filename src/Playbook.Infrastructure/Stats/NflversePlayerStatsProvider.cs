@@ -20,8 +20,13 @@ public sealed class NflversePlayerStatsProvider : IHistoricalPlayerStatsProvider
 {
     public const string HttpClientName = "NflversePlayerStats";
 
+    /// <summary>
+    /// nflverse's weekly player stats. The older player_stats release stopped after 2024; this one
+    /// covers every season and is updated during the season (column names differ slightly; see
+    /// <see cref="MapGameRow"/>).
+    /// </summary>
     private const string ReleaseUrl =
-        "https://github.com/nflverse/nflverse-data/releases/download/player_stats/player_stats_{0}.csv.gz";
+        "https://github.com/nflverse/nflverse-data/releases/download/stats_player/stats_player_week_{0}.csv.gz";
 
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IPlayerIdentityDirectory _identities;
@@ -49,6 +54,18 @@ public sealed class NflversePlayerStatsProvider : IHistoricalPlayerStatsProvider
         _logger = logger;
         _cacheDir = Path.Combine(AppContext.BaseDirectory, "data", "nflverse-player-stats");
         Directory.CreateDirectory(_cacheDir);
+
+        // Copies of the retired player_stats release are no longer read.
+        foreach (var legacy in Directory.EnumerateFiles(_cacheDir, "player_stats_*.csv.gz"))
+        {
+            try
+            {
+                File.Delete(legacy);
+            }
+            catch (IOException)
+            {
+            }
+        }
     }
 
     public HistoricalPlayerStatsProviderKind Kind => HistoricalPlayerStatsProviderKind.Nflverse;
@@ -92,7 +109,13 @@ public sealed class NflversePlayerStatsProvider : IHistoricalPlayerStatsProvider
             cancellationToken.ThrowIfCancellationRequested();
             try
             {
-                var path = await EnsureSeasonFileAsync(client, season, request.ForceRedownload, cancellationToken)
+                var isLive = season == request.LiveSeason;
+                var path = await EnsureSeasonFileAsync(
+                        client,
+                        season,
+                        request.ForceRedownload,
+                        isLive ? request.LiveSeasonMaxAge : null,
+                        cancellationToken)
                     .ConfigureAwait(false);
                 if (path is null)
                 {
@@ -134,7 +157,10 @@ public sealed class NflversePlayerStatsProvider : IHistoricalPlayerStatsProvider
                     }
 
                     gameLogs.Add(mapped.Value.Game);
-                    Accumulate(seasonBuckets, mapped.Value.Game, mapped.Value.Position);
+                    if (!isLive)
+                    {
+                        Accumulate(seasonBuckets, mapped.Value.Game, mapped.Value.Position);
+                    }
                 }
             }
             catch (Exception ex)
@@ -174,23 +200,50 @@ public sealed class NflversePlayerStatsProvider : IHistoricalPlayerStatsProvider
         };
     }
 
+    /// <summary>
+    /// The local copy of a season file, downloaded if missing. With <paramref name="maxAge"/> (the
+    /// season in progress) a copy older than that is downloaded again, and kept if the download fails.
+    /// The download time is recorded beside the file, since a file restored from browser storage
+    /// carries the restore time rather than the download time.
+    /// </summary>
     private async Task<string?> EnsureSeasonFileAsync(
         HttpClient client,
         int season,
         bool forceRedownload,
+        TimeSpan? maxAge,
         CancellationToken cancellationToken)
     {
-        var path = Path.Combine(_cacheDir, $"player_stats_{season}.csv.gz");
-        if (!forceRedownload && File.Exists(path) && new FileInfo(path).Length > 100)
+        var path = Path.Combine(_cacheDir, $"stats_player_week_{season}.csv.gz");
+        var fetchedPath = path + ".fetched";
+        var haveCopy = File.Exists(path) && new FileInfo(path).Length > 100;
+        if (!forceRedownload && haveCopy && (maxAge is null || IsFresh(fetchedPath, maxAge.Value)))
         {
             return path;
         }
 
         var url = string.Format(CultureInfo.InvariantCulture, ReleaseUrl, season);
-        using var response = await client.GetAsync(url, cancellationToken).ConfigureAwait(false);
+        HttpResponseMessage response;
+        try
+        {
+            response = await client.GetAsync(url, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (haveCopy && ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Refreshing nflverse stats for {Season} failed; using the saved copy", season);
+            return path;
+        }
+
+        using var _ = response;
         if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
         {
-            return null;
+            return haveCopy ? path : null;
+        }
+
+        if (!response.IsSuccessStatusCode && haveCopy)
+        {
+            _logger.LogWarning("Refreshing nflverse stats for {Season} returned {Status}; using the saved copy",
+                season, (int)response.StatusCode);
+            return path;
         }
 
         response.EnsureSuccessStatusCode();
@@ -203,8 +256,25 @@ public sealed class NflversePlayerStatsProvider : IHistoricalPlayerStatsProvider
         }
 
         File.Move(temp, path, overwrite: true);
-        _logger.LogInformation("Cached nflverse player_stats_{Season} at {Path}", season, path);
+        await File.WriteAllTextAsync(fetchedPath, DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture),
+            cancellationToken).ConfigureAwait(false);
+        _logger.LogInformation("Cached nflverse stats_player_week_{Season} at {Path}", season, path);
         return path;
+    }
+
+    private static bool IsFresh(string fetchedPath, TimeSpan maxAge)
+    {
+        try
+        {
+            return File.Exists(fetchedPath) &&
+                   DateTimeOffset.TryParse(File.ReadAllText(fetchedPath), CultureInfo.InvariantCulture,
+                       DateTimeStyles.RoundtripKind, out var fetched) &&
+                   DateTimeOffset.UtcNow - fetched < maxAge;
+        }
+        catch (IOException)
+        {
+            return false;
+        }
     }
 
     private (PlayerGameStats Game, string? Position)? MapGameRow(
@@ -235,7 +305,7 @@ public sealed class NflversePlayerStatsProvider : IHistoricalPlayerStatsProvider
             // Sleeper often omits GSIS for younger players — fall back to name + team.
             var displayName = Get(fields, index, "player_display_name")
                               ?? Get(fields, index, "player_name");
-            var team = Get(fields, index, "recent_team");
+            var team = Get(fields, index, "team") ?? Get(fields, index, "recent_team");
             if (!string.IsNullOrWhiteSpace(displayName))
             {
                 identity = _identities.ResolveByNameTeam(displayName, team);
@@ -262,7 +332,7 @@ public sealed class NflversePlayerStatsProvider : IHistoricalPlayerStatsProvider
         var passCmp = ParseInt(Get(fields, index, "completions"));
         var passYds = ParseInt(Get(fields, index, "passing_yards"));
         var passTd = ParseInt(Get(fields, index, "passing_tds"));
-        var ints = ParseInt(Get(fields, index, "interceptions"));
+        var ints = ParseInt(Get(fields, index, "passing_interceptions") ?? Get(fields, index, "interceptions"));
         var rushAtt = ParseInt(Get(fields, index, "carries"));
         var rushYds = ParseInt(Get(fields, index, "rushing_yards"));
         var rushTd = ParseInt(Get(fields, index, "rushing_tds"));
@@ -306,7 +376,7 @@ public sealed class NflversePlayerStatsProvider : IHistoricalPlayerStatsProvider
             SeasonType = "regular",
             Level = FootballLevel.Nfl,
             OpponentTeam = Get(fields, index, "opponent_team"),
-            Team = Get(fields, index, "recent_team"),
+            Team = Get(fields, index, "team") ?? Get(fields, index, "recent_team"),
             Position = position,
             PassAttempts = passAtt,
             PassCompletions = passCmp,
