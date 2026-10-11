@@ -28,7 +28,7 @@ jobs:
           using Playbook.Application.Predictions.Interfaces;
           using Playbook.Infrastructure;
           using Playbook.Infrastructure.Predictions;
-          var config = new ConfigurationBuilder().AddJsonFile("appsettings.json").Build();
+          var config = new ConfigurationBuilder().SetBasePath(Directory.GetCurrentDirectory()).AddJsonFile("appsettings.json").Build();
           var services = new ServiceCollection().AddLogging(b => b.AddSimpleConsole().SetMinimumLevel(LogLevel.Warning));
           services.AddInfrastructure(config).AddApplication();
           var sp = services.BuildServiceProvider();
