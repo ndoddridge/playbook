@@ -56,6 +56,12 @@ public sealed class QuickPicksService : IQuickPicksService
     private IReadOnlyList<PropLine> _enrichedLines = [];
     private bool _loaded;
 
+    /// <summary>The last lines fetched from the provider. The browser build rebuilds from these instead of blocking on a fetch.</summary>
+    private LoadedLines? _lastLoaded;
+    private Task? _refreshInFlight;
+
+    private sealed record LoadedLines(IReadOnlyList<PropLine> Lines, bool UsedFallback, string ActiveName, string? Error);
+
     public QuickPicksService(
         IEnumerable<IPropLineProvider> providers,
         IQuickPicksEngine engine,
@@ -91,10 +97,12 @@ public sealed class QuickPicksService : IQuickPicksService
         _status = status;
         _logger = logger;
         PropLineCredentialResolver.ApplyAliasEnvironmentVariables(_options);
-        _status.SetConfigured(
-            _options.Provider.ToString(),
-            PropLineCredentialResolver.HasApiKey(_options));
+        _status.SetConfigured(_options.Provider.ToString(), KeyConfigured);
     }
+
+    /// <summary>ESPN needs no key; only The Odds API does.</summary>
+    private bool KeyConfigured =>
+        _options.Provider != PropLineProviderKind.Live || PropLineCredentialResolver.HasApiKey(_options);
 
     public NflWeekRef? SelectedWeek
     {
@@ -236,8 +244,52 @@ public sealed class QuickPicksService : IQuickPicksService
     {
         lock (_gate)
         {
-            BuildLocked();
+            BuildLocked(null);
             _loaded = true;
+        }
+
+        // In the browser the build above reused the last lines; fetch new ones in the background.
+        if (OperatingSystem.IsBrowser())
+        {
+            StartRefresh();
+        }
+    }
+
+    public async Task RefreshAsync(CancellationToken cancellationToken = default)
+    {
+        var loaded = await LoadLinesAsync(cancellationToken).ConfigureAwait(false);
+        lock (_gate)
+        {
+            _lastLoaded = loaded;
+            BuildLocked(loaded);
+            _loaded = true;
+        }
+    }
+
+    public Task EnsureLoadedAsync(CancellationToken cancellationToken = default)
+    {
+        lock (_gate)
+        {
+            if (_loaded && _lastLoaded is not null)
+            {
+                return Task.CompletedTask;
+            }
+        }
+
+        return StartRefresh();
+    }
+
+    private Task StartRefresh()
+    {
+        lock (_gate)
+        {
+            if (_refreshInFlight is { IsCompleted: false })
+            {
+                return _refreshInFlight;
+            }
+
+            _refreshInFlight = RefreshAsync();
+            return _refreshInFlight;
         }
     }
 
@@ -261,44 +313,36 @@ public sealed class QuickPicksService : IQuickPicksService
             return;
         }
 
-        BuildLocked();
+        BuildLocked(null);
         _loaded = true;
+
+        if (OperatingSystem.IsBrowser())
+        {
+            StartRefresh();
+        }
     }
 
-    private void BuildLocked()
+    /// <summary>
+    /// Builds the board from <paramref name="loaded"/> lines, or, when none are given, from a fresh
+    /// fetch. The browser build cannot block on a fetch, so there it reuses the last lines (none
+    /// before the first fetch completes) and <see cref="StartRefresh"/> brings new ones.
+    /// </summary>
+    private void BuildLocked(LoadedLines? loaded)
     {
         var watch = Stopwatch.StartNew();
         PropLineCredentialResolver.ApplyAliasEnvironmentVariables(_options);
         var configured = _options.Provider.ToString();
-        var apiKeyConfigured = PropLineCredentialResolver.HasApiKey(_options);
+        var apiKeyConfigured = KeyConfigured;
         _status.SetConfigured(configured, apiKeyConfigured);
 
-        IReadOnlyList<PropLine> lines;
-        var usedFallback = false;
-        string? error = null;
-        var activeName = configured;
+        loaded ??= OperatingSystem.IsBrowser()
+            ? _lastLoaded ?? new LoadedLines([], false, ProviderDisplayName, null)
+            : _lastLoaded = LoadLinesAsync(CancellationToken.None).GetAwaiter().GetResult();
 
-        try
-        {
-            lines = LoadLines(out usedFallback, out activeName, out error);
-        }
-        catch (Exception ex)
-        {
-            error = ex.Message;
-            activeName = configured;
-            if (_options.AllowMockFallback)
-            {
-                _logger.LogWarning(ex, "Prop line load failed; using mock fallback");
-                lines = GetProvider("Mock").GetPropLinesAsync().GetAwaiter().GetResult();
-                usedFallback = true;
-                activeName = "Mock";
-            }
-            else
-            {
-                _logger.LogWarning(ex, "Prop line load failed; mock fallback disabled, reporting unavailable");
-                lines = [];
-            }
-        }
+        IReadOnlyList<PropLine> lines = loaded.Lines;
+        var usedFallback = loaded.UsedFallback;
+        var error = loaded.Error;
+        var activeName = loaded.ActiveName;
 
         lines = lines
             .Select(NormalizeFreshness)
@@ -613,72 +657,96 @@ public sealed class QuickPicksService : IQuickPicksService
         }
     }
 
-    private IReadOnlyList<PropLine> LoadLines(out bool usedFallback, out string activeName, out string? error)
+    private string ProviderDisplayName => _options.Provider switch
     {
-        usedFallback = false;
-        error = null;
+        PropLineProviderKind.Espn => EspnPropLineProvider.Name,
+        PropLineProviderKind.Live => "TheOddsAPI",
+        _ => "Mock",
+    };
 
+    /// <summary>
+    /// Fetches lines from the configured provider. Never throws: a failure becomes an error the board
+    /// reports (or, where <see cref="PropLineOptions.AllowMockFallback"/> allows it, mock lines).
+    /// </summary>
+    private async Task<LoadedLines> LoadLinesAsync(CancellationToken cancellationToken)
+    {
+        var configured = ProviderDisplayName;
+        try
+        {
+            return await LoadConfiguredLinesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            if (_options.AllowMockFallback)
+            {
+                _logger.LogWarning(ex, "Prop line load failed; using mock fallback");
+                var mock = await GetProvider("Mock").GetPropLinesAsync(cancellationToken).ConfigureAwait(false);
+                return new LoadedLines(mock, true, "Mock", ex.Message);
+            }
+
+            _logger.LogWarning(ex, "Prop line load failed; mock fallback disabled, reporting unavailable");
+            return new LoadedLines([], false, configured, ex.Message);
+        }
+    }
+
+    private async Task<LoadedLines> LoadConfiguredLinesAsync(CancellationToken cancellationToken)
+    {
         if (_options.Provider == PropLineProviderKind.Mock)
         {
             // Explicit dev choice, not a fallback — always honored regardless of AllowMockFallback.
-            activeName = "Mock";
-            return GetProvider("Mock").GetPropLinesAsync().GetAwaiter().GetResult();
+            var mock = await GetProvider("Mock").GetPropLinesAsync(cancellationToken).ConfigureAwait(false);
+            return new LoadedLines(mock, false, "Mock", null);
+        }
+
+        if (_options.Provider == PropLineProviderKind.Espn)
+        {
+            // ESPN's public odds need no key. An empty answer (offseason, bye week) is reported as such.
+            var espn = GetProvider(EspnPropLineProvider.Name);
+            var lines = await espn.GetPropLinesAsync(cancellationToken).ConfigureAwait(false);
+            if (lines.Count == 0)
+            {
+                return await EmptyLiveAsync(espn.ProviderName, "ESPN has no NFL lines posted right now.", cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            return new LoadedLines(lines, false, espn.ProviderName, null);
         }
 
         if (!PropLineCredentialResolver.HasApiKey(_options))
         {
-            error = $"{PropLineCredentialResolver.PrimaryEnvVar} is empty. " +
-                    PropLineCredentialResolver.DescribeMissingKeyGuidance();
-            activeName = "TheOddsAPI";
+            var error = $"{PropLineCredentialResolver.PrimaryEnvVar} is empty. " +
+                        PropLineCredentialResolver.DescribeMissingKeyGuidance();
             _logger.LogWarning(
                 "Live prop provider selected but API key is not configured (ApiKeyConfigured=false).");
             if (!_options.AllowMockFallback)
             {
-                return [];
+                return new LoadedLines([], false, "TheOddsAPI", error);
             }
 
-            usedFallback = true;
-            activeName = "Mock";
-            error += " Falling back to Mock.";
-            return GetProvider("Mock").GetPropLinesAsync().GetAwaiter().GetResult();
+            var mock = await GetProvider("Mock").GetPropLinesAsync(cancellationToken).ConfigureAwait(false);
+            return new LoadedLines(mock, true, "Mock", error + " Falling back to Mock.");
         }
 
-        try
+        var live = GetProvider("TheOddsAPI");
+        var liveLines = await live.GetPropLinesAsync(cancellationToken).ConfigureAwait(false);
+        if (liveLines.Count == 0)
         {
-            var live = GetProvider("TheOddsAPI");
-            var lines = live.GetPropLinesAsync().GetAwaiter().GetResult();
-            if (lines.Count == 0)
-            {
-                error = "The Odds API returned no NFL markets right now.";
-                activeName = live.ProviderName;
-                if (_options.FallbackToMockWhenEmpty && _options.AllowMockFallback)
-                {
-                    usedFallback = true;
-                    activeName = "Mock";
-                    error += " Falling back to Mock.";
-                    return GetProvider("Mock").GetPropLinesAsync().GetAwaiter().GetResult();
-                }
-
-                return [];
-            }
-
-            activeName = live.ProviderName;
-            return lines;
+            return await EmptyLiveAsync(live.ProviderName, "The Odds API returned no NFL markets right now.", cancellationToken)
+                .ConfigureAwait(false);
         }
-        catch (Exception ex)
+
+        return new LoadedLines(liveLines, false, live.ProviderName, null);
+    }
+
+    private async Task<LoadedLines> EmptyLiveAsync(string provider, string error, CancellationToken cancellationToken)
+    {
+        if (_options.FallbackToMockWhenEmpty && _options.AllowMockFallback)
         {
-            error = ex.Message;
-            activeName = "TheOddsAPI";
-            _logger.LogWarning(ex, "Live prop provider failed.");
-            if (!_options.AllowMockFallback)
-            {
-                return [];
-            }
-
-            usedFallback = true;
-            activeName = "Mock";
-            return GetProvider("Mock").GetPropLinesAsync().GetAwaiter().GetResult();
+            var mock = await GetProvider("Mock").GetPropLinesAsync(cancellationToken).ConfigureAwait(false);
+            return new LoadedLines(mock, true, "Mock", error + " Falling back to Mock.");
         }
+
+        return new LoadedLines([], false, provider, error);
     }
 
     private static PropLine NormalizeFreshness(PropLine line)
@@ -710,6 +778,24 @@ public sealed class QuickPicksService : IQuickPicksService
     /// </summary>
     private void RecordBookmakerCoverage(IReadOnlyList<PropLine> lines)
     {
+        // ESPN carries one book (its sportsbook partner), so there is no priority list to check it against.
+        if (_options.Provider == PropLineProviderKind.Espn)
+        {
+            var books = lines
+                .GroupBy(l => l.Bookmaker, StringComparer.OrdinalIgnoreCase)
+                .OrderByDescending(g => g.Count())
+                .ToList();
+            if (books.Count > 0)
+            {
+                _status.RecordBookmakerCoverage(
+                    books[0].Key,
+                    true,
+                    string.Join(", ", books.Take(4).Select(g => $"{g.Key} ({g.Count()})")));
+            }
+
+            return;
+        }
+
         var priority = LivePropLineProvider.ParseBookmakerPriority(_options.OddsApi.PreferredBookmakers);
         var (primaryName, primaryActive, summary) = ComputeBookmakerCoverage(lines, priority, BookmakerFriendlyNames);
         if (primaryName is null)

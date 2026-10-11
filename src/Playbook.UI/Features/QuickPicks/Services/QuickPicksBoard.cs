@@ -42,4 +42,6 @@ public sealed class QuickPicksBoard : IQuickPicksBoard
     public bool TrySelectWeek(NflWeekRef week) => _service.TrySelectWeek(week);
 
     public void Refresh() => _service.Refresh();
+
+    public Task EnsureLoadedAsync() => _service.EnsureLoadedAsync();
 }

@@ -159,6 +159,7 @@ public sealed class QuickPicksSyncStatus : IQuickPicksSyncStatus
         }
 
         if (activeProvider.Equals("TheOddsAPI", StringComparison.OrdinalIgnoreCase) ||
+            activeProvider.Equals("ESPN", StringComparison.OrdinalIgnoreCase) ||
             activeProvider.Equals("Live", StringComparison.OrdinalIgnoreCase))
         {
             return "Live";
