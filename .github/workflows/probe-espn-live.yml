@@ -1,4 +1,4 @@
-# Temporary: confirms the deployed relay reaches ESPN. Deleted after use.
+# Temporary: audits what each Quick Pick's projection is built from, on live data. Deleted after use.
 name: Probe ESPN provider live
 on:
   push:
@@ -10,18 +10,99 @@ jobs:
       run:
         shell: bash {0}
     steps:
-      - name: Wait for the deployed relay to reach ESPN
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+      - name: nflverse files available
         run: |
-          R=https://noahdbuilds.com/playbook/api/relay
-          UA="Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1"
-          for i in $(seq 1 40); do
-            code=$(curl -sS -o sb.json -w '%{http_code}' -A "$UA" -H "Accept: application/json" "$R/site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?try=$i")
-            echo "try $i: scoreboard $code"
-            [ "$code" = "200" ] && break
-            sleep 20
+          for f in player_stats/player_stats_2024 player_stats/player_stats_2025 player_stats/player_stats_2026 stats_player/stats_player_week_2025 stats_player/stats_player_week_2026; do
+            code=$(curl -sSL -o f.gz -w '%{http_code}' "https://github.com/nflverse/nflverse-data/releases/download/$f.csv.gz")
+            if [ "$code" = 200 ]; then echo "$f: $(stat -c %s f.gz) bytes, rows $(zcat f.gz | wc -l), max week $(zcat f.gz | python3 -c 'import csv,sys; r=csv.DictReader(sys.stdin); print(max((int(x["week"]),x["season"]) for x in r))')"; else echo "$f: $code"; fi
           done
-          jq -c '{week: .week.number, games: (.events | length), withOdds: ([.events[] | select(.competitions[0].odds != null)] | length)}' sb.json
-          for U in "site.api.espn.com/apis/site/v2/sports/football/nfl/news?limit=40" "site.web.api.espn.com/apis/site/v2/sports/football/nfl/injuries" "sports.core.api.espn.com/v2/sports/football/leagues/nfl/events/401872981/competitions/401872981/odds/100/propBets?lang=en&region=us&limit=1000&page=1" "api.sleeper.app/v1/state/nfl"; do
-            curl -sS -o b.json -w "%{http_code} $U\n" -A "$UA" -H "Accept: application/json" "$R/$U"
-          done
-          curl -sS -o /dev/null -w '%{http_code} app page\n' -A "$UA" https://noahdbuilds.com/playbook/quick-picks
+          curl -sS "https://api.sleeper.app/v1/stats/nfl/regular/2026" | python3 -c 'import json,sys; d=json.load(sys.stdin); g=[v.get("gp",0) for v in d.values()]; print("sleeper 2026 season stats:", len(d), "players, max gp", max(g))'
+          curl -sS -o /dev/null -w 'sleeper weekly stats 2026 week 4: %{http_code}\n' "https://api.sleeper.app/v1/stats/nfl/regular/2026/4"
+      - name: What each pick is built from
+        run: |
+          mkdir probe && cd probe
+          cat > probe.csproj <<'XML'
+          <Project Sdk="Microsoft.NET.Sdk">
+            <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net9.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup>
+            <ItemGroup>
+              <ProjectReference Include="../src/Playbook.Infrastructure/Playbook.Infrastructure.csproj" />
+              <ProjectReference Include="../src/Playbook.Application/Playbook.Application.csproj" />
+              <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="9.0.8" />
+              <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="9.0.8" />
+            </ItemGroup>
+          </Project>
+          XML
+          cat > Program.cs <<'CS'
+          using Microsoft.Extensions.Configuration;
+          using Microsoft.Extensions.DependencyInjection;
+          using Microsoft.Extensions.Logging;
+          using Playbook.Application;
+          using Playbook.Application.Injuries.Interfaces;
+          using Playbook.Application.Intelligence.Interfaces;
+          using Playbook.Application.News;
+          using Playbook.Application.Players;
+          using Playbook.Application.Predictions.Interfaces;
+          using Playbook.Application.Projections.Interfaces;
+          using Playbook.Application.Stats.Interfaces;
+          using Playbook.Core.Predictions;
+          using Playbook.Infrastructure;
+          var dir = Directory.GetCurrentDirectory();
+          var config = new ConfigurationBuilder().SetBasePath(dir)
+              .AddJsonFile("../src/Playbook.Web/appsettings.json").AddJsonFile("../src/Playbook.Client/browser-settings.json").Build();
+          var services = new ServiceCollection().AddLogging(b => b.AddSimpleConsole().SetMinimumLevel(LogLevel.Warning));
+          services.AddInfrastructure(config).AddApplication();
+          var sp = services.BuildServiceProvider();
+          var players = sp.GetRequiredService<IPlayerService>();
+          await players.RefreshAsync();
+          await sp.GetRequiredService<INflCalendarService>().RefreshAsync();
+          var stats = sp.GetRequiredService<IPlayerStatsService>();
+          await stats.RefreshAsync();
+          await sp.GetRequiredService<IPlayerInjuryService>().RefreshAsync();
+          await sp.GetRequiredService<INewsProvider>().RefreshAsync();
+          sp.GetRequiredService<IIntelligenceService>().Refresh();
+          sp.GetRequiredService<IProjectionService>().Refresh();
+          var qp = sp.GetRequiredService<IQuickPicksService>();
+          await qp.RefreshAsync();
+          var production = sp.GetRequiredService<IPlayerProductionProvider>();
+          var ctx = sp.GetRequiredService<IPlayerStatisticalContextService>();
+          var all = qp.GetSlatePredictions().Where(p => p.PlayerId is not null).ToList();
+          Console.WriteLine($"slate {qp.SelectedWeek?.DisplayLabel}: {all.Count} player predictions");
+          var logs = all.SelectMany(p => stats.GetGameLogsForPlayer(p.PlayerId!.Value)).ToList();
+          Console.WriteLine("game-log seasons available: " + string.Join(", ", logs.GroupBy(g => g.Season).OrderBy(g => g.Key).Select(g => $"{g.Key} ({g.Count()})")));
+          string Fmt(decimal? v) => v is null ? "-" : v.Value.ToString("0.0");
+          decimal? Market(PredictionMarketType m, Playbook.Core.Stats.Models.PlayerSeasonStats? r)
+          {
+              if (r is null || (r.Games ?? 0) == 0) return null;
+              decimal g = r.Games!.Value;
+              return m switch {
+                  PredictionMarketType.PassingYards => r.PassYards / g, PredictionMarketType.RushingYards => r.RushYards / g,
+                  PredictionMarketType.ReceivingYards => r.ReceivingYards / g, PredictionMarketType.Receptions => r.Receptions / g,
+                  PredictionMarketType.PassingTouchdowns => r.PassTouchdowns / g, _ => null };
+          }
+          var stale = 0; var basisCounts = new Dictionary<string, int>();
+          foreach (var p in qp.GetTopPicks(12).Concat(all.Where(p => p.Market != PredictionMarketType.AnytimeTouchdown).Take(30)).DistinctBy(p => p.Id))
+          {
+              var player = players.GetPlayer(p.PlayerId!.Value)!;
+              var prod = production.GetProduction(player);
+              var seasons = stats.GetRecentNflSeasons(player.Id, 3);
+              var cur = seasons.FirstOrDefault(s => s.Season == 2026);
+              var last = seasons.FirstOrDefault(s => s.Season == 2025);
+              var recentLogs = stats.GetGameLogsForPlayer(player.Id).OrderByDescending(g => g.Season).ThenByDescending(g => g.Week).Take(8).ToList();
+              var recentSeasons = string.Join("/", recentLogs.Select(g => g.Season).Distinct());
+              if (recentLogs.Count > 0 && recentLogs.All(g => g.Season < 2026)) stale++;
+              var basis = $"{prod.Source} {prod.Season}";
+              basisCounts[basis] = basisCounts.GetValueOrDefault(basis) + 1;
+              Console.WriteLine($"{p.PlayerName} ({player.Team}) {p.Event.DisplayName} {p.Market} line {p.Line} proj {Fmt(p.PlaybookProjection)} {p.Direction} conf {p.Confidence}");
+              Console.WriteLine($"    basis {basis} ({prod.GamesPlayed} g) | 2026 per game {Fmt(Market(p.Market, cur))} in {cur?.Games ?? 0} g | 2025 per game {Fmt(Market(p.Market, last))} | recent form: {recentLogs.Count} games from {recentSeasons}");
+          }
+          Console.WriteLine($"picks whose recent form is entirely from before 2026: {stale}");
+          Console.WriteLine("production basis: " + string.Join(", ", basisCounts.Select(kv => $"{kv.Key}: {kv.Value}")));
+          CS
+          sed -i 's/^          //' Program.cs probe.csproj
+          set -o pipefail; dotnet run -c Release 2>&1 | grep -v '^warn\|^      \|^   at \|^info' | tail -120
