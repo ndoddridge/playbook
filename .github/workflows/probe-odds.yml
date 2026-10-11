@@ -6,6 +6,9 @@ on:
 jobs:
   probe:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash {0}
     steps:
       - name: Pick a scheduled game
         run: |
@@ -13,7 +16,7 @@ jobs:
           jq -r '[.events[] | select(.status.type.name == "STATUS_SCHEDULED")][0].id' sb.json > eid.txt
           cat eid.txt
           jq -c '[.events[] | {id, st: .status.type.name, oddsCount: (.competitions[0].odds | length), provider: .competitions[0].odds[0].provider.name}]' sb.json
-          jq -c '.events[0].competitions[0].odds[0] | keys' sb.json
+          jq -c '.events[1].competitions[0].odds[0] | keys' sb.json
           curl -sS "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?seasontype=2&week=6&dates=2026" | jq -c '.week, (.events | length), [.events[] | {id, date, st: .status.type.name, odds: (.competitions[0].odds | length)}][0:3]'
       - name: Prop bets in detail
         run: |
