@@ -45,7 +45,7 @@ jobs:
           await qp.RefreshAsync();
           var status = sp.GetRequiredService<Playbook.Application.Predictions.IQuickPicksSyncStatus>();
           Console.WriteLine($"quick picks: provider {status.PropProvider} status {status.ProviderStatus} error '{status.LastError}' slate {qp.SelectedWeek?.DisplayLabel} predictions {qp.GetSlatePredictions().Count}");
-          foreach (var p in qp.GetTopPicks(5)) Console.WriteLine($"  top: {p}");
+          foreach (var p in qp.GetTopPicks(5)) Console.WriteLine($"  top: {p.SubjectLabel} {p.MarketLabel} {p.DirectionLabel} {p.Line} conf {p.Confidence} · {p.ContextLabel}");
           CS
           sed -i 's/^          //' Program.cs
           set -o pipefail; dotnet run -c Release 2>&1 | tail -40
