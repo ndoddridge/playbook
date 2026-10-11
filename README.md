@@ -151,7 +151,7 @@ Normalized football statistics power Career, Projection, and the Intelligence st
 }
 ```
 
-- Historical NFL: nflverse weekly `player_stats_{season}.csv.gz` (per-season disk cache, GSIS + name/team identity)
+- Historical NFL: nflverse weekly `stats_player_week_{season}.csv.gz` (per-season disk cache, GSIS + name/team identity). The season in progress is included for its game logs and re-downloaded every 6 hours, so recent form reflects this season once a player has 3 games.
 - Current / gap-fill NFL: Sleeper bulk season stats (`/stats/nfl/regular/{season}`)
 - College: `ICollegeStatsProvider` via ESPN CFB athlete stats (kept separate from NFL samples)
 - Fantasy points calculated from canonical counting stats + league scoring (`LeagueFantasyScoring` — PPR / Half / Standard)

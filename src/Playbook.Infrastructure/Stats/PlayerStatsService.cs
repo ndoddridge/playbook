@@ -249,10 +249,14 @@ public sealed class PlayerStatsService : IPlayerStatsService
             {
                 try
                 {
+                    // The season in progress is included for its game logs (recent form). Without it
+                    // the newest game logs were last season's, however far into this one we are.
                     var histSeasons = currentSeasonOnly
                         ? []
                         : request.CompletedSeasons
                             .Take(Math.Clamp(_options.HistoricalSeasonCount, 1, 15))
+                            .Prepend(request.CurrentSeason)
+                            .Distinct()
                             .ToList();
 
                     // Always refresh the newest completed season when doing current-only? skip.
@@ -263,7 +267,8 @@ public sealed class PlayerStatsService : IPlayerStatsService
                         {
                             Seasons = histSeasons,
                             SeasonType = request.SeasonType,
-                            ForceRedownload = false
+                            ForceRedownload = false,
+                            LiveSeason = request.CurrentSeason
                         };
 
                         if (histRequest.Seasons.Count > 0)

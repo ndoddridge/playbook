@@ -10,6 +10,9 @@ namespace Playbook.Infrastructure.Stats;
 /// </summary>
 public sealed class PlayerStatisticalContextService : IPlayerStatisticalContextService
 {
+    /// <summary>This season's games become the recent-form window once a player has this many.</summary>
+    internal const int MinCurrentSeasonGamesForRecentForm = 3;
+
     private readonly IPlayerStatsService _stats;
 
     public PlayerStatisticalContextService(IPlayerStatsService stats)
@@ -38,14 +41,20 @@ public sealed class PlayerStatisticalContextService : IPlayerStatisticalContextS
             .OrderByDescending(g => g.Season)
             .ThenByDescending(g => g.Week)
             .ToList();
-        var recentGames = games.Take(8).ToList();
+        var current = nflSeasons.FirstOrDefault(r => r.Period == StatsPeriod.CurrentSeason);
+
+        // Recent form is this season's games once there are a few of them, so a player's new role or
+        // team is what counts. Before that, the latest games of any season.
+        var currentSeasonGames = current is null ? [] : games.Where(g => g.Season == current.Season).ToList();
+        var recentGames = (currentSeasonGames.Count >= MinCurrentSeasonGamesForRecentForm ? currentSeasonGames : games)
+            .Take(8)
+            .ToList();
 
         var career = _stats.GetCareerTotals(playerId);
         var historical = nflSeasons
             .Where(r => r.Period == StatsPeriod.CompletedSeason)
             .Take(3)
             .ToList();
-        var current = nflSeasons.FirstOrDefault(r => r.Period == StatsPeriod.CurrentSeason);
 
         return new PlayerStatisticalContext
         {
