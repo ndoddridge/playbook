@@ -16,15 +16,18 @@ public sealed class LeagueAutoReconnectHostedService : BackgroundService
 {
     private readonly ILeagueService _leagueService;
     private readonly ILeagueUserTeamStore _userTeamStore;
+    private readonly ILeagueState _leagueState;
     private readonly ILogger<LeagueAutoReconnectHostedService> _logger;
 
     public LeagueAutoReconnectHostedService(
         ILeagueService leagueService,
         ILeagueUserTeamStore userTeamStore,
+        ILeagueState leagueState,
         ILogger<LeagueAutoReconnectHostedService> logger)
     {
         _leagueService = leagueService;
         _userTeamStore = userTeamStore;
+        _leagueState = leagueState;
         _logger = logger;
     }
 
@@ -51,6 +54,14 @@ public sealed class LeagueAutoReconnectHostedService : BackgroundService
 
                 if (result.Succeeded)
                 {
+                    // Open on the first reconnected league instead of "No League Selected". The
+                    // browser build starts fresh on every visit, so this is what keeps a returning
+                    // visitor on their own team.
+                    if (_leagueState.CurrentLeague is null && result.League is not null)
+                    {
+                        _leagueState.SelectLeague(result.League.Id);
+                    }
+
                     _logger.LogInformation(
                         "Auto-reconnected Sleeper league {ExternalId} ({LeagueName}) on startup.",
                         externalId,

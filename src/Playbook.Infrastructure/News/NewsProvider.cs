@@ -19,6 +19,8 @@ public sealed class NewsProvider : INewsProvider
     private readonly IPlayerService _players;
     private readonly ILogger<NewsProvider> _logger;
     private readonly object _gate = new();
+    private readonly SemaphoreSlim _refreshGate = new(1, 1);
+    private Task? _browserLoad;
 
     private IReadOnlyList<NewsArticle> _articles = [];
     private bool _loaded;
@@ -72,22 +74,32 @@ public sealed class NewsProvider : INewsProvider
         return _articles.Where(a => set.Contains(a.Id)).ToList();
     }
 
-    public Task RefreshAsync(CancellationToken cancellationToken = default)
+    public async Task RefreshAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        lock (_gate)
+        await _refreshGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            LoadCatalog();
+            await LoadCatalogAsync().ConfigureAwait(false);
             _loaded = true;
         }
-
-        return Task.CompletedTask;
+        finally
+        {
+            _refreshGate.Release();
+        }
     }
 
     private void EnsureLoaded()
     {
         if (_loaded)
         {
+            return;
+        }
+
+        // The browser build cannot block on a network call; see PlayerService.EnsureLoaded.
+        if (OperatingSystem.IsBrowser())
+        {
+            _browserLoad ??= RefreshAsync();
             return;
         }
 
@@ -103,14 +115,16 @@ public sealed class NewsProvider : INewsProvider
         }
     }
 
-    private void LoadCatalog()
+    private void LoadCatalog() => LoadCatalogAsync().GetAwaiter().GetResult();
+
+    private async Task LoadCatalogAsync()
     {
         var stopwatch = Stopwatch.StartNew();
         string? error = null;
 
         try
         {
-            var articles = _primary.FetchAsync().GetAwaiter().GetResult();
+            var articles = await _primary.FetchAsync().ConfigureAwait(false);
             stopwatch.Stop();
             if (articles.Count == 0)
             {
@@ -144,7 +158,7 @@ public sealed class NewsProvider : INewsProvider
         }
 
         var fallbackWatch = Stopwatch.StartNew();
-        var mock = _fallback.FetchAsync().GetAwaiter().GetResult();
+        var mock = await _fallback.FetchAsync().ConfigureAwait(false);
         fallbackWatch.Stop();
         _articles = EnrichWithPlayerIds(mock);
         DisplayName = $"{_fallback.DisplayName} (fallback)";

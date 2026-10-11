@@ -15,7 +15,9 @@ See [docs/DESIGN.md](docs/DESIGN.md) for the full product design.
 ```
 playbook.sln
 ├── src
-│   ├── Playbook.Web            # Blazor Server UI
+│   ├── Playbook.UI             # Razor components, pages and styles (shared by both hosts)
+│   ├── Playbook.Web            # Blazor Server host (Fly.io)
+│   ├── Playbook.Client         # Blazor WebAssembly host (noahdbuilds.com/playbook)
 │   ├── Playbook.Core           # Domain models & abstractions
 │   ├── Playbook.Application    # Use cases & application services
 │   ├── Playbook.Infrastructure # Persistence & external adapters
@@ -183,6 +185,23 @@ dotnet run --project src/Playbook.Web
 Then open the URL shown in the console (typically `https://localhost:7xxx`). Use the Dashboard **Developer Monitor** to confirm provider, sync time, player count, and any fallback errors.
 
 ## Production deployment
+
+### In the browser, at noahdbuilds.com/playbook
+
+`Playbook.Client` runs the same UI and engines in the browser as WebAssembly, with no server. noahdbuilds.com serves the published files at `/playbook/` and provides a small relay Function that forwards the app's GET requests to Sleeper, ESPN and nflverse, which do not all accept calls from a browser page on another site (`RelayHandler` decides which requests go through it). The data directory the stores and caches write to lives in memory and is saved to IndexedDB (`BrowserDataStore`), so connected leagues and caches survive a reload.
+
+A browser cannot block on a network call, so the data services load asynchronously when running there (`OperatingSystem.IsBrowser()` in their `EnsureLoaded` paths), and `Boot` loads players, stats, injuries, news and the NFL calendar before the first render. MD5 ids use the managed `Playbook.Core.Hashing.Md5`, since the browser runtime has no MD5. Settings are the Web project's `appsettings.json` with `src/Playbook.Client/browser-settings.json` on top.
+
+To deploy a new version, build it into the site from a clean checkout of this repository:
+
+```bash
+cd ../noahdbuilds
+PLAYBOOK_LOCAL_PATH=../playbook npm run build:playbook
+```
+
+then commit and merge there (see that repository's README). To try it locally first, run `npx wrangler pages dev public` in the noahdbuilds checkout after building: that serves the app and its relay at http://localhost:8788/playbook/.
+
+### Blazor Server, on Fly.io
 
 The Blazor Server app runs on Fly.io (persistent process + WebSocket support, required for Blazor Server's SignalR circuit) at **https://playbook-genie.fly.dev**. `main` is the production branch — every push triggers `.github/workflows/fly-deploy.yml`, which builds the `Dockerfile` (Core/Application/Infrastructure/Web only — the Research CLI is excluded from the deployed image) and deploys via `flyctl deploy --remote-only`.
 

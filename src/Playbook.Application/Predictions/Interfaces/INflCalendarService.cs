@@ -11,6 +11,16 @@ public interface INflCalendarService
     NflSeasonContext GetCurrentContext();
 
     /// <summary>
+    /// Resolves the current context from the provider now. The browser build calls this at startup,
+    /// since it cannot block on I/O inside <see cref="GetCurrentContext"/>.
+    /// </summary>
+    Task RefreshAsync(CancellationToken cancellationToken = default)
+    {
+        GetCurrentContext();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
     /// Assign season/phase/week on each event from kickoff clustering + provider phase hints.
     /// Never invents weeks without games. Preseason capped at 3 weeks.
     /// </summary>

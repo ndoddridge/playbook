@@ -24,6 +24,7 @@ public sealed class NflCalendarService : INflCalendarService
     private readonly object _gate = new();
     private NflSeasonContext? _cached;
     private DateTimeOffset _cacheExpires = DateTimeOffset.MinValue;
+    private Task? _browserRefresh;
 
     public NflCalendarService(
         IHttpClientFactory httpClientFactory,
@@ -41,6 +42,14 @@ public sealed class NflCalendarService : INflCalendarService
             {
                 return _cached;
             }
+
+            // The browser build cannot block on a network call: it answers from the last
+            // context (or the calendar) and refreshes from Sleeper in the background.
+            if (OperatingSystem.IsBrowser())
+            {
+                _browserRefresh = _browserRefresh is { IsCompleted: false } ? _browserRefresh : RefreshAsync();
+                return _cached ?? BuildCalendarFallback();
+            }
         }
 
         var resolved = ResolveLiveOrFallback();
@@ -49,6 +58,16 @@ public sealed class NflCalendarService : INflCalendarService
             _cached = resolved;
             _cacheExpires = DateTimeOffset.UtcNow.AddMinutes(15);
             return _cached;
+        }
+    }
+
+    public async Task RefreshAsync(CancellationToken cancellationToken = default)
+    {
+        var resolved = await ResolveLiveOrFallbackAsync(cancellationToken).ConfigureAwait(false);
+        lock (_gate)
+        {
+            _cached = resolved;
+            _cacheExpires = DateTimeOffset.UtcNow.AddMinutes(15);
         }
     }
 
@@ -321,14 +340,16 @@ public sealed class NflCalendarService : INflCalendarService
         };
     }
 
-    private NflSeasonContext ResolveLiveOrFallback()
+    private NflSeasonContext ResolveLiveOrFallback() =>
+        ResolveLiveOrFallbackAsync(CancellationToken.None).GetAwaiter().GetResult();
+
+    private async Task<NflSeasonContext> ResolveLiveOrFallbackAsync(CancellationToken cancellationToken)
     {
         try
         {
             var client = _httpClientFactory.CreateClient(HttpClientName);
-            var state = client.GetFromJsonAsync<SleeperNflState>("state/nfl")
-                .GetAwaiter()
-                .GetResult();
+            var state = await client.GetFromJsonAsync<SleeperNflState>("state/nfl", cancellationToken)
+                .ConfigureAwait(false);
             if (state is not null && int.TryParse(state.Season, out var season))
             {
                 var phase = ParsePhase(state.SeasonType);

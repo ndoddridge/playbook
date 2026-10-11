@@ -19,4 +19,13 @@ public interface IPlayerService
     /// Reloads the player catalog from the configured provider (with mock fallback).
     /// </summary>
     void Refresh();
+
+    /// <summary>
+    /// Asynchronous <see cref="Refresh"/>. The browser build uses this, since it cannot block on I/O.
+    /// </summary>
+    Task RefreshAsync(CancellationToken cancellationToken = default)
+    {
+        Refresh();
+        return Task.CompletedTask;
+    }
 }

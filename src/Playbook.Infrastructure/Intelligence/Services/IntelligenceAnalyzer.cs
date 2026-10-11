@@ -297,7 +297,7 @@ public sealed class IntelligenceAnalyzer : IIntelligenceAnalyzer
 
     private static Guid ToDeterministicGuid(string value)
     {
-        var bytes = MD5.HashData(Encoding.UTF8.GetBytes($"playbook:intel:{value}"));
+        var bytes = Playbook.Core.Hashing.Md5.HashData(Encoding.UTF8.GetBytes($"playbook:intel:{value}"));
         return new Guid(bytes);
     }
 

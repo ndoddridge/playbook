@@ -244,7 +244,7 @@ public static class UnconfirmedInjurySignalExtractor
     private static Guid StableId(Guid playerId, Guid articleId)
     {
         var raw = $"unconfirmed-injury:{playerId:N}:{articleId:N}";
-        var hash = MD5.HashData(Encoding.UTF8.GetBytes(raw));
+        var hash = Playbook.Core.Hashing.Md5.HashData(Encoding.UTF8.GetBytes(raw));
         return new Guid(hash);
     }
 }

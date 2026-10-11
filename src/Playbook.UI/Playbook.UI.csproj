@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+
+  <!--
+    The Playbook UI: layout, pages, feature components and styles. Shared by the two hosts:
+    Playbook.Web (Blazor Server, on Fly.io) and Playbook.Client (Blazor WebAssembly, served
+    as static files at noahdbuilds.com/playbook). The root namespace stays Playbook.Web so the
+    components keep the namespaces they had before they moved here.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Playbook.Web</RootNamespace>
+    <AssemblyName>Playbook.UI</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <SupportedPlatform Include="browser" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Components.Web" Version="9.0.8" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Playbook.Application\Playbook.Application.csproj" />
+    <ProjectReference Include="..\Playbook.Infrastructure\Playbook.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>
