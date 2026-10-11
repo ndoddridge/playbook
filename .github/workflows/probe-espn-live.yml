@@ -1,4 +1,4 @@
-# Temporary: checks ESPN prop lines for players listed with more than one value. Deleted after use.
+# Temporary: diagnoses ESPN refusing the noahdbuilds.com relay. Deleted after use.
 name: Probe ESPN provider live
 on:
   push:
@@ -6,14 +6,35 @@ on:
 jobs:
   probe:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash {0}
     steps:
-      - name: Multiple values per player and market
+      - name: Through the live relay
         run: |
-          curl -sS "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard" -o sb.json
-          for E in $(jq -r '.events[] | select(.status.type.completed == false) | .id' sb.json | head -8); do
-            for P in 1 2; do curl -sS "https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/events/$E/competitions/$E/odds/100/propBets?lang=en&region=us&limit=1000&page=$P" -o "p_${E}_$P.json"; done
-            jq -s -c --arg e "$E" '[.[].items[]? | select(.type.name | test("^Total (Passing|Rushing|Receiving) Yards|^Total Receptions|^Total Passing Touchdowns")) | {a: (.athlete["$ref"] | capture("athletes/(?<id>[0-9]+)").id), t: .type.name, v: .current.target.value, o: .open.target.value}] | group_by([.a, .t]) | map({a: .[0].a, t: .[0].t, n: length, vals: (map(.v) | group_by(.) | map({v: .[0], n: length})), open: (map(.o) | unique)}) | {event: $e, groups: length, multi: map(select(.vals | length > 1))}' p_${E}_1.json p_${E}_2.json | head -c 2500; echo
+          R=https://noahdbuilds.com/playbook/api/relay
+          for U in \
+            "site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard" \
+            "site.api.espn.com/apis/site/v2/sports/football/nfl/news?limit=40" \
+            "site.web.api.espn.com/apis/site/v2/sports/football/nfl/injuries" \
+            "sports.core.api.espn.com/v2/sports/football/leagues/nfl/events/401872981/competitions/401872981/odds/100/propBets?lang=en&region=us&limit=10" \
+            "api.sleeper.app/v1/state/nfl" ; do
+            echo "== $U"; curl -sS -o body.txt -w '%{http_code} %{content_type}\n' "$R/$U"; head -c 300 body.txt; echo
           done
-      - name: Two athletes by name
+      - name: ESPN directly, as a browser on noahdbuilds.com would
         run: |
-          for A in 3925357 3116365; do curl -sS "https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/$A" | jq -c '{id, displayName}'; done
+          for U in \
+            "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard" \
+            "https://site.api.espn.com/apis/site/v2/sports/football/nfl/news?limit=40" \
+            "https://site.web.api.espn.com/apis/site/v2/sports/football/nfl/injuries" \
+            "https://site.web.api.espn.com/apis/site/v2/sports/football/nfl/teams/28/roster" \
+            "https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/events/401872981/competitions/401872981/odds/100/propBets?lang=en&region=us&limit=10" ; do
+            echo "== $U"
+            curl -sS -o /dev/null -D - -H "Origin: https://noahdbuilds.com" -A "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148" "$U" | grep -iE '^HTTP|access-control|^server|^x-cache|cf-' 
+            echo "-- preflight"
+            curl -sS -o /dev/null -D - -X OPTIONS -H "Origin: https://noahdbuilds.com" -H "Access-Control-Request-Method: GET" -H "Access-Control-Request-Headers: accept" "$U" | grep -iE '^HTTP|access-control'
+          done
+      - name: ESPN directly with the relay's user agent
+        run: |
+          curl -sS -o /dev/null -w '%{http_code} relay UA\n' -A "Playbook (+https://noahdbuilds.com/playbook/)" "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard"
+          curl -sS -o /dev/null -w '%{http_code} no UA\n' -A "" "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard"
