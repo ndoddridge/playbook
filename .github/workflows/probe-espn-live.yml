@@ -1,0 +1,49 @@
+# Temporary: runs the ESPN line provider against live ESPN and Sleeper. Deleted after use.
+name: Probe ESPN provider live
+on:
+  push:
+    branches: [claude/probe-espn-live]
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+      - name: Run the provider and Quick Picks against live data
+        run: |
+          mkdir probe && cd probe
+          dotnet new console -f net9.0 -o . --force > /dev/null
+          dotnet add reference ../src/Playbook.Infrastructure/Playbook.Infrastructure.csproj ../src/Playbook.Application/Playbook.Application.csproj > /dev/null
+          cp ../src/Playbook.Web/appsettings.json .
+          cat > Program.cs <<'CS'
+          using Microsoft.Extensions.Configuration;
+          using Microsoft.Extensions.DependencyInjection;
+          using Microsoft.Extensions.Logging;
+          using Playbook.Application;
+          using Playbook.Application.Players;
+          using Playbook.Application.Predictions.Interfaces;
+          using Playbook.Infrastructure;
+          using Playbook.Infrastructure.Predictions;
+          var config = new ConfigurationBuilder().AddJsonFile("appsettings.json").Build();
+          var services = new ServiceCollection().AddLogging(b => b.AddSimpleConsole().SetMinimumLevel(LogLevel.Warning));
+          services.AddInfrastructure(config).AddApplication();
+          var sp = services.BuildServiceProvider();
+          await sp.GetRequiredService<IPlayerService>().RefreshAsync();
+          Console.WriteLine($"players {sp.GetRequiredService<IPlayerService>().GetAllPlayers().Count}, espn ids {sp.GetRequiredService<IPlayerIdentityDirectory>().IdentitiesWithEspnId}");
+          var espn = sp.GetServices<IPropLineProvider>().OfType<EspnPropLineProvider>().Single();
+          var lines = await espn.GetPropLinesAsync();
+          Console.WriteLine($"lines {lines.Count} from {lines.Select(l => l.Event.EventId).Distinct().Count()} games");
+          foreach (var g in lines.GroupBy(l => l.Market)) Console.WriteLine($"  {g.Key}: {g.Count()}");
+          foreach (var g in lines.GroupBy(l => (l.Event.Season, l.Event.Week))) Console.WriteLine($"  season {g.Key.Season} week {g.Key.Week}: {g.Select(l => l.Event.EventId).Distinct().Count()} games");
+          foreach (var l in lines.Where(l => l.PlayerId is not null).Take(8)) Console.WriteLine($"  {l.Event.DisplayName} {l.PlayerName} ({l.TeamName}) {l.MarketLabel} {l.Line} via {l.Bookmaker}");
+          foreach (var l in lines.Where(l => l.PlayerId is null).Take(6)) Console.WriteLine($"  {l.Event.DisplayName} {l.MarketLabel} {l.TeamName} {l.Line} {l.AmericanOddsOver}/{l.AmericanOddsUnder}");
+          var qp = sp.GetRequiredService<IQuickPicksService>();
+          await qp.RefreshAsync();
+          var status = sp.GetRequiredService<Playbook.Application.Predictions.IQuickPicksSyncStatus>();
+          Console.WriteLine($"quick picks: provider {status.PropProvider} status {status.ProviderStatus} error '{status.LastError}' slate {qp.SelectedWeek?.DisplayLabel} predictions {qp.GetSlatePredictions().Count}");
+          foreach (var p in qp.GetTopPicks(5)) Console.WriteLine($"  top: {p}");
+          CS
+          sed -i 's/^          //' Program.cs
+          dotnet run -c Release 2>&1 | tail -40
