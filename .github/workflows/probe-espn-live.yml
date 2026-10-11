@@ -1,4 +1,4 @@
-# Temporary: diagnoses ESPN refusing the noahdbuilds.com relay. Deleted after use.
+# Temporary: confirms the deployed relay reaches ESPN. Deleted after use.
 name: Probe ESPN provider live
 on:
   push:
@@ -10,31 +10,18 @@ jobs:
       run:
         shell: bash {0}
     steps:
-      - name: Through the live relay
+      - name: Wait for the deployed relay to reach ESPN
         run: |
           R=https://noahdbuilds.com/playbook/api/relay
-          for U in \
-            "site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard" \
-            "site.api.espn.com/apis/site/v2/sports/football/nfl/news?limit=40" \
-            "site.web.api.espn.com/apis/site/v2/sports/football/nfl/injuries" \
-            "sports.core.api.espn.com/v2/sports/football/leagues/nfl/events/401872981/competitions/401872981/odds/100/propBets?lang=en&region=us&limit=10" \
-            "api.sleeper.app/v1/state/nfl" ; do
-            echo "== $U"; curl -sS -o body.txt -w '%{http_code} %{content_type}\n' "$R/$U"; head -c 300 body.txt; echo
+          UA="Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1"
+          for i in $(seq 1 40); do
+            code=$(curl -sS -o sb.json -w '%{http_code}' -A "$UA" -H "Accept: application/json" "$R/site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?try=$i")
+            echo "try $i: scoreboard $code"
+            [ "$code" = "200" ] && break
+            sleep 20
           done
-      - name: ESPN directly, as a browser on noahdbuilds.com would
-        run: |
-          for U in \
-            "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard" \
-            "https://site.api.espn.com/apis/site/v2/sports/football/nfl/news?limit=40" \
-            "https://site.web.api.espn.com/apis/site/v2/sports/football/nfl/injuries" \
-            "https://site.web.api.espn.com/apis/site/v2/sports/football/nfl/teams/28/roster" \
-            "https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/events/401872981/competitions/401872981/odds/100/propBets?lang=en&region=us&limit=10" ; do
-            echo "== $U"
-            curl -sS -o /dev/null -D - -H "Origin: https://noahdbuilds.com" -A "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148" "$U" | grep -iE '^HTTP|access-control|^server|^x-cache|cf-' 
-            echo "-- preflight"
-            curl -sS -o /dev/null -D - -X OPTIONS -H "Origin: https://noahdbuilds.com" -H "Access-Control-Request-Method: GET" -H "Access-Control-Request-Headers: accept" "$U" | grep -iE '^HTTP|access-control'
+          jq -c '{week: .week.number, games: (.events | length), withOdds: ([.events[] | select(.competitions[0].odds != null)] | length)}' sb.json
+          for U in "site.api.espn.com/apis/site/v2/sports/football/nfl/news?limit=40" "site.web.api.espn.com/apis/site/v2/sports/football/nfl/injuries" "sports.core.api.espn.com/v2/sports/football/leagues/nfl/events/401872981/competitions/401872981/odds/100/propBets?lang=en&region=us&limit=1000&page=1" "api.sleeper.app/v1/state/nfl"; do
+            curl -sS -o b.json -w "%{http_code} $U\n" -A "$UA" -H "Accept: application/json" "$R/$U"
           done
-      - name: ESPN directly with the relay's user agent
-        run: |
-          curl -sS -o /dev/null -w '%{http_code} relay UA\n' -A "Playbook (+https://noahdbuilds.com/playbook/)" "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard"
-          curl -sS -o /dev/null -w '%{http_code} no UA\n' -A "" "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard"
+          curl -sS -o /dev/null -w '%{http_code} app page\n' -A "$UA" https://noahdbuilds.com/playbook/quick-picks
