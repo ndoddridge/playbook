@@ -1,4 +1,4 @@
-# Temporary: runs the ESPN line provider against live ESPN and Sleeper. Deleted after use.
+# Temporary: checks ESPN prop lines for players listed with more than one value. Deleted after use.
 name: Probe ESPN provider live
 on:
   push:
@@ -7,45 +7,13 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 9.0.x
-      - name: Run the provider and Quick Picks against live data
+      - name: Multiple values per player and market
         run: |
-          mkdir probe && cd probe
-          dotnet new console -f net9.0 -o . --force > /dev/null
-          dotnet add reference ../src/Playbook.Infrastructure/Playbook.Infrastructure.csproj ../src/Playbook.Application/Playbook.Application.csproj > /dev/null
-          dotnet add package Microsoft.Extensions.Configuration.Json --version 9.0.8 > /dev/null
-          dotnet add package Microsoft.Extensions.Logging.Console --version 9.0.8 > /dev/null
-          cp ../src/Playbook.Web/appsettings.json .
-          cat > Program.cs <<'CS'
-          using Microsoft.Extensions.Configuration;
-          using Microsoft.Extensions.DependencyInjection;
-          using Microsoft.Extensions.Logging;
-          using Playbook.Application;
-          using Playbook.Application.Players;
-          using Playbook.Application.Predictions.Interfaces;
-          using Playbook.Infrastructure;
-          using Playbook.Infrastructure.Predictions;
-          var config = new ConfigurationBuilder().SetBasePath(Directory.GetCurrentDirectory()).AddJsonFile("appsettings.json").Build();
-          var services = new ServiceCollection().AddLogging(b => b.AddSimpleConsole().SetMinimumLevel(LogLevel.Warning));
-          services.AddInfrastructure(config).AddApplication();
-          var sp = services.BuildServiceProvider();
-          await sp.GetRequiredService<IPlayerService>().RefreshAsync();
-          Console.WriteLine($"players {sp.GetRequiredService<IPlayerService>().GetAllPlayers().Count}, espn ids {sp.GetRequiredService<IPlayerIdentityDirectory>().IdentitiesWithEspnId}");
-          var espn = sp.GetServices<IPropLineProvider>().OfType<EspnPropLineProvider>().Single();
-          var lines = await espn.GetPropLinesAsync();
-          Console.WriteLine($"lines {lines.Count} from {lines.Select(l => l.Event.EventId).Distinct().Count()} games");
-          foreach (var g in lines.GroupBy(l => l.Market)) Console.WriteLine($"  {g.Key}: {g.Count()}");
-          foreach (var g in lines.GroupBy(l => (l.Event.Season, l.Event.Week))) Console.WriteLine($"  season {g.Key.Season} week {g.Key.Week}: {g.Select(l => l.Event.EventId).Distinct().Count()} games");
-          foreach (var l in lines.Where(l => l.PlayerId is not null).Take(8)) Console.WriteLine($"  {l.Event.DisplayName} {l.PlayerName} ({l.TeamName}) {l.MarketLabel} {l.Line} via {l.Bookmaker}");
-          foreach (var l in lines.Where(l => l.PlayerId is null).Take(6)) Console.WriteLine($"  {l.Event.DisplayName} {l.MarketLabel} {l.TeamName} {l.Line} {l.AmericanOddsOver}/{l.AmericanOddsUnder}");
-          var qp = sp.GetRequiredService<IQuickPicksService>();
-          await qp.RefreshAsync();
-          var status = sp.GetRequiredService<Playbook.Application.Predictions.IQuickPicksSyncStatus>();
-          Console.WriteLine($"quick picks: provider {status.PropProvider} status {status.ProviderStatus} error '{status.LastError}' slate {qp.SelectedWeek?.DisplayLabel} predictions {qp.GetSlatePredictions().Count}");
-          foreach (var p in qp.GetTopPicks(5)) Console.WriteLine($"  top: {p.SubjectLabel} {p.MarketLabel} {p.DirectionLabel} {p.Line} conf {p.Confidence} · {p.ContextLabel}");
-          CS
-          sed -i 's/^          //' Program.cs
-          set -o pipefail; dotnet run -c Release 2>&1 | tail -40
+          curl -sS "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard" -o sb.json
+          for E in $(jq -r '.events[] | select(.status.type.completed == false) | .id' sb.json | head -8); do
+            for P in 1 2; do curl -sS "https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/events/$E/competitions/$E/odds/100/propBets?lang=en&region=us&limit=1000&page=$P" -o "p_${E}_$P.json"; done
+            jq -s -c --arg e "$E" '[.[].items[]? | select(.type.name | test("^Total (Passing|Rushing|Receiving) Yards|^Total Receptions|^Total Passing Touchdowns")) | {a: (.athlete["$ref"] | capture("athletes/(?<id>[0-9]+)").id), t: .type.name, v: .current.target.value, o: .open.target.value}] | group_by([.a, .t]) | map({a: .[0].a, t: .[0].t, n: length, vals: (map(.v) | group_by(.) | map({v: .[0], n: length})), open: (map(.o) | unique)}) | {event: $e, groups: length, multi: map(select(.vals | length > 1))}' p_${E}_1.json p_${E}_2.json | head -c 2500; echo
+          done
+      - name: Two athletes by name
+        run: |
+          for A in 3925357 3116365; do curl -sS "https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/$A" | jq -c '{id, displayName}'; done
